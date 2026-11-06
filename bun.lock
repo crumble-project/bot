@@ -43,7 +43,7 @@
         "effect": "4.0.6",
         "hono": "4.13.13",
         "microsandbox": "0.7.8",
-        "open-bot-avatar": "0.1.2",
+        "open-bot-avatar": "0.2.0",
         "pele": "1.9.0",
         "pkijs": "4.0.0",
         "railway": "3.16.0",
@@ -79,7 +79,7 @@
         "cn": "0.5.0",
         "cronstrue": "3.38.0",
         "cuelume": "0.2.8",
-        "open-bot-avatar": "0.1.2",
+        "open-bot-avatar": "0.2.0",
         "pele": "1.9.0",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -881,7 +881,7 @@
 
     "once": ["once@1.4.0", "", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
 
-    "open-bot-avatar": ["open-bot-avatar@0.1.2", "", {}, "sha512-WszCSxHQ77kzNWwY6ySRw6tenrF1zgXXH7bnWeoPvdNow+Rv9pD2wdLUI2eiUSsRy/5nrJgGShb10EkKtw7iKQ=="],
+    "open-bot-avatar": ["open-bot-avatar@0.2.0", "", {}, "sha512-NHiTNWkZTCt1BA+x3l6OTqN7qAAaRfk4z6/kwpiIi9/4qHyzFb0syxJEw5PBbk6MbPhBHEltCD0Q/QuY4nxucg=="],
 
     "openai": ["openai@7.19.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ=="],
 

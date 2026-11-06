@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Live bot avatars draw on a canvas with `open-bot-avatar` 0.2.0.
 - The avatar editor's color fields follow the avatar when it changes from outside, instead of keeping the last typed color.
 - Deleting a bot deletes its workspace for good: the Microsandbox volume or Railway checkpoints, with its files, repository clones, and the bot desktop's browser sessions. Removing an account does this for each of its bots. A failure is logged and doesn't stop the delete.
 - A desktop job's `open`, `launch`, and `fill_login` go through the intent check, so each costs a judge call. As the judge doesn't count navigating as irreversible, they are rarely held. The check and login filling now read a page's host the same way, without its port.
