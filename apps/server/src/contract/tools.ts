@@ -36,6 +36,9 @@ export const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
 export const DEFAULT_JUDGE_MODEL_NAME = "GPT-6 Luna";
 
+/** The `kind` of a transcript event for a job that ended without an answer. */
+export const JOB_FAILURE_EVENT = "job-failure";
+
 export const JOB_KIND_NAMES = [CODING_TOOL_NAME, DESKTOP_TOOL_NAME] as const;
 
 export type JobKind = (typeof JOB_KIND_NAMES)[number];

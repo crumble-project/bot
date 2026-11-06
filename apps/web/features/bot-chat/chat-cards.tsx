@@ -2,7 +2,7 @@ import { botRequestResult } from "@/features/bot-requests/bot-request-card";
 import { desktopScreenshotResult } from "@/features/bot-desktop/desktop-screenshot";
 import { credentialRequestResult } from "@/features/credentials/credential-request";
 import { heldActionEvent } from "@/features/bot-desktop/held-action";
-import { jobResult } from "@/features/jobs/job-card";
+import { jobFailureEvent, jobResult } from "@/features/jobs/job-card";
 import { jobQuestionEvent } from "@/features/jobs/job-question";
 import { loginRequestResult } from "@/features/logins/login-request";
 import { isJobKind } from "@crumble/server/contract/tools";
@@ -20,7 +20,11 @@ const TOOL_RESULTS: MessageCard[] = [
   jobResult,
 ];
 
-const EVENTS: MessageCard[] = [jobQuestionEvent, heldActionEvent];
+const EVENTS: MessageCard[] = [
+  jobQuestionEvent,
+  heldActionEvent,
+  jobFailureEvent,
+];
 
 function cardOf(message: Message, cards = TOOL_RESULTS) {
   for (const parse of cards) {

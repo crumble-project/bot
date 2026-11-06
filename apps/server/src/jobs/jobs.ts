@@ -154,7 +154,8 @@ type ReporterInput = {
   turn?: string;
 };
 
-type JobReport = { frame: string; text?: string };
+/** `frame` and `text` are what the bot reads. `failure` is the owner's line for a job that ended without an answer. */
+type JobReport = { frame: string; text?: string; failure?: string };
 
 type ReporterState =
   | { phase: "wait" }
@@ -520,10 +521,13 @@ const deliveryReport = async (
   name: string,
   settled: SettledSubmissionRecord,
 ): Promise<JobReport | undefined> => {
-  if (settled.status === "unanswered")
+  if (settled.status === "unanswered") {
+    const failure = `${kindState.label} ${name} failed: ${settled.reason}`;
+
     return settled.reason === "aborted"
       ? undefined
-      : { frame: `[${kindState.label} ${name} failed: ${settled.reason}]` };
+      : { frame: `[${failure}]`, failure };
+  }
 
   if (settled.type !== "input") return undefined;
   const job = state.jobs[name];
@@ -758,7 +762,8 @@ const jobReporterReport =
         entry: {
           kind: MESSAGE_ENTRY,
           data: {
-            text: report.text ?? "",
+            text: report.failure ?? report.text ?? "",
+            ...(report.failure && { jobFailed: true }),
             origin: { kind: kindState.kind, name: reporter.input.name },
           },
         },

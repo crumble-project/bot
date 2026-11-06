@@ -12,6 +12,8 @@ import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 const shop = { pid: 7, window_id: 101, app_name: "Chromium", title: "Shop" };
 const help = { pid: 8, window_id: 102, app_name: "Help", title: "Help" };
 
+const LOGIN_PAGE = "https://github.com:8443/login";
+
 function recording(refusal?: string) {
   const seen: ProposedAction[] = [];
 
@@ -82,6 +84,74 @@ test("the check names the element in the window the action runs in", async () =>
     window_id: 101,
     element_token: "s1:3",
   });
+});
+
+test("open reaches the check with its URL and host, and a refusal keeps the page closed", async () => {
+  const { shell, calls } = scriptedGuest({ list_windows: [{ windows: [] }] });
+  const { seen, gate } = recording("REFUSED");
+  const computer = createComputerUse(shell);
+
+  const result = await computer.run(
+    { action: "open", url: "https://shop.example:8443/pay?amount=5" },
+    BACKGROUND_CONTEXT,
+    gate,
+  );
+
+  expect(seen[0]!.host).toBe("shop.example");
+  expect(seen[0]!.steps).toEqual([
+    { action: "open", url: "https://shop.example:8443/pay?amount=5" },
+  ]);
+  expect(describeAction(seen[0]!)).toBe(
+    'Open "https://shop.example:8443/pay?amount=5" on shop.example',
+  );
+  expect(result.isError).toBe(true);
+  expect(calls.map((call) => call.tool)).not.toContain("browser_navigate");
+});
+
+test("launch reaches the check without needing a window", async () => {
+  const { shell } = scriptedGuest({ list_windows: [{ windows: [] }] });
+  const { seen, gate } = recording("REFUSED");
+
+  await createComputerUse(shell).run(
+    { action: "launch", app: "Files", path: "/workspace/demo" },
+    BACKGROUND_CONTEXT,
+    gate,
+  );
+
+  expect(describeAction(seen[0]!)).toBe('Launch "Files" at "/workspace/demo"');
+});
+
+test("fill_login reaches the check with the login, the field, and the host, on the page of the latest read", async () => {
+  const { shell } = scriptedGuest({
+    list_windows: [{ windows: [shop] }],
+    get_browser_state: [
+      {
+        target_id: "bt-1",
+        tabs: [{ tab_id: "tab-1", url: LOGIN_PAGE, active: true }],
+      },
+      {
+        page: { title: "Sign in", url: LOGIN_PAGE },
+        outline: '- form\n  - textbox "Password"',
+        refs: [
+          { ref: "p1:2", role: "textbox", name: "Password", frame: "main" },
+        ],
+      },
+    ],
+  });
+
+  const { seen, gate } = recording("REFUSED");
+  const computer = createComputerUse(shell);
+
+  await computer.run({ action: "read" }, BACKGROUND_CONTEXT);
+  await computer.run(
+    { action: "fill_login", login: "github", field: "password", ref: "p1:2" },
+    BACKGROUND_CONTEXT,
+    gate,
+  );
+
+  expect(describeAction(seen[0]!)).toBe(
+    'Fill password of login "github" into textbox "Password" on github.com',
+  );
 });
 
 test("a key step's role and name are ignored: the key goes to the focus", async () => {

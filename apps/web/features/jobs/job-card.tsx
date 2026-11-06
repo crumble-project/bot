@@ -1,7 +1,11 @@
 import { Spinner } from "@/components/ui/spinner";
 import { JOB_KINDS } from "./kinds";
 import { type JobRef } from "./api";
-import { JOB_KIND_NAMES } from "@crumble/server/contract/tools";
+import {
+  JOB_FAILURE_EVENT,
+  JOB_KIND_NAMES,
+  isJobKind,
+} from "@crumble/server/contract/tools";
 import { jobDetails } from "@crumble/server/contract/tool-details";
 import { type Message } from "@/features/chat/api";
 import { toolDetailsOf } from "@/features/chat/tool-details";
@@ -60,3 +64,26 @@ function JobCard({
 export const jobResult = messageCard(jobOf, ({ result, chat }) => (
   <JobCard job={result} chat={chat} />
 ));
+
+function failureOf({ kind, origin, content }: Message) {
+  return kind === JOB_FAILURE_EVENT && isJobKind(origin?.kind) && origin?.name
+    ? { job: { kind: origin.kind, name: origin.name }, text: content }
+    : null;
+}
+
+export const jobFailureEvent = messageCard(failureOf, ({ result, chat }) => {
+  const { icon: Icon } = JOB_KINDS[result.job.kind];
+
+  return (
+    <button
+      type="button"
+      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
+      onClick={() => chat.onOpenJob(result.job)}
+    >
+      <Icon className="size-4 shrink-0 text-destructive" />
+      <span className="min-w-0 flex-1 text-sm first-letter:uppercase">
+        {result.text}
+      </span>
+    </button>
+  );
+});

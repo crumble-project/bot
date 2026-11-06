@@ -3,7 +3,14 @@ import { shellQuote } from "../../shared/shell";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import {
   Sandbox,
@@ -52,6 +59,7 @@ import {
 } from "../machine-workspaces";
 import {
   DesktopStartFailed,
+  WorkspaceRemoveFailed,
   WorkspaceStopFailed,
   WorkspaceStreamFailed,
   WorkspaceUnreachable,
@@ -330,6 +338,27 @@ export class RailwayMachines implements WorkspaceMachines {
       ))
     );
   });
+
+  remove(agentId: string) {
+    const name = this.name(agentId);
+
+    return Effect.tryPromise({
+      try: async () => {
+        const sandboxId = (await this.readRecord(agentId))?.sandboxId;
+        const running = sandboxId && (await connectRunning(sandboxId));
+
+        if (running) await running.destroy();
+
+        await deleteCheckpoints(name);
+        await rm(this.recordPath(agentId), { force: true });
+      },
+      catch: (cause) =>
+        new WorkspaceRemoveFailed({
+          message: `Removing the workspace failed: ${errorText(cause)}`,
+          cause,
+        }),
+    });
+  }
 
   // Each write and command is a request to Railway; in parallel they cost one round trip.
   private ops(machine: Sandbox): GuestOps {
@@ -704,6 +733,11 @@ async function hasCheckpoint(name: string) {
   return (await Sandbox.checkpoints()).some(
     (checkpoint) => checkpoint.key === name,
   );
+}
+
+async function deleteCheckpoints(name: string) {
+  for (const each of await Sandbox.checkpoints())
+    if (each.key === name) await Sandbox.deleteCheckpoint(each.id);
 }
 
 async function copyWorkspace(

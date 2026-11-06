@@ -28,6 +28,7 @@ import {
   type Outgoing,
   confirm,
   deliver,
+  discard,
   outgoingMessage,
   useOutgoing,
 } from "./delivery";
@@ -77,11 +78,12 @@ function useMessageSending<S extends HistoryPage>(
   const sendMessage = async (
     content: string,
     uploads: Upload[],
-    requestId: string = randomId(),
+    retried?: string,
     reply = replyTo?.entryId,
   ) => {
     setReplyTo(null);
     setSendError(null);
+    const requestId = retried ?? randomId();
 
     const failure = await deliver(
       target.key,
@@ -95,9 +97,15 @@ function useMessageSending<S extends HistoryPage>(
       target.sendContext(),
     );
 
-    if (failure) setSendError(`Message was not confirmed: ${failure}`);
+    if (!failure) return true;
 
-    return failure === null;
+    setSendError(`Message was not confirmed: ${failure.reason}`);
+
+    if (!failure.rejected || retried) return true;
+
+    discard(target.key, requestId);
+
+    return false;
   };
 
   return { replyTo, setReplyTo, sendError, sendMessage };

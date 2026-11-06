@@ -2,6 +2,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Context, Effect, Layer, type Scope } from "effect";
 import type {
   DesktopOpenError,
+  WorkspaceRemoveFailed,
   WorkspaceStopFailed,
   WorkspaceSyncFailed,
 } from "./workspace-errors";
@@ -20,6 +21,8 @@ export interface Workspaces {
   readonly desktop: boolean;
   /** Stops the bot's machine, whether busy or not; the next operation boots the image the bot needs now. */
   restart(agentId: string): Effect.Effect<void, WorkspaceStopFailed>;
+  /** Stops the bot's machine and deletes its files for good, for a bot that is being deleted. */
+  remove(agentId: string): Effect.Effect<void, WorkspaceRemoveFailed>;
   /**
    * Connects to the bot desktop's VNC server, booting the machine if needed. The machine stays awake until the stream
    * closes. A `passive` stream neither boots nor holds the machine, and ends when it stops.

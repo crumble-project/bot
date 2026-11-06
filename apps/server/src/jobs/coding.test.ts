@@ -14,6 +14,7 @@ import {
   fauxToolCall,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
+import { JOB_FAILURE_EVENT } from "../contract/tools";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { codingPlugin } from "./coding";
@@ -86,6 +87,10 @@ class DirectoryWorkspaces implements Workspaces {
   }
 
   restart(_agentId: string) {
+    return Effect.void;
+  }
+
+  remove(_agentId: string) {
     return Effect.void;
   }
 
@@ -426,7 +431,7 @@ test("a coding job starts with its bot's memory, skills, and latest chat, and no
   expect(job["bot_knowledge"]).toContain("- Release: Cut a release of the app");
   expect(job["bot_knowledge"]).toContain("- The owner deploys with Fly.io.");
   expect(job["bot_knowledge"]).toContain(
-    "Shared memory (other agents see it too):\n- The team uses pnpm.",
+    "Shared memory (other bots see it too):\n- The team uses pnpm.",
   );
   expect(used).toEqual(["Release"]);
 
@@ -642,6 +647,42 @@ test("the chat's prompt never boots a stopped workspace, and shows its notes whi
     "kept in /workspace/.crumble/notes.md. Use them instead of rediscovering, and fix a line that proves wrong.\npnpm is at ~/bin.\nWhen you learn",
   );
   expect(sections.at(-1)?.[WORKSPACE_NOTES_SECTION] ?? null).toBeNull();
+});
+
+test("a job that fails shows the owner why, and tells the bot", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  const { agent } = setup(dir);
+  await Bun.write(join(workspace, ".keep"), "");
+
+  const { runtime } = open(
+    dir,
+    new DirectoryWorkspaces(workspace),
+    script({
+      beforeJob: async () => {
+        throw new Error("The model is down");
+      },
+    }),
+    agent,
+  );
+
+  cleanups.push(() => runtime.close());
+  const chat = await runtime.openChat(agent);
+
+  await runtime.submit(agent, chat, "Build it", "req-1");
+  await until(async () =>
+    (await runtime.snapshot(agent, chat)).messages.some(
+      (message) => message.content === "The job is finished.",
+    ),
+  );
+
+  const [failure] = await reports(runtime, agent, chat);
+
+  expect(failure?.role).toBe("event");
+  expect(failure?.kind).toBe(JOB_FAILURE_EVENT);
+  expect(failure?.origin?.name).toBe("builder");
+  expect(failure?.content).toStartWith("coding job builder failed: ");
 });
 
 test("a restart while a job works does not report twice", async () => {

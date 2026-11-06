@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Deleting a bot deletes its workspace for good: the Microsandbox volume or Railway checkpoints, with its files, repository clones, and the bot desktop's browser sessions. Removing an account does this for each of its bots. A failure is logged and doesn't stop the delete.
+- A desktop job's `open`, `launch`, and `fill_login` go through the intent check, so each costs a judge call. As the judge doesn't count navigating as irreversible, they are rarely held. The check and login filling now read a page's host the same way, without its port.
+- A job that fails without an answer shows in the bot chat as a card with the reason, as a `job-failure` event in the transcript. It used to reach only the bot.
+- A message the server refuses goes back to the composer and leaves the transcript. A message that failed for any other reason stays as **Not sent** with **Retry**, which can't duplicate it, and the composer stays empty, since the message may have arrived.
+- Replies now read only a bot's chat conversation. Older sessions in a harness from before the single chat no longer show in its transcript.
+- Tool text and errors say bot and automation instead of agent and task. A deleted automation's runs are labeled "Deleted automation" or "Deleted script automation".
 - A long group turn or delegated task no longer loses its final answer. Reading a turn stopped at 200 transcript entries.
 - A bot's chat history no longer hides its answers while one of its jobs, group turns, or reviews is running.
 - Editing a finished one-time automation no longer runs it again. Set a new time to run it again.

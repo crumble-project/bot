@@ -5,13 +5,27 @@ import type { OwnerMessage } from "../jobs/owner-request";
 
 export type IntentTarget = { role?: string; name?: string };
 
+/** What a call says it will do, apart from its target. A login's `field` names the field, never its value. */
+export const STEP_DETAILS = [
+  "text",
+  "keys",
+  "value",
+  "url",
+  "app",
+  "path",
+  "login",
+  "field",
+] as const;
+
+export type StepDetail = (typeof STEP_DETAILS)[number];
+
 export type IntentStep = {
   action: string;
   target?: IntentTarget;
-  text?: string;
-  keys?: string;
-  value?: string;
-};
+} & Partial<Record<StepDetail, string>>;
+
+/** Where an action happens: the page or window, and the host if it's a web page. */
+export type Place = { page?: string | undefined; host?: string | undefined };
 
 export type ProposedAction = {
   steps: IntentStep[];
@@ -217,6 +231,17 @@ const STEP_WORDS = new Map<string, StepWords>([
   ["type", ({ text }, on) => `type${quoted(text)}${on && ` into${on}`}`],
   ["set_value", ({ value }, on) => `set${on}${on && " to"}${quoted(value)}`],
   ["key", ({ keys }) => `press ${keys ?? "a key"}`],
+  ["open", ({ url }) => `open${quoted(url)}`],
+  [
+    "launch",
+    ({ app, path }) =>
+      `launch${quoted(app)}${path ? ` at${quoted(path)}` : ""}`,
+  ],
+  [
+    "fill_login",
+    ({ login, field }, on) =>
+      `fill ${field ?? "a field"} of login${quoted(login)}${on && ` into${on}`}`,
+  ],
 ]);
 
 const otherWords: StepWords = ({ action }, on) =>
@@ -262,9 +287,11 @@ export function judgeState(request: IntentRequest): JsonObject {
             ...(step.target.name !== undefined && { name: step.target.name }),
           },
         }),
-        ...(step.text !== undefined && { text: step.text }),
-        ...(step.keys !== undefined && { keys: step.keys }),
-        ...(step.value !== undefined && { value: step.value }),
+        ...Object.fromEntries(
+          STEP_DETAILS.flatMap((key) =>
+            step[key] === undefined ? [] : [[key, step[key]]],
+          ),
+        ),
       })),
     },
   };

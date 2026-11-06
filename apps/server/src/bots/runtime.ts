@@ -65,7 +65,6 @@ import { BOT_TOOL } from "../contract/tools";
 import {
   prepareReply,
   readAttachment,
-  conversations,
   readResponse,
   readConversationTranscript,
   readTranscript,
@@ -201,13 +200,13 @@ function hideIncompleteAssistant(messages: TranscriptMessage[]) {
 }
 
 /**
- * What clients may show of `conversations`. A model can commit a tool-calling assistant entry before its tool round
+ * What clients may show of the bot's chat. A model can commit a tool-calling assistant entry before its tool round
  * completes, so assistant entries after an active input stay hidden until the run settles and no text segment leaks
- * mid-turn. Entry IDs are global across the bot's conversations, so only inputs of these conversations count.
+ * mid-turn. Entry IDs are global across the bot's conversations, so only inputs of its chat count.
  */
 async function visibleMessages(
   harness: Harness,
-  conversations: readonly ConversationId[],
+  chat: ConversationId,
   messages: TranscriptMessage[],
 ) {
   const { submissions } = await harness.inspect(BACKGROUND_CONTEXT);
@@ -215,7 +214,7 @@ async function visibleMessages(
   const cutoffs = submissions.flatMap((submission) =>
     submission.type === "input" &&
     submission.status === "placed" &&
-    conversations.includes(submission.conversationId)
+    submission.conversationId === chat
       ? [Number(submission.entry)]
       : [],
   );
@@ -364,7 +363,7 @@ export class AgentRuntime {
       const current = this.callbacks.currentAgent(agent);
 
       if (!current?.enabled)
-        throw new Error("Skill access is disabled for this agent");
+        throw new Error("Skill access is disabled for this bot");
 
       return current;
     };
@@ -835,7 +834,7 @@ export class AgentRuntime {
 
       const messages = await visibleMessages(
         harness,
-        [conversation.id],
+        conversation.id,
         transcript.messages,
       );
 
@@ -957,15 +956,11 @@ export class AgentRuntime {
         messages: hideIncompleteAssistant(transcript.messages),
       };
 
-    const chats = await conversations(harness);
+    const chat = await harness.root(BACKGROUND_CONTEXT);
 
     return {
       ...transcript,
-      messages: await visibleMessages(
-        harness,
-        chats.map((chat) => chat.id),
-        transcript.messages,
-      ),
+      messages: await visibleMessages(harness, chat.id, transcript.messages),
     };
   }
 

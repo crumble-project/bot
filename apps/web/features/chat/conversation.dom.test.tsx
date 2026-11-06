@@ -222,7 +222,7 @@ test("a group reply being sent shows what it answers", async () => {
     ]),
     loadGroup,
     async (container) => {
-      const { deliver } = await import("./delivery");
+      const { deliver, discard } = await import("./delivery");
 
       await waitFor(shows(container, "The original"));
       await act(async () => {
@@ -237,6 +237,72 @@ test("a group reply being sent shows what it answers", async () => {
       expect(container.textContent).toContain("My answer");
       // Once as its own message and once quoted above the reply.
       expect(container.textContent?.split("The original")).toHaveLength(3);
+
+      await act(async () => discard("group:g", "request"));
+    },
+  );
+});
+
+async function sendInGroup(container: HTMLElement, text: string) {
+  const field = container.querySelector("textarea")!;
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )!.set?.call(field, text);
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    container
+      .querySelector("form")!
+      .dispatchEvent(
+        new window.Event("submit", { bubbles: true, cancelable: true }),
+      );
+  });
+}
+
+test("a message the server refused goes back to the composer and leaves the transcript", async () => {
+  await render(
+    "/groups/g",
+    new Map<string, Answer>([
+      ["/v1/agents", Response.json([bot])],
+      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
+      [
+        "/v1/group-chats/g/messages",
+        Response.json({ error: "Too long" }, { status: 400 }),
+      ],
+    ]),
+    loadGroup,
+    async (container) => {
+      await waitFor(shows(container, "The original"));
+      await sendInGroup(container, "Refused");
+
+      await waitFor(shows(container, "Too long"));
+      expect(container.querySelector("textarea")!.value).toBe("Refused");
+      expect(container.textContent).not.toContain("Not sent");
+    },
+  );
+});
+
+test("a message that may have arrived stays for Retry, and the composer stays empty", async () => {
+  await render(
+    "/groups/g",
+    new Map<string, Answer>([
+      ["/v1/agents", Response.json([bot])],
+      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
+      [
+        "/v1/group-chats/g/messages",
+        Response.json({ error: "Bad gateway" }, { status: 502 }),
+      ],
+    ]),
+    loadGroup,
+    async (container) => {
+      await waitFor(shows(container, "The original"));
+      await sendInGroup(container, "Maybe arrived");
+
+      await waitFor(shows(container, "Maybe arrivedNot sent"));
+      expect(container.querySelector("textarea")!.value).toBe("");
     },
   );
 });

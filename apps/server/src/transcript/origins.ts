@@ -4,7 +4,7 @@ import { askingBot, parseRequestId } from "../shared/request-ids";
 
 export const UNKNOWN_BOT_NAME = "Another bot";
 
-export const UNKNOWN_SCHEDULE_NAME = "Scheduled task";
+export const UNKNOWN_SCHEDULE_NAME = "Deleted automation";
 
 /**
  * Every origin Crumble writes on an input. Stored entries and the wire keep `kind` a plain string, as clients may see

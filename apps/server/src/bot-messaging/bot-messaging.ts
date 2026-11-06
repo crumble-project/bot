@@ -152,7 +152,7 @@ export class BotMessaging extends Context.Service<
         if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate))
           return yield* Effect.fail(
             new Forbidden({
-              message: "This agent has no permission to message other bots",
+              message: "This bot has no permission to message other bots",
             }),
           );
 
@@ -203,7 +203,7 @@ export class BotMessaging extends Context.Service<
       const authorize = (from: Agent, target: Agent) => {
         if (!target.enabled || target.id === from.id)
           return Effect.fail(
-            new InvalidInput({ message: "Choose another enabled agent" }),
+            new InvalidInput({ message: "Choose another enabled bot" }),
           );
 
         return Effect.void;
@@ -445,7 +445,7 @@ export class BotMessaging extends Context.Service<
             return yield* Effect.fail(
               new Conflict({
                 message:
-                  "This agent already has four active tasks; try again later",
+                  "This bot already has four active tasks; try again later",
               }),
             );
           const execution = yield* bots.send(chat.id, message, requestId);

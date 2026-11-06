@@ -14,7 +14,7 @@ function botRelayText(
 
   return parseRequestId(requestId).kind === "job-question"
     ? from
-    : `${from}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
+    : `${from}\n\nReply to this bot's message. Your answer will be returned to that bot.`;
 }
 
 export function frameInput(

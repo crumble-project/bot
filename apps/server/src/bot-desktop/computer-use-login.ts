@@ -16,6 +16,7 @@ import {
 } from "./computer-use-driver";
 import {
   currentPage,
+  pageHost,
   refOf,
   scrubText,
   textResult,
@@ -82,14 +83,15 @@ function pageOf(
 }
 
 function hostOf(url: string): { host: string } | Refusal {
-  const parsed = URL.canParse(url) ? new URL(url) : undefined;
+  const host = pageHost(url);
+  const secure = URL.canParse(url) && new URL(url).protocol === "https:";
 
-  if (parsed?.protocol !== "https:")
+  if (!secure || !host)
     return {
       refused: `fill_login fills https pages only, and this page is ${url}`,
     };
 
-  return { host: parsed.hostname };
+  return { host };
 }
 
 function loginFor(

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -227,6 +228,33 @@ describe("Railway machines when Railway fails", () => {
 
     expect(fake.commands).toContain(ALLOW_OVERCOMMIT);
     await Effect.runPromise(machine.stop);
+  });
+
+  test("removing a workspace destroys its sandbox and deletes only its checkpoint and record", async () => {
+    const { sandbox } = fakeSandbox("live");
+    const destroy = spyOn(sandbox, "destroy").mockResolvedValue(undefined);
+    const { machineDir, machines } = newMachines();
+    const record = path.join(machineDir, "workspaces", "railway", "bot.json");
+
+    writeMachineRecord(machineDir, "bot", {
+      image: machines.baseImage,
+      sandboxId: "live",
+    });
+    spyOn(Sandbox, "connect").mockResolvedValue(sandbox);
+    spyOn(Sandbox, "checkpoints").mockResolvedValue([
+      { ...checkpointNamed(machines.name("bot")), id: "mine" },
+      { ...checkpointNamed(machines.name("other")), id: "theirs" },
+    ]);
+
+    const deleted = spyOn(Sandbox, "deleteCheckpoint").mockResolvedValue(
+      undefined,
+    );
+
+    await Effect.runPromise(machines.remove("bot"));
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(deleted.mock.calls.map(([id]) => id)).toEqual(["mine"]);
+    expect(existsSync(record)).toBe(false);
   });
 
   test("a failed reconnect keeps the running sandbox instead of restoring an older checkpoint", async () => {

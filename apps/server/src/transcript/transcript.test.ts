@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { latestMessagePreview, readTranscript } from "./transcript";
-import type { Cursor, Harness, Tx } from "@earendil-works/pi-durable";
+import type { Cursor, Harness } from "@earendil-works/pi-durable";
 
 type FakeCommunication = {
   executionId: string;
@@ -25,46 +25,12 @@ type FakeQuery = {
   order?: "ascending" | "descending";
 };
 
-function fakeHarness(entries: Record<number, FakeEntry[]>): Harness {
-  const conversations = Object.keys(entries).map((id) => ({
-    id: Number(id),
-    conversationId: Number(id),
-    kind: "conversation",
-  }));
-
-  // SAFETY: The fake harness only implements the transaction methods used by transcript helpers.
-  const harness = Object.assign({} as Harness, {
-    // SAFETY: The fake harness mirrors the durable transcript transaction shape.
-    commit: async <T>(
-      fn: (tx: Pick<Tx, "scanConversations">) => T | Promise<T>,
-    ) =>
-      fn({
-        scanConversations: async (
-          _q: Parameters<Tx["scanConversations"]>[0],
-          _n: number,
-          cursor?: Cursor,
-        ): Promise<Awaited<ReturnType<Tx["scanConversations"]>>> => {
-          const start = cursor ? Number(cursor["offset"]) : 0;
-          const items = conversations.slice(start, start + 1);
-
-          const page = {
-            items,
-            next:
-              start + 1 < conversations.length
-                ? { offset: start + 1 }
-                : undefined,
-          };
-          // SAFETY: The fake page contains the conversation records consumed by this test.
-
-          return Object.assign(
-            {} as Awaited<ReturnType<Tx["scanConversations"]>>,
-            page,
-          );
-        },
-      }),
-    conversation: async (id: number) => ({
+function fakeHarness(entries: FakeEntry[]): Harness {
+  // SAFETY: The fake harness only implements the root conversation's reads, which transcript helpers use.
+  return Object.assign({} as Harness, {
+    root: async () => ({
       entries: async (query: FakeQuery, limit: number, cursor?: Cursor) => {
-        const all = (entries[id] ?? []).filter(
+        const all = entries.filter(
           (e) => query.maxEntryId === undefined || e.id <= query.maxEntryId,
         );
 
@@ -79,8 +45,6 @@ function fakeHarness(entries: Record<number, FakeEntry[]>): Harness {
       },
     }),
   });
-
-  return harness;
 }
 
 const user = (id: number, text: string, kind = "pi.user") => ({
@@ -154,13 +118,11 @@ describe("durable transcript helpers", () => {
   });
 
   test("pages in stable chronological order and keeps structural events", async () => {
-    const harness = fakeHarness({
-      1: [
-        user(3, "three"),
-        { id: 2, conversationId: 1, kind: "pi.reset", model: [] },
-        user(1, "one"),
-      ],
-    });
+    const harness = fakeHarness([
+      user(3, "three"),
+      { id: 2, conversationId: 1, kind: "pi.reset", model: [] },
+      user(1, "one"),
+    ]);
 
     const first = await readTranscript(harness, "a", { limit: 2 });
     expect(first.messages.map((m) => m.content)).toEqual([
@@ -205,7 +167,7 @@ describe("durable transcript helpers", () => {
     const modelLess = { id: 1, conversationId: 1, kind: "pi.user" };
 
     const result = await readTranscript(
-      fakeHarness({ 1: [event, malformed, modelLess] }),
+      fakeHarness([event, malformed, modelLess]),
       "source",
     );
 

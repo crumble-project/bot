@@ -113,7 +113,7 @@ export function clockInstructions(ownerTimezoneOf: () => string | undefined) {
 }
 
 const sharedSection = (shared: string) =>
-  shared ? `Shared memory (other agents see it too):\n${shared}` : "";
+  shared ? `Shared memory (other bots see it too):\n${shared}` : "";
 
 function memoryLists(memory: MemoryRecord[]) {
   const lines = (items: MemoryRecord[]) =>

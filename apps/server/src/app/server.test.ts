@@ -90,6 +90,7 @@ function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
       throw new Error("No environment in this test");
     },
     restart: () => Effect.void,
+    remove: () => Effect.void,
     openDesktop,
     keepAwake: () => () => {},
     outdated: () => [],

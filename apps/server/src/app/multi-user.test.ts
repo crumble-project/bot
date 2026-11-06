@@ -265,6 +265,81 @@ test.serial(
   },
 );
 
+test.serial("deleting a bot or an account removes the workspaces", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-workspace-removal-"));
+  const removed: string[] = [];
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+  const workspaces = {
+    desktop: false,
+    env: () => {
+      throw new Error("unused");
+    },
+    restart: () => Effect.void,
+    remove: (agentId: string) =>
+      Effect.sync(() => {
+        removed.push(agentId);
+      }),
+    sync: () => Effect.void,
+    keepAwake: () => () => {},
+    outdated: () => [],
+    running: () => false,
+    desktopRunning: () => false,
+    startDesktop: () => Effect.void,
+    openDesktop: () => Effect.die("unused"),
+  } satisfies Workspaces;
+
+  try {
+    running = await startServer({
+      dataDir,
+      port: 0,
+      workspaces: () => Effect.succeed(workspaces),
+    });
+
+    const admin = await signUp(running, `admin-${crypto.randomUUID()}`);
+    const user = await signUp(running, `user-${crypto.randomUUID()}`);
+    const url = (path: string) => new URL(path, running!.server.url);
+
+    const create = async (name: string) => {
+      const created = await fetch(url("/v1/agents"), {
+        method: "POST",
+        headers: json(user),
+        body: JSON.stringify({ name }),
+      });
+
+      // SAFETY: The agent route returns the documented agent object.
+      return ((await created.json()) as { id: string }).id;
+    };
+
+    const deleted = await create("Deleted");
+    const kept = await create("Kept");
+
+    const gone = await fetch(url(`/v1/agents/${deleted}`), {
+      method: "DELETE",
+      headers: user,
+    });
+
+    expect(gone.status).toBe(204);
+    expect(removed).toEqual([deleted]);
+
+    // SAFETY: The admin route returns the documented user list.
+    const { users } = (await (
+      await fetch(url("/v1/admin/users"), { headers: admin })
+    ).json()) as { users: { id: string }[] };
+
+    const account = await fetch(url(`/v1/admin/users/${users[1]!.id}`), {
+      method: "DELETE",
+      headers: admin,
+    });
+
+    expect(account.status).toBe(204);
+    expect(removed).toEqual([deleted, kept]);
+  } finally {
+    await running?.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test.serial(
   "desktop viewer tickets upgrade an authenticated WebSocket",
   async () => {
@@ -279,6 +354,7 @@ test.serial(
           throw new Error("unused in viewer test");
         },
         restart: () => Effect.void,
+        remove: () => Effect.void,
         sync: () => Effect.void,
         keepAwake: () => () => {},
         outdated: () => [],

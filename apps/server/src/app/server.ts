@@ -172,7 +172,12 @@ export async function startServer(options: ServerOptions = {}) {
     const pending = tenants.get(userId);
 
     tenants.delete(userId);
-    await pending?.then((context) => context.close()).catch(() => undefined);
+    await pending
+      ?.then(async (context) => {
+        await context.removeWorkspaces();
+        await context.close();
+      })
+      .catch(() => undefined);
     rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
   };
 

@@ -127,7 +127,7 @@ export class Scheduler extends Context.Service<
 
         if (!acting.tools.includes(BOT_TOOL.coding))
           return yield* new Forbidden({
-            message: "Script tasks need coding jobs",
+            message: "Script automations need coding jobs",
           });
 
         if (
@@ -135,7 +135,7 @@ export class Scheduler extends Context.Service<
           (createdByAgentId && createdByAgentId !== agentId)
         )
           return yield* new Forbidden({
-            message: "You can only give yourself a script task",
+            message: "You can only give yourself a script automation",
           });
 
         if (workspaces === undefined)

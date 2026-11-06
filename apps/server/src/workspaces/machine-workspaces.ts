@@ -31,6 +31,7 @@ import {
   WorkspacesClosed,
   type DesktopOpenError,
   type DesktopStartFailed,
+  type WorkspaceRemoveFailed,
   type WorkspaceStartError,
   type WorkspaceStopFailed,
   type WorkspaceStreamFailed,
@@ -103,6 +104,8 @@ export interface WorkspaceMachines {
     desktop: boolean,
     guest?: GuestSetup,
   ): Effect.Effect<WorkspaceMachine, WorkspaceBootFailed | DesktopStartFailed>;
+  /** Deletes the bot's stopped machine and its files. Nothing to delete is a success. */
+  remove(agentId: string): Effect.Effect<void, WorkspaceRemoveFailed>;
 }
 
 export type WorkspaceSize = { cpus: number; memoryMib: number };
@@ -647,6 +650,18 @@ export class MachineWorkspaces implements Workspaces {
       () => this.workspaces.get(agentId)?.stop(true, true) ?? Effect.void,
     );
   }
+
+  readonly remove = Effect.fn("MachineWorkspaces.remove")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    yield* Effect.suspend(
+      () => this.workspaces.get(agentId)?.stop(true) ?? Effect.void,
+    ).pipe(logFailure("Stopping a removed workspace", agentId));
+
+    this.workspaces.delete(agentId);
+    yield* this.machines.remove(agentId);
+  });
 
   sync(agentId: string) {
     return Effect.suspend(

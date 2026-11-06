@@ -70,6 +70,8 @@ import {
   assertVendorIds,
 } from "../plugins/plugins";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
+import { BotDeletion } from "../bot-ports/bot-deletion";
+import { logged } from "../shared/app-errors";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
@@ -103,6 +105,8 @@ export type TenantRuntime = {
   service: BotsAccess;
   scheduler: SchedulerAccess;
   workspaces: Workspaces | undefined;
+  /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
+  removeWorkspaces: () => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -298,6 +302,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     Layer.provideMerge(botRequests),
     Layer.provideMerge(conversations),
     Layer.provideMerge(ScriptRuns.layer),
+    Layer.provideMerge(workspaceCleanup),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
     Layer.provideMerge(Layer.mergeAll(BotSkills.layer, OwnerSkills.layer)),
@@ -309,6 +314,22 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     Layer.provideMerge(base),
   );
 }
+
+const removeWorkspace = (workspaces: Workspaces, agentId: string) =>
+  workspaces
+    .remove(agentId)
+    .pipe(logged("Removing a deleted bot's workspace failed", agentId));
+
+const workspaceCleanup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const workspaces = yield* BotWorkspaces;
+
+    if (workspaces)
+      yield* (yield* BotDeletion).register((agentId) =>
+        Effect.succeed(removeWorkspace(workspaces, agentId)),
+      );
+  }),
+);
 
 export async function createTenant(
   options: TenantOptions,
@@ -347,12 +368,28 @@ export async function createTenant(
         yield* (yield* EventDispatcher).start;
         scheduler.start();
 
+        const workspaces = yield* BotWorkspaces;
+
         return {
           app,
           token,
           service,
           scheduler,
-          workspaces: yield* BotWorkspaces,
+          workspaces,
+          removeWorkspaces: () =>
+            account.runPromise(
+              Effect.gen(function* () {
+                if (!workspaces) return;
+
+                const bots = yield* (yield* AgentRepository).list;
+
+                yield* Effect.forEach(
+                  bots,
+                  (bot) => removeWorkspace(workspaces, bot.id),
+                  { concurrency: "unbounded", discard: true },
+                );
+              }).pipe(logged("Removing an account's workspaces failed")),
+            ),
           close: () => account.dispose(),
         };
       }),

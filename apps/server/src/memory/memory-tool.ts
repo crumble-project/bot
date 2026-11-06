@@ -58,7 +58,7 @@ type MemoryArgs = {
 
 function assertMemoryEnabled(agent: Agent | null | undefined) {
   if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.memory))
-    throw new Error("Memory access is disabled for this agent");
+    throw new Error("Memory access is disabled for this bot");
 }
 
 function createMemoryAction(
@@ -126,7 +126,7 @@ export function memoryExtension(
   const tool = defineTool({
     name: MEMORY_TOOL_NAME,
     description:
-      "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
+      "Read and manage this bot’s persistent memory. When the bot uses shared memory, `list` also returns shared memories (marked `shared`), which other bots see too; create one with `shared: true` only for what every bot should know. In a group chat only your own memory can be changed.",
     parameters: Type.Object({
       action: Type.Union([
         Type.Literal("list"),

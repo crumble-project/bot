@@ -43,6 +43,7 @@ const workspaces: Workspaces = {
     throw new Error("Policy tests never execute commands");
   },
   restart: () => Effect.void,
+  remove: () => Effect.void,
   openDesktop: () => Effect.die("No desktop in policy tests"),
   startDesktop: () => Effect.void,
   keepAwake: () => () => {},
@@ -87,11 +88,11 @@ describe("bot schedules", () => {
     };
 
     expect(() => schedules.create(plain.id, draft)).toThrow(
-      "Script tasks need coding jobs",
+      "Script automations need coding jobs",
     );
     expect(() =>
       schedules.create(coder.id, { ...draft, agentId: plain.id }),
-    ).toThrow("You can only give yourself a script task");
+    ).toThrow("You can only give yourself a script automation");
 
     const task = schedules.create(coder.id, {
       ...draft,
@@ -109,7 +110,7 @@ describe("bot schedules", () => {
     expect(schedules.list(coder.id)).toEqual([task]);
     expect(() =>
       schedules.update(coder.id, task.id, { agentId: plain.id }),
-    ).toThrow("You can only give yourself a script task");
+    ).toThrow("You can only give yourself a script automation");
     store.close();
   });
 
@@ -133,7 +134,7 @@ describe("bot schedules", () => {
         kind: "script",
         command: "echo ok",
       }),
-    ).toThrow("Script tasks need coding jobs");
+    ).toThrow("Script automations need coding jobs");
 
     const delegated = schedules.create(coder.id, {
       name: "Check",
@@ -147,7 +148,7 @@ describe("bot schedules", () => {
         kind: "script",
         command: "echo ok",
       }),
-    ).toThrow("You can only give yourself a script task");
+    ).toThrow("You can only give yourself a script automation");
 
     const own = schedules.create(coder.id, {
       name: "Own",
@@ -327,18 +328,18 @@ describe("bot schedules", () => {
     ).toThrow(
       new Forbidden({
         message:
-          "You can schedule a task for yourself, or for a bot you are allowed to message",
+          "You can schedule an automation for yourself, or for a bot you are allowed to message",
       }),
     );
     expect(() =>
       schedules.update(other.id, task.id, { name: "Stolen" }),
-    ).toThrow(/Task not found/);
+    ).toThrow(/Automation not found/);
 
     const moved = schedules.update(source.id, task.id, { agentId: source.id });
     expect(moved.agentId).toBe(source.id);
     expect(store.getSchedule(task.id)?.agentId).toBe(source.id);
     expect(() => schedules.delete(target.id, task.id)).toThrow(
-      /Task not found/,
+      /Automation not found/,
     );
     expect(schedules.delete(source.id, task.id)).toEqual({
       deleted: true,

@@ -12,6 +12,7 @@ const DESKTOP = "desktop";
 
 function fakeMachines(fail?: "desktop" | "stream") {
   const booted: string[] = [];
+  const removed: string[] = [];
   const stopped: string[] = [];
   const stopping = Deferred.makeUnsafe<void>();
 
@@ -52,9 +53,13 @@ function fakeMachines(fail?: "desktop" | "stream") {
 
         return machine(image);
       }),
+    remove: (agentId) =>
+      Effect.sync(() => {
+        removed.push(`${agentId} after ${stopped.length} stops`);
+      }),
   };
 
-  return { machines, booted, stopped, stopping };
+  return { machines, booted, stopped, stopping, removed };
 }
 
 const failureOf = <A, E extends { _tag: string }>(
@@ -66,6 +71,22 @@ const failureOf = <A, E extends { _tag: string }>(
       Effect.map((error) => error._tag),
     ),
   );
+
+test("removing a workspace stops its running machine, then deletes it, also when no machine ever ran", async () => {
+  const { machines, removed } = fakeMachines();
+
+  const workspaces = new MachineWorkspaces(machines, BASE, {
+    desktopImage: DESKTOP,
+    wantsDesktop: () => true,
+  });
+
+  await Effect.runPromise(workspaces.startDesktop("bot"));
+  await Effect.runPromise(workspaces.remove("bot"));
+  await Effect.runPromise(workspaces.remove("idle"));
+
+  expect(removed).toEqual(["bot after 1 stops", "idle after 1 stops"]);
+  await Effect.runPromise(workspaces.close());
+});
 
 test("a server without a desktop image names that, without booting", async () => {
   const { machines, booted } = fakeMachines();

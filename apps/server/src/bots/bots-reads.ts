@@ -50,7 +50,9 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
         case "script":
           return {
             kind: "script",
-            name: (yield* scheduleName(source.scheduleId)) ?? "Script task",
+            name:
+              (yield* scheduleName(source.scheduleId)) ??
+              "Deleted script automation",
           };
         case "bot": {
           const bot = yield* agents.get(source.agentId);

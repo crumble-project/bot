@@ -75,6 +75,13 @@ export const refOf = (state: ComputerUseState, ref: string | undefined) =>
 export const currentPage = (state: ComputerUseState) =>
   state.lastRead?.read.page?.url ?? state.lastRead?.page.url;
 
+/** A page's host without its port, as logins name hosts. Undefined for a URL without one. */
+export function pageHost(url: string | undefined) {
+  if (!url || !URL.canParse(url)) return undefined;
+
+  return new URL(url).hostname || undefined;
+}
+
 export const textResult = (
   value: string,
   isError = false,

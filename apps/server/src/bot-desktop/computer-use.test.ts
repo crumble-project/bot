@@ -802,6 +802,9 @@ const ACTS: ComputerUseArgs[] = [
   { action: "key", keys: "Tab" },
   { action: "set_value", element: 2, value: "Ada" },
   { action: "steps", steps: [{ action: "key", keys: "Tab" }] },
+  { action: "launch", app: "no-such-app" },
+  { action: "open", url: "https://example.com" },
+  { action: "fill_login", login: "github", field: "password", ref: "e1" },
 ];
 
 const OBSERVES: ComputerUseArgs[] = [
@@ -815,9 +818,6 @@ const OBSERVES: ComputerUseArgs[] = [
 const UNCHECKED: ComputerUseArgs[] = [
   { action: "scroll", direction: "down" },
   { action: "focus_window", window_id: 101 },
-  { action: "launch", app: "no-such-app" },
-  { action: "open", url: "https://example.com" },
-  { action: "fill_login", login: "github", field: "password", ref: "e1" },
 ];
 
 test("the intent check hears acting calls and no others", async () => {

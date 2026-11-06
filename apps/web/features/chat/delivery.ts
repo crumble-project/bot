@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { type RoutePath, send } from "@/lib/api";
+import { HttpError, type RoutePath, send } from "@/lib/api";
 import { onSessionReset } from "@/lib/session";
 import type { Message } from "./api";
 import type { Upload } from "./composer";
@@ -55,9 +55,15 @@ export function confirm(chat: string, requestIds: Set<string>) {
     );
 }
 
+/** Takes a message the server refused off the transcript, so it can go back to the composer. */
+export function discard(chat: string, requestId: string) {
+  update(chat, (list) => list.filter((each) => each.requestId !== requestId));
+}
+
 /**
  * Sends a message and shows it at once; it stays until a snapshot confirms it.
  * A retry reuses the request ID and files, so the server can tell it is the same message.
+ * `rejected` says the server answered and refused it; after any other failure it may still have arrived.
  */
 export async function deliver(
   chat: string,
@@ -95,6 +101,9 @@ export async function deliver(
       ),
     );
 
-    return error instanceof Error ? error.message : "Message was not sent";
+    return {
+      reason: error instanceof Error ? error.message : "Message was not sent",
+      rejected: error instanceof HttpError && error.status < 500,
+    };
   }
 }

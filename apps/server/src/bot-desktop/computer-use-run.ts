@@ -1,7 +1,7 @@
 import { errorText } from "../shared/errors";
 import type { Context } from "@earendil-works/chord";
 import type { ComputerUseResult } from "./computer-use";
-import { dispatch, effectOf } from "./computer-use-actions";
+import { ACTIONS, dispatch, effectOf } from "./computer-use-actions";
 import { normalize, type ComputerUseArgs } from "./computer-use-args";
 import { targetWindow, type Window } from "./computer-use-driver";
 import {
@@ -40,14 +40,18 @@ async function controlTurn(
 
 /**
  * The call with its window pinned, so the intent check and the action see the same one; a ref acts in the page of the
- * latest read instead, and observing calls aren't checked.
+ * latest read instead, an action with a place acts outside any window, and observing calls aren't checked.
  */
 async function pinned(
   state: ComputerUseState,
   args: ComputerUseArgs,
   context: Context,
 ): Promise<{ args: ComputerUseArgs; window: Window | undefined }> {
-  if (effectOf(args.action) !== "act" || args.ref !== undefined)
+  if (
+    effectOf(args.action) !== "act" ||
+    args.ref !== undefined ||
+    ACTIONS.get(args.action)?.place
+  )
     return { args, window: undefined };
 
   const window = await targetWindow(state, args.window_id, context);

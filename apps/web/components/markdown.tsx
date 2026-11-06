@@ -9,7 +9,6 @@ import {
 import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import { PELE_PREFIX } from "@crumble/server/contract/ui-modules";
 import type * as Pele from "pele/lazy";
-import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
 import type { MarkdownExtension } from "@tanstack/markdown";
 import { type Sources, splitSources } from "@/lib/sources";
 
@@ -80,14 +79,12 @@ const components = {
     if (props["data-lang"] !== "mermaid" || !isValidElement(props.children))
       return <pre {...props} />;
 
-    // SAFETY: Outside streaming, TanStack Markdown passes a code block's text as one string child of `code`.
+    // SAFETY: TanStack Markdown passes a code block's text as one string child of `code`.
     const code = props.children.props as { children?: string };
 
     return <Diagram source={code.children ?? ""} />;
   },
 } satisfies MarkdownComponents;
-
-const streamingComponents = { a: link } satisfies MarkdownComponents;
 
 const BARE_URL = /^https?:\/\/[^\s<>"]+/;
 const ANGLE_URL = /^<(https?:\/\/[^\s<>"]+)>/;
@@ -150,17 +147,13 @@ const autolinks: MarkdownExtension = {
   },
 };
 
-const finished = [autolinks];
-
-const streaming = [streamingMarkdownExtension(), autolinks];
+const extensions = [autolinks];
 
 export function Reply({
   source,
-  streaming: partial = false,
   sources,
 }: {
   source: string;
-  streaming?: boolean;
   sources?: Sources | undefined;
 }) {
   const { text, chips } = useMemo(
@@ -171,10 +164,7 @@ export function Reply({
 
   return (
     <div className="markdown">
-      <Markdown
-        components={partial ? streamingComponents : components}
-        extensions={partial ? streaming : finished}
-      >
+      <Markdown components={components} extensions={extensions}>
         {text}
       </Markdown>
       {chips.length > 0 && (

@@ -39,7 +39,6 @@ export const groupChatMembers = (context: GroupChatContext) => {
     agentId: string,
   ) {
     const agent = yield* bots.agent(agentId);
-    yield* bots.chat(agentId);
 
     const conversationId = yield* pi(() =>
       openGroupConversation(runtime, agent, group.id),

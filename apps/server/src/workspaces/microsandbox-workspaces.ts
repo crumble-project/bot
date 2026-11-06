@@ -4,9 +4,11 @@ import { Effect } from "effect";
 import {
   Rule,
   Sandbox,
+  SandboxNotFoundError,
   Volume,
   VolumeNotFoundError,
   type NetworkPolicy,
+  type SandboxHandle,
 } from "microsandbox";
 import { z } from "zod";
 import {
@@ -34,6 +36,7 @@ import {
 } from "./machine-workspaces";
 import {
   DesktopStartFailed,
+  WorkspaceRemoveFailed,
   WorkspaceStopFailed,
   WorkspaceStreamFailed,
   WorkspaceSyncFailed,
@@ -137,6 +140,22 @@ class MicrosandboxMachines implements WorkspaceMachines {
 
     return new MicrosandboxMachine(sandbox, proxy, image, desktop);
   }, Effect.scoped);
+
+  remove(agentId: string) {
+    const name = this.name(agentId);
+
+    return Effect.tryPromise({
+      try: async () => {
+        await removeSandbox(name);
+        await removeVolume(name);
+      },
+      catch: (cause) =>
+        new WorkspaceRemoveFailed({
+          message: `Removing the workspace failed: ${errorText(cause)}`,
+          cause,
+        }),
+    });
+  }
 
   private ops(sandbox: Sandbox): GuestOps {
     return {
@@ -389,16 +408,35 @@ const machineRecord = z.object({
 
 type MachineRecord = z.infer<typeof machineRecord>;
 
+const stopHandle = async (handle: SandboxHandle) => {
+  if (handle.status !== "stopped" && handle.status !== "created")
+    await handle.stopWithTimeout(STOP_TIMEOUT_MS).catch(() => handle.kill());
+};
+
+async function removeSandbox(name: string) {
+  try {
+    await stopHandle(await Sandbox.get(name));
+    await Sandbox.remove(name);
+  } catch (error) {
+    if (!(error instanceof SandboxNotFoundError)) throw error;
+  }
+}
+
+async function removeVolume(name: string) {
+  try {
+    await Volume.remove(name);
+  } catch (error) {
+    if (!(error instanceof VolumeNotFoundError)) throw error;
+  }
+}
+
 /**
  * Starts the bot's existing machine, first stopping it if a server that died left it running. Undefined when there is
  * none or it does not start: the caller then creates a new one.
  */
 async function resume(name: string): Promise<Sandbox | undefined> {
   try {
-    const handle = await Sandbox.get(name);
-
-    if (handle.status !== "stopped" && handle.status !== "created")
-      await handle.stopWithTimeout(STOP_TIMEOUT_MS).catch(() => handle.kill());
+    await stopHandle(await Sandbox.get(name));
 
     return await (await Sandbox.get(name)).start();
   } catch {

@@ -6,27 +6,25 @@ import { ACTIONS, effectOf } from "./computer-use-actions";
 import { windowName, type Window } from "./computer-use-driver";
 import {
   currentPage,
+  pageHost,
   refOf,
   scrubText,
   type ComputerUseState,
 } from "./computer-use-state";
-import type { IntentStep, IntentTarget, ProposedAction } from "./intent-check";
+import {
+  STEP_DETAILS,
+  type IntentStep,
+  type IntentTarget,
+  type Place,
+  type ProposedAction,
+  type StepDetail,
+} from "./intent-check";
 
 /** Whether an acting call may run: a refusal stops it. Waits while the owner decides. `usage` is the judge's spend. */
 export type IntentGate = (
   proposal: { action: ProposedAction; page: string | undefined },
   context: Context,
 ) => Promise<{ refusal?: string; usage?: Usage }>;
-
-function hostOf(url: string | undefined) {
-  if (!url) return undefined;
-
-  try {
-    return new URL(url).host || undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 const isTargeted = (action: string) => ACTIONS.get(action)?.targeted === true;
 
@@ -74,17 +72,17 @@ function stepTarget(step: StepArgs): IntentTarget | undefined {
 function stepOf(
   action: string,
   target: IntentTarget | undefined,
-  args: Pick<ComputerUseArgs, "text" | "keys" | "value">,
+  args: Partial<Pick<ComputerUseArgs, StepDetail>>,
 ): IntentStep {
   const step: IntentStep = { action };
 
   if (target) step.target = target;
 
-  if (args.text !== undefined) step.text = args.text;
+  for (const key of STEP_DETAILS) {
+    const value = args[key];
 
-  if (args.keys !== undefined) step.keys = args.keys;
-
-  if (args.value !== undefined) step.value = args.value;
+    if (value !== undefined) step[key] = value;
+  }
 
   return step;
 }
@@ -107,13 +105,17 @@ function placeOf(
   state: ComputerUseState,
   args: ComputerUseArgs,
   window: Window | undefined,
-) {
+): Place {
+  const own = ACTIONS.get(args.action)?.place?.(args);
+
+  if (own) return own;
+
   if (args.ref === undefined && !isBrowser(window))
     return { page: window && windowName(window) };
 
   const page = currentPage(state);
 
-  return { page, host: hostOf(page) };
+  return { page, host: pageHost(page) };
 }
 
 export function proposedAction(

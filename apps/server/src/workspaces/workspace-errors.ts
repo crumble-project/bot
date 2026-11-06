@@ -15,6 +15,11 @@ export class DesktopNotRunning extends Schema.TaggedError<DesktopNotRunning>()(
   { message: Schema.String },
 ) {}
 
+export class WorkspaceRemoveFailed extends Schema.TaggedError<WorkspaceRemoveFailed>()(
+  "WorkspaceRemoveFailed",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
 export class WorkspaceBootFailed extends Schema.TaggedError<WorkspaceBootFailed>()(
   "WorkspaceBootFailed",
   { message: Schema.String, cause: Schema.Defect() },

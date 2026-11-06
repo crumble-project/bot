@@ -29,7 +29,12 @@ import {
   readPage,
   type RefCallBuilder,
 } from "./computer-use-page";
-import { textResult, type ComputerUseState } from "./computer-use-state";
+import {
+  pageHost,
+  textResult,
+  type ComputerUseState,
+} from "./computer-use-state";
+import type { Place } from "./intent-check";
 import { runSteps } from "./computer-use-steps";
 import { isTerminal, readTerminal } from "./computer-use-terminal";
 
@@ -363,6 +368,8 @@ type ActionEntry = {
   input?: WindowInput;
   targeted?: boolean;
   refCall?: RefCallBuilder;
+  /** Where an action lands that doesn't act in a target window, so no window is pinned for it. */
+  place?: (args: ComputerUseArgs) => Place;
 };
 
 export const ACTIONS = new Map<string, ActionEntry>([
@@ -428,15 +435,19 @@ export const ACTIONS = new Map<string, ActionEntry>([
   ["list_windows", { effect: "observe", run: listing }],
   // Moves focus only.
   ["focus_window", { effect: "unchecked", input: focusWindow }],
-  // The owner's decision: launching stays unchecked, though it starts a program.
-  ["launch", { effect: "unchecked", run: launchApp }],
+  ["launch", { effect: "act", run: launchApp, place: () => ({}) }],
   ["list_apps", { effect: "observe", run: (s, _a, c) => listApps(s, c) }],
-  // The owner's decision: opening stays unchecked, though loading a URL can send data; a held `open` would change behavior.
-  ["open", { effect: "unchecked", run: inChromium(openPage) }],
+  [
+    "open",
+    {
+      effect: "act",
+      run: inChromium(openPage),
+      place: ({ url }) => ({ page: url, host: pageHost(url) }),
+    },
+  ],
   ["read", { effect: "observe", run: read }],
   ["steps", { effect: "act", run: inWindow(runSteps) }],
-  // The owner's decision: filling stays unchecked; the host check against the login guards it.
-  ["fill_login", { effect: "unchecked", run: fillLogin }],
+  ["fill_login", { effect: "act", run: fillLogin, targeted: true }],
 ]);
 
 export const ACTION_NAMES: string[] = [...ACTIONS.keys()];

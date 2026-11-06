@@ -45,6 +45,10 @@ class DirectoryWorkspaces implements Workspaces {
     return Effect.void;
   }
 
+  remove(_agentId: string) {
+    return Effect.void;
+  }
+
   openDesktop(_agentId: string) {
     return Effect.fail(
       new DesktopNotConfigured({ message: "No bot desktop in this test" }),

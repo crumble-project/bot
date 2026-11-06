@@ -4,7 +4,6 @@ import { z } from "zod";
 import type {
   Conversation,
   ConversationId,
-  ConversationRecord,
   Cursor,
   EntryId,
   EntryRecord,
@@ -56,6 +55,7 @@ import type { WaitingFor } from "../contract/reply-event";
 import type { BotCommunication } from "../contract/api-responses";
 import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
+import { JOB_FAILURE_EVENT } from "../contract/tools";
 
 type TranscriptEntryQuery = { order: "descending"; maxEntryId?: EntryId };
 
@@ -520,6 +520,9 @@ function normalizeModelEntry(
   const origin = originOf(data?.["origin"]);
   const attachments = attachmentsOf(data?.["attachments"]);
 
+  if (data?.["jobFailed"] === true && origin && input.text)
+    return normalizeJobFailure(entryId, entry, origin, input.text);
+
   return (entry.model ?? []).flatMap((message, index) => {
     const content =
       entry.kind === MESSAGE_ENTRY && input.text !== undefined
@@ -553,6 +556,28 @@ function normalizeModelEntry(
   });
 }
 
+/** A job that ended without an answer has no report to relay, so the owner sees the failure as an event. */
+function normalizeJobFailure(
+  entryId: string,
+  entry: EntryRecord,
+  origin: MessageOrigin,
+  text: string,
+): TranscriptMessage[] {
+  const timestamp = entry.model?.[0]?.timestamp;
+
+  return [
+    {
+      id: formatMessageId(entryId, 0),
+      entryId,
+      role: "event",
+      kind: JOB_FAILURE_EVENT,
+      content: text,
+      ...(timestamp !== undefined && { timestamp }),
+      origin,
+    },
+  ];
+}
+
 function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   const entryId = formatEntryId(agentId, Number(entry.id));
 
@@ -574,25 +599,6 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   return normalizeModelEntry(entryId, entry);
 }
 
-export async function conversations(
-  harness: Harness,
-): Promise<ConversationRecord[]> {
-  const records: ConversationRecord[] = [];
-  let cursor: Cursor | undefined;
-
-  do {
-    const page = await harness.commit(
-      (tx) => tx.scanConversations({}, 256, cursor),
-      BACKGROUND_CONTEXT,
-    );
-
-    records.push(...page.items.filter((record) => !record.owner));
-    cursor = page.next;
-  } while (cursor);
-
-  return records;
-}
-
 export type PageOptions = {
   before?: string | undefined;
   limit?: number | undefined;
@@ -602,42 +608,34 @@ const pageLimit = (limit: number | undefined) =>
   Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
 async function collectEntries(
-  sources: Conversation[],
+  conversation: Conversation | undefined,
   limit: number,
   before: number | undefined,
 ) {
-  const raw = new Map<number, EntryRecord>();
-  let truncated = false;
+  if (!conversation) return { entries: [], truncated: false };
 
-  for (const conversation of sources) {
-    const query: TranscriptEntryQuery = { order: "descending" };
+  const query: TranscriptEntryQuery = { order: "descending" };
 
-    if (before !== undefined) {
-      // SAFETY: parseEntryRef validated a positive safe integer; subtracting one
-      // gives the inclusive entry bound immediately before that cursor.
-      query.maxEntryId = (before - 1) as EntryId;
-    }
-
-    const page = await conversation.entries(
-      query,
-      limit + 1,
-      undefined,
-      BACKGROUND_CONTEXT,
-    );
-
-    for (const entry of page.items) raw.set(Number(entry.id), entry);
-    truncated ||= page.next !== undefined;
+  if (before !== undefined) {
+    // SAFETY: parseEntryRef validated a positive safe integer; subtracting one
+    // gives the inclusive entry bound immediately before that cursor.
+    query.maxEntryId = (before - 1) as EntryId;
   }
 
-  const entries = [...raw.values()].sort((a, b) => Number(b.id) - Number(a.id));
+  const page = await conversation.entries(
+    query,
+    limit + 1,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
 
-  return { entries, truncated };
+  return { entries: page.items, truncated: page.next !== undefined };
 }
 
-/** Newest-first page over the given conversations. Entry IDs are global, which makes them a shared cursor. */
+/** Newest-first page over one conversation. */
 async function readPage(
   agentId: string,
-  sources: Conversation[],
+  conversation: Conversation | undefined,
   options: PageOptions,
 ): Promise<TranscriptPage> {
   const limit = pageLimit(options.limit);
@@ -647,7 +645,12 @@ async function readPage(
       ? undefined
       : parseEntryRef(agentId, options.before, "history cursor");
 
-  const { entries, truncated } = await collectEntries(sources, limit, before);
+  const { entries, truncated } = await collectEntries(
+    conversation,
+    limit,
+    before,
+  );
+
   const messages: TranscriptMessage[] = [];
   let consumed = 0;
 
@@ -672,18 +675,7 @@ export async function readTranscript(
   agentId: string,
   options: PageOptions = {},
 ): Promise<TranscriptPage> {
-  const sources: Conversation[] = [];
-
-  for (const item of await conversations(harness)) {
-    const conversation = await harness.conversation(
-      item.id,
-      BACKGROUND_CONTEXT,
-    );
-
-    if (conversation) sources.push(conversation);
-  }
-
-  return readPage(agentId, sources, options);
+  return readPage(agentId, await harness.root(BACKGROUND_CONTEXT), options);
 }
 
 export async function readConversationTranscript(
@@ -697,7 +689,7 @@ export async function readConversationTranscript(
     BACKGROUND_CONTEXT,
   );
 
-  return readPage(agentId, conversation ? [conversation] : [], options);
+  return readPage(agentId, conversation, options);
 }
 
 const entriesBetween = (
@@ -721,23 +713,6 @@ const entriesBetween = (
 export const entryAt = async (conversation: Conversation, id: number) =>
   (await entriesBetween(conversation, id, id, 1)).items[0];
 
-async function findOwner(
-  harness: Harness,
-  entryId: number,
-): Promise<Conversation | undefined> {
-  for (const item of await conversations(harness)) {
-    const conversation = await harness.conversation(
-      item.id,
-      BACKGROUND_CONTEXT,
-    );
-
-    if (conversation && (await entryAt(conversation, entryId)))
-      return conversation;
-  }
-
-  return undefined;
-}
-
 /** Bounds the target and its neighbours before admission so retries and restarts reuse one durable input. */
 export async function prepareReply(
   harness: Harness,
@@ -746,12 +721,13 @@ export async function prepareReply(
   content: string,
 ) {
   const target = parseEntryRef(agentId, replyTo, "reply target");
-  const owner = await findOwner(harness, target);
+  const chat = await harness.root(BACKGROUND_CONTEXT);
 
-  if (!owner) throw new InvalidInput({ message: "Reply target not found" });
+  if (!(await entryAt(chat, target)))
+    throw new InvalidInput({ message: "Reply target not found" });
 
   const nearby = await entriesBetween(
-    owner,
+    chat,
     Math.max(1, target - REPLY_WINDOW),
     target + REPLY_WINDOW,
     REPLY_WINDOW * 2 + 1,
@@ -811,8 +787,7 @@ export async function readAttachment(
 ): Promise<{ mimeType: string; data: Buffer }> {
   const target = parseEntryRef(agentId, entryRef, "attachment entry", NotFound);
 
-  const owner = await findOwner(harness, target);
-  const entry = owner && (await entryAt(owner, target));
+  const entry = await entryAt(await harness.root(BACKGROUND_CONTEXT), target);
 
   const image =
     entry && (inputImage(entry, index) ?? screenshotImage(entry, index));

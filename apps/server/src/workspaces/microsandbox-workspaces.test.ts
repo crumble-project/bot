@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, mock, spyOn, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
 import { Effect } from "effect";
-import { Sandbox } from "microsandbox";
+import {
+  Sandbox,
+  SandboxHandle,
+  SandboxNotFoundError,
+  Volume,
+  VolumeNotFoundError,
+} from "microsandbox";
 import {
   MicrosandboxWorkspaces,
   microsandboxWorkspacesFromEnv,
@@ -84,6 +90,61 @@ describe("workspace configuration", () => {
 
     for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
       expect(() => workspaces.env(agentId)).toThrow("Invalid agent id");
+  });
+});
+
+describe("removing a workspace", () => {
+  const workspaces = microsandboxWorkspacesFromEnv(
+    { CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev" },
+    { namePrefix, size },
+  )!;
+
+  const name = `${namePrefix}-bot`;
+
+  test("stops a machine a dead server left running, then deletes it and its volume", async () => {
+    const calls: string[] = [];
+
+    const handle: SandboxHandle = Object.create(SandboxHandle.prototype, {
+      status: { value: "running" },
+      stopWithTimeout: { value: async () => void calls.push("stop") },
+      kill: { value: async () => void calls.push("kill") },
+    });
+
+    spyOn(Sandbox, "get").mockResolvedValue(handle);
+    spyOn(Sandbox, "remove").mockImplementation(
+      async (each) => void calls.push(`remove ${each}`),
+    );
+    spyOn(Volume, "remove").mockImplementation(
+      async (each) => void calls.push(`volume ${each}`),
+    );
+
+    await Effect.runPromise(workspaces.remove("bot"));
+
+    expect(calls).toEqual(["stop", `remove ${name}`, `volume ${name}`]);
+    mock.restore();
+  });
+
+  test("a bot that never booted has nothing to delete", async () => {
+    spyOn(Sandbox, "get").mockRejectedValue(
+      new SandboxNotFoundError("no sandbox"),
+    );
+    spyOn(Volume, "remove").mockRejectedValue(
+      new VolumeNotFoundError("no volume"),
+    );
+
+    await Effect.runPromise(workspaces.remove("bot"));
+    mock.restore();
+  });
+
+  test("any other failure is reported, with the volume untouched", async () => {
+    spyOn(Sandbox, "get").mockRejectedValue(new Error("database locked"));
+    const volume = spyOn(Volume, "remove");
+
+    await expect(Effect.runPromise(workspaces.remove("bot"))).rejects.toThrow(
+      "database locked",
+    );
+    expect(volume).not.toHaveBeenCalled();
+    mock.restore();
   });
 });
 

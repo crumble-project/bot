@@ -1456,7 +1456,7 @@ describe("HTTP API for script tasks and schedules", () => {
     const denied = await create(draft);
     expect(denied.status).toBe(403);
     expect(await denied.json()).toEqual({
-      error: "Script tasks need coding jobs",
+      error: "Script automations need coding jobs",
     });
 
     const prompt = scheduler.create(

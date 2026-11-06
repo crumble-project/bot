@@ -472,7 +472,7 @@ export function JobPanel({
           </Button>
         </div>
       </header>
-      {current?.question && (
+      {job.kind === "coding" && current?.question && (
         <div className="shrink-0 border-b p-4">
           <JobQuestionAnswer
             botId={botId}

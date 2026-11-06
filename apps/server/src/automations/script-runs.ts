@@ -122,7 +122,11 @@ export class ScriptRuns extends Context.Service<
             )
             .pipe(
               Effect.catchCause((cause) =>
-                Effect.logError("Script task notice failed", run.id, cause),
+                Effect.logError(
+                  "Script automation notice failed",
+                  run.id,
+                  cause,
+                ),
               ),
             );
       });

@@ -78,7 +78,7 @@ export function coordinationExtension(
   const list = defineTool({
     name: "list_bots",
     description:
-      "List the enabled bots you may message, with their names, IDs, and descriptions. Use this to identify a bot named or @mentioned by the owner. Sending requires permission configured in your profile.",
+      "List the enabled bots you may message, with their names, IDs, and descriptions. Use this to identify a bot named or @mentioned by the owner.",
     parameters: Type.Object({}),
     structuredOutputSchema: Type.Array(
       Type.Object({
