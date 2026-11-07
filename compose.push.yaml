@@ -1,0 +1,12 @@
+# Remote push from this server. Keep the key files outside the repository:
+#   docker compose -f compose.yaml -f compose.push.yaml up -d
+services:
+  crumble:
+    environment:
+      CRUMBLE_APNS_TEAM_ID: ${CRUMBLE_APNS_TEAM_ID:-}
+      CRUMBLE_APNS_KEY_ID: ${CRUMBLE_APNS_KEY_ID:-}
+      CRUMBLE_APNS_PRIVATE_KEY_PATH: ${CRUMBLE_APNS_PRIVATE_KEY_PATH:-}
+      CRUMBLE_APNS_ALLOWED_TOPICS: ${CRUMBLE_APNS_ALLOWED_TOPICS:-}
+      CRUMBLE_FCM_SERVICE_ACCOUNT_PATH: ${CRUMBLE_FCM_SERVICE_ACCOUNT_PATH:-}
+    volumes:
+      - ${CRUMBLE_PUSH_KEYS_DIR:?Set CRUMBLE_PUSH_KEYS_DIR to the host folder with the push keys}:/run/crumble-push:ro
