@@ -67,7 +67,7 @@ export const CLIENT_DOCUMENT_PATH = "/oauth/client-metadata.json";
 const NATIVE_REDIRECTS = [
   "ng.crumbli.mac:/oauth/callback",
   "ng.crumbli.mac.dev:/oauth/callback",
-  "dev.crumble.ios:/oauth/callback",
+  "ng.crumbli.ios:/oauth/callback",
 ];
 
 /**

@@ -107,6 +107,31 @@ disk. If unwrapping fails, both files stay as they were.
 
 Then unset `CRUMBLE_MASTER_KEY` and start the server.
 
+## Push Notifications
+
+Without push keys, the apps post local notifications only while they're
+connected to the server. To reach a phone in the background, give the server
+keys for the Apple Push Notification service (APNs), Firebase Cloud Messaging
+(FCM), or both. Only keys that belong to the app's developer can reach that
+build of the app, so this works for apps you sign yourself.
+
+Put the APNs `.p8` key and the FCM service account JSON in a folder outside the
+repository, readable by the container's `bun` user, then start the server:
+
+```bash
+CRUMBLE_PUSH_KEYS_DIR=/srv/crumble/push-keys \
+CRUMBLE_APNS_TEAM_ID=TEAM_ID \
+CRUMBLE_APNS_KEY_ID=KEY_ID \
+CRUMBLE_APNS_PRIVATE_KEY_PATH=/run/crumble-push/AuthKey_KEY_ID.p8 \
+CRUMBLE_APNS_ALLOWED_TOPICS=ng.crumbli.ios \
+CRUMBLE_FCM_SERVICE_ACCOUNT_PATH=/run/crumble-push/fcm-service-account.json \
+  docker compose -f compose.yaml -f compose.push.yaml up -d
+```
+
+Set all four `CRUMBLE_APNS_*` variables or none. A partial or invalid push
+configuration stops accounts from starting, with an error that begins
+`Push configuration:`. `GET /v1/push` shows which transports are active.
+
 ## Environment Variables
 
 | Variable                          | Default            | Purpose                                                                                                   |
