@@ -74,6 +74,13 @@ export const snapshotInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
+export const chatEventsInput = snapshotInput.extend({
+  partial: z.stringbool().optional().openapi({
+    description:
+      "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends.",
+  }),
+});
+
 export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
 });
@@ -719,7 +726,7 @@ export const routes = {
     },
     description:
       "Server-sent events. Each snapshot event carries a ChatSnapshot JSON object in data. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. Reconnect by fetching the current snapshot; there is no Last-Event-ID replay.",
-    request: { params: id, query: snapshotInput },
+    request: { params: id, query: chatEventsInput },
     responses: {
       200: {
         description: "SSE stream, not a JSON array",

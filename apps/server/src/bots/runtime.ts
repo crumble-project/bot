@@ -1,4 +1,8 @@
-import { BOT_MESSAGE_ENTRY, MESSAGE_ENTRY } from "../transcript/entries";
+import {
+  BOT_MESSAGE_ENTRY,
+  contentText,
+  MESSAGE_ENTRY,
+} from "../transcript/entries";
 import type { InputOrigin } from "../transcript/origins";
 import {
   BACKGROUND_CONTEXT,
@@ -110,6 +114,12 @@ export type RuntimeSnapshot = {
   oldestEntryId: string | null;
   status: "idle" | "running";
   updatedAt: number;
+};
+
+/** Options for a chat snapshot. `partial` opts into the in-flight reply text, which snapshots hide by default. */
+export type SnapshotOptions = {
+  limit?: number | undefined;
+  partial?: boolean | undefined;
 };
 
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
@@ -860,7 +870,7 @@ export class AgentRuntime {
   async snapshot(
     agent: Agent,
     conversationId: string,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ): Promise<RuntimeSnapshot> {
     const { harness } = await this.open(agent);
 
@@ -891,7 +901,9 @@ export class AgentRuntime {
         ...transcript,
         messages,
         live: publicLive(live),
-        partial: "",
+        partial: options.partial
+          ? contentText(live?.generation?.message?.content)
+          : "",
         usage: view.value.docs["pi.usage"],
         status: live?.run ? "running" : "idle",
         updatedAt: Date.now(),
@@ -1028,7 +1040,7 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
     callback: RuntimeWatch,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ): Promise<() => Promise<void>> {
     const stream = await watchEvents(
       (await this.open(agent)).harness,

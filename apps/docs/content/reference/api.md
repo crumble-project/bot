@@ -76,3 +76,9 @@ Streams use Server-Sent Events:
 Every stream sends `event: heartbeat` with `data: {}` every 15 seconds. A
 client should ignore heartbeats and event types it doesn't know, and fetch a
 fresh snapshot after it reconnects.
+
+A chat snapshot's `partial` is empty unless you open
+`/v1/agents/{id}/events?partial=true`. Then it carries the text of the reply
+the bot is writing, updated about every 100 ms, and replies still appear in
+`messages` only when the turn ends. When the bot calls a tool between two
+pieces of text, `partial` starts over with the next piece.

@@ -342,7 +342,10 @@ export const chatSnapshotResponse = historyResponse
       description:
         "Pi Durable live progress state. In-flight assistant message content is omitted.",
     }),
-    partial: z.string(),
+    partial: z.string().openapi({
+      description:
+        "Text of the reply the bot is writing now. Empty unless the event stream was opened with partial=true.",
+    }),
     usage: z
       .unknown()
       .optional()

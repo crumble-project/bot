@@ -608,6 +608,32 @@ test("hides in-flight assistant text and cancellation settles the submission", a
   await stop();
 });
 
+test("shows in-flight assistant text only to snapshots that ask for it", async () => {
+  const { runtime, faux } = setup({}, true);
+  const a = makeAgent();
+  const conversation = await runtime.openChat(a);
+
+  const answer =
+    "A deliberately long response that streams while it is written. ".repeat(
+      100,
+    );
+
+  faux.setResponses([fauxAssistantMessage(answer)]);
+
+  const submission = await runtime.submit(a, conversation, "go", "partial");
+  await Bun.sleep(180);
+  const streamed = await runtime.snapshot(a, conversation, { partial: true });
+  const hidden = await runtime.snapshot(a, conversation);
+  expect(streamed.status).toBe("running");
+  // The snapshot catches the reply mid-stream: a non-empty prefix of the answer.
+  expect(streamed.partial.length).toBeGreaterThan(0);
+  expect(answer.startsWith(streamed.partial)).toBe(true);
+  expect(hidden.partial).toBe("");
+  expect(JSON.stringify(streamed.live)).not.toContain(streamed.partial);
+  await runtime.abort(a, conversation);
+  await runtime.wait(submission, a);
+});
+
 test("publishes the complete assistant entry only after the run ends", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();

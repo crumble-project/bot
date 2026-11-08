@@ -10,7 +10,7 @@ import {
   UNKNOWN_SCHEDULE_NAME,
   type InputOrigin,
 } from "../transcript/origins";
-import type { RuntimeWatch } from "./runtime";
+import type { RuntimeWatch, SnapshotOptions } from "./runtime";
 import {
   latestMessagePreview,
   type PageOptions,
@@ -73,7 +73,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
 
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ) {
     const { agent: owner, conversation: found } =
       yield* conversation(conversationId);
@@ -136,7 +136,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       agentId: string,
       conversationId: string,
       callback: RuntimeWatch,
-      options: { limit?: number | undefined },
+      options: SnapshotOptions,
     ) =>
       withAgent(agentId, (owner) =>
         runtime.watch(owner, conversationId, callback, options),

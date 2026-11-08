@@ -1017,7 +1017,8 @@
                 "description": "Pi Durable live progress state. In-flight assistant message content is omitted."
               },
               "partial": {
-                "type": "string"
+                "type": "string",
+                "description": "Text of the reply the bot is writing now. Empty unless the event stream was opened with partial=true."
               },
               "usage": {
                 "description": "Pi Durable usage document."
@@ -13259,6 +13260,16 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends."
+            },
+            "required": false,
+            "description": "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends.",
+            "name": "partial",
             "in": "query"
           }
         ],

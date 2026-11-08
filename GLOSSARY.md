@@ -26,6 +26,10 @@ _Avoid_: Message execution, completed bot work
 A connection that sends the owner's messages from an external platform to an existing bot chat and returns only their associated answers. Discord is the first supported platform.
 _Avoid_: Chat mirror, new session
 
+**Voice gateway**:
+A connection that carries phone calls between the owner and a bot's chat over a telephone system: each bot has its own line, the owner's speech arrives as messages, and the bot's answers are spoken back. A bot can also call the owner.
+_Avoid_: Phone bot, voice session, call agent
+
 **Group chat**:
 A conversation between the owner and several bots, with one shared transcript in which every message shows its sender. It is separate from each member's bot chat.
 _Avoid_: Room, channel, group session
