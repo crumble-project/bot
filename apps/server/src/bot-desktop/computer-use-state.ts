@@ -26,7 +26,6 @@ export type ComputerUseState = {
   filled: Map<string, string>;
   browsers: Set<string>;
   fills: DesktopFills | undefined;
-  restored: Promise<void> | undefined;
 };
 
 export type ComputerUseOptions = {
@@ -51,7 +50,6 @@ export function computerUseState(
     filled: new Map(),
     browsers: new Set(),
     fills,
-    restored: undefined,
     lastChanges: undefined,
     snapshots: new Map(),
     elements: new Map(),

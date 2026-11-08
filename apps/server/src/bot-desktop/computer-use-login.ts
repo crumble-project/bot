@@ -273,14 +273,8 @@ export function scrubFilled(
   };
 }
 
-/** Labels the passwords typed on this desktop before, once per job: Chromium outlives a job, so a page may still show one. */
-export function restoreFilled(state: ComputerUseState) {
-  state.restored ??= restore(state);
-
-  return state.restored;
-}
-
-async function restore(state: ComputerUseState) {
+/** Refresh passwords typed on this desktop: Chromium can outlive the job that filled them. */
+export async function restoreFilled(state: ComputerUseState) {
   for (const fill of (await state.fills?.list()) ?? []) {
     state.filled.set(fill.value, fill.label);
     state.browsers.add(fill.browser);
