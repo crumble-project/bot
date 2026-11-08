@@ -12,6 +12,7 @@ No application code, existing tests, dependencies, or configuration were changed
 
 ## Remediation status
 
+- **F02 implemented:** Persisted OAuth generations prevent older sign-in and refresh work from restoring local authorization after sign-out or client changes. All 20 focused tests pass; independent review found no issues. See the [implemented specification](designs/mcp-oauth-invalidation.md) and [F02 verification evidence](#finding-f02). Sign-out does not revoke the remote grant.
 - **F01 implemented:** Computer-use calls refresh persisted password-exposure records before dispatch and refuse dispatch if refreshing fails. Historical password scrubbing and Chromium-instance screenshot rules remain unchanged. All 34 focused tests pass; independent review found no issues. See the [implemented specification](designs/password-exposure-refresh.md) and [F01 verification evidence](#finding-f01). The audit classifications and counts remain historical findings, not a count of unresolved defects.
 
 ## Scope and revision
@@ -789,6 +790,10 @@ Pending records survive restart; expired records are ignored but not automatical
 <a id="finding-f02"></a>
 
 #### F02 — P1, high confidence — MCP sign-out is undone by older OAuth completion (I09)
+
+**Remediation implemented:** The [MCP OAuth invalidation design](designs/mcp-oauth-invalidation.md) fences persisted authorization with non-reused generations and checks the current server configuration. Client updates invalidate before mutation and after publication. Local gated OAuth and encrypted-store tests exercise delayed exchange, registration, successful and failed refresh, client updates, legacy records, and storage failures. Independent review found no meaningful issues.
+
+**Verification:** `bun test apps/server/src/integrations/mcp-oauth.test.ts apps/server/src/integrations/mcp-servers.test.ts` passed all 20 tests with 64 assertions, independently rerun by the reviewer. Pre-fix runs demonstrated stale exchanges, registration, and client-secret lookup succeeding after sign-out, plus the client-update race; some compatibility and fault tests were added after the fix. `CRUMBLE_VM_TESTS=0 CRUMBLE_RAILWAY_TESTS=0 bun run check` passed with 1,080 tests passed, 118 skipped, and 0 failed. Two earlier final-check attempts stopped on test-spacing lint errors, corrected before this passing run. The documentation check passed. These tests do not prove crash durability, multi-process safety, or remote grant revocation.
 
 **Evidence qualification:** The OAuth reproduction uses the real exchange and an in-memory storage seam. Durable storage/restart implications are source-proven, not a disk-reopen experiment. Sign-out does not revoke the remote grant.
 

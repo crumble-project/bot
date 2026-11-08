@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- MCP sign-out and OAuth client changes now prevent older sign-in and refresh requests from restoring local authorization. Sign-out does not revoke the remote grant.
 - Resumed desktop jobs refresh password protection after other jobs fill logins, preventing stale exposure records from leaking passwords in desktop output.
 - Native sign-in accepts the iOS app's new `ng.crumbli.ios:/oauth/callback` redirect instead of `dev.crumble.ios:/oauth/callback`.
 - `compose.push.yaml` passes APNs and FCM keys to the server container, and the self-hosting docs describe how to set up remote push.

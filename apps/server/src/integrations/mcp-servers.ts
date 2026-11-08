@@ -79,7 +79,11 @@ export class McpServers extends Context.Service<
       const { oauthClient } = integrations;
 
       const storage = secretStorage(
-        runnerOf(yield* Effect.context<ServerSecrets | Secrets>()),
+        runnerOf(
+          yield* Effect.context<
+            ServerSecrets | Secrets | McpServerRepository
+          >(),
+        ),
       );
 
       const withSecrets = Effect.fnUntraced(function* (server: MCPServer) {
@@ -180,25 +184,29 @@ export class McpServers extends Context.Service<
         old: MCPServer,
         input: z.output<typeof mcpInput>,
       ) {
+        const appChanged =
+          input.oauthClientSecret !== undefined ||
+          (input.oauthClientId ?? null) !== old.oauthClientId;
+
+        if (appChanged) signOut(storage, old.id);
+
         const tokenChanged = yield* storeSecret(
           mcpTokenKey(old.id),
           input.token,
         );
 
-        const appChanged =
-          (yield* storeSecret(
-            clientSecretKey(old.id),
-            input.oauthClientSecret,
-          )) || (input.oauthClientId ?? null) !== old.oauthClientId;
+        yield* storeSecret(clientSecretKey(old.id), input.oauthClientSecret);
 
-        if (appChanged) signOut(storage, old.id);
-
-        if (tokenChanged || appChanged) yield* integrations.disconnect(old.id);
+        if (tokenChanged && !appChanged) yield* integrations.disconnect(old.id);
 
         const updated = yield* servers.update(old.id, {
           ...input,
           oauthClientId: input.oauthClientId ?? null,
         });
+
+        if (appChanged) signOut(storage, old.id);
+
+        if (appChanged) yield* integrations.disconnect(old.id);
 
         return updated && (yield* withSecrets(updated));
       });

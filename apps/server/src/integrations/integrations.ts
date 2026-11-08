@@ -179,7 +179,11 @@ export class McpIntegrations extends Context.Service<
         const secrets = yield* Secrets;
 
         const storage = secretStorage(
-          runnerOf(yield* Effect.context<ServerSecrets | Secrets>()),
+          runnerOf(
+            yield* Effect.context<
+              ServerSecrets | Secrets | McpServerRepository
+            >(),
+          ),
         );
 
         const timeout = options.requestTimeoutMs ?? 30_000;
