@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The server serves its OpenAPI document at `GET /openapi.json` without authentication.
+- Contributors no longer need oasdiff. The contract compatibility check, its CI workflow, and the automatic `openapi/` regeneration in `pre-commit` are gone; run `bun run openapi:generate` yourself.
 - GitHub owner sign-out removes local authorization before attempting remote revocation. Older refreshes and sign-in completions can no longer restore signed-out state or overwrite a newer sign-in.
 - MCP sign-out and OAuth client changes now prevent older sign-in and refresh requests from restoring local authorization. Sign-out does not revoke the remote grant.
 - Resumed desktop jobs refresh password protection after other jobs fill logins, preventing stale exposure records from leaking passwords in desktop output.

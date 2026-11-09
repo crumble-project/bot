@@ -6,17 +6,18 @@ sidebar:
 ---
 
 Everything the web app does goes through the HTTP API under `/v1`, so anything
-you can click, you can script. The full contract is
-[`openapi/openapi.json`](https://github.com/crumble-project/bot/blob/main/openapi/openapi.json)
-(OpenAPI 3.1).
+you can click, you can script. Every server serves its full contract at
+`GET /openapi.json` (OpenAPI 3.1), matching the version it runs. The same file
+for the latest source is
+[`openapi/openapi.json`](https://github.com/crumble-project/bot/blob/main/openapi/openapi.json).
 
 The API calls bots `agents`, so bot endpoints start with `/v1/agents`. The two
 words mean the same thing.
 
 ## Authenticating
 
-Every `/v1` request needs an account session. `GET /health` is the only public
-endpoint.
+Every `/v1` request needs an account session. `GET /health` and
+`GET /openapi.json` are public.
 
 Sign in to get a session token:
 

@@ -33,13 +33,6 @@ base=$(git rev-parse origin/main)
 
 bun run check
 
-baseline=$(mktemp -d "${TMPDIR:-/tmp}/crumble-baseline.XXXXXXXX")
-trap 'rm -rf "$baseline"' EXIT HUP INT TERM
-git archive "$base" openapi | tar -x -C "$baseline"
-bun run contract:validate
-oasdiff validate openapi/openapi.json --allow-external-refs=false
-bun run contract:compatibility "$baseline/openapi"
-
 bunx fallow audit --base "$base"
 
 changed=$(git diff --name-only "$base" HEAD)

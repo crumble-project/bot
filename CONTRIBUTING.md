@@ -67,7 +67,6 @@ To report a security vulnerability, follow [`SECURITY.md`](SECURITY.md). Don't o
 You need:
 
 - **Bun:** the exact version in [`.bun-version`](.bun-version). Git hooks and CI enforce it.
-- **oasdiff `1.35.0`:** on your `PATH`, for the OpenAPI checks in `pre-push`.
 - **Workspaces (optional):** Apple silicon on macOS or `/dev/kvm` on Linux for Microsandbox workspaces, or a Railway token and environment ID for Railway sandboxes.
 
 To start the server:
@@ -156,7 +155,7 @@ For example, `feat(web): add bot avatars`. Replace the placeholders as follows:
 - **Types:** `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, or `chore`.
 - **Scope:** optional; name the affected area when it helps, such as `web`, `skills`, or `gateway`.
 - **Description:** lowercase and imperative, preferably under 72 characters.
-- **Breaking changes:** add `!` after the type or scope and explain the break in the commit body. A breaking API change also raises the major version of `info.version` in the contract, which is what lets the compatibility check pass.
+- **Breaking changes:** add `!` after the type or scope and explain the break in the commit body.
 
 The `commit-msg` hook checks each commit, and the PR title workflow checks pull request titles. Both use [`.githooks/check-conventional-commit.sh`](.githooks/check-conventional-commit.sh).
 
@@ -164,9 +163,9 @@ The `commit-msg` hook checks each commit, and the PR title workflow checks pull 
 
 `bun install` configures Git to use [`.githooks/`](.githooks). Skip a hook once with `--no-verify`.
 
-- **`pre-commit`:** checks the Bun version, regenerates and stages `openapi/` artifacts from staged contract files, runs `agents:check`, `lint`, `format:check`, and `typecheck` on the whole tree, and runs `fallow audit` on changes since `HEAD`.
+- **`pre-commit`:** checks the Bun version, runs `agents:check`, `lint`, `format:check`, and `typecheck` on the whole tree, and runs `fallow audit` on changes since `HEAD`.
 - **`commit-msg`:** rejects a commit whose subject isn't a Conventional Commit. Merge, revert, `fixup!`, `squash!`, and `amend!` commits that Git writes are allowed.
-- **`pre-push`:** refuses the push if the working tree has uncommitted or untracked files, or if the pushed branch isn't checked out. It then runs the full PR suite against `origin/main`: `bun install --frozen-lockfile`, `bun run check`, `contract:validate`, `oasdiff validate`, `contract:compatibility`, `fallow audit`, and `apps/docs` / `apps/site` builds when those directories changed.
+- **`pre-push`:** refuses the push if the working tree has uncommitted or untracked files, or if the pushed branch isn't checked out. It then runs the full PR suite against `origin/main`: `bun install --frozen-lockfile`, `bun run check`, `fallow audit`, and `apps/docs` / `apps/site` builds when those directories changed.
 
 ## Database migrations
 
@@ -179,15 +178,9 @@ bun run --cwd apps/server db:generate:push --name short_description  # push.sqli
 
 ## API contract
 
-Route and SSE schemas in `apps/server/src/contract/` generate everything in [`openapi/`](openapi). After changing a route or event schema:
+Route and SSE schemas in `apps/server/src/contract/` generate everything in [`openapi/`](openapi). After changing a route or event schema, run `bun run openapi:generate` and commit the result. `bun run check` fails while the files are stale.
 
-```bash
-bun run openapi:generate                           # Regenerate openapi/
-bun run contract:validate                          # Validate the JSON Schemas offline
-bun run contract:compatibility BASELINE_DIRECTORY  # Check compatibility against a baseline OpenAPI directory
-```
-
-Replace `BASELINE_DIRECTORY` with the path to the OpenAPI directory that you compare against. The `pre-push` hook also validates `openapi/openapi.json` with `oasdiff`.
+A running server also serves its spec at `GET /openapi.json`, without authentication.
 
 ## Recognition
 
