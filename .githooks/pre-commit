@@ -3,7 +3,6 @@
 set -eu
 hooks=$(dirname "$0")
 "$hooks/check-bun-version.sh"
-"$hooks/generate-contract.sh"
 bun run agents:check
 bun run lint
 bun run format:check

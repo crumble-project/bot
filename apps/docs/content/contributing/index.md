@@ -71,12 +71,10 @@ bun run --cwd apps/server db:generate:push --name short_description  # push.sqli
 ## Changing the API Contract
 
 Route and event schemas in `apps/server/src/contract/` generate everything in
-`openapi/`. After changing them:
+`openapi/`. After changing them, regenerate and commit the files:
 
 ```bash
-bun run openapi:generate        # regenerate openapi/
-bun run contract:validate       # validate the JSON Schemas offline
-bun run contract:compatibility BASELINE_DIRECTORY  # compare against a baseline OpenAPI directory
+bun run openapi:generate
 ```
 
 `bun run openapi:check` fails if the generated files are out of date, and

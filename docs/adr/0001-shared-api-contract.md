@@ -1,6 +1,6 @@
 # Shared API contract distribution
 
-> Superseded for bot contract distribution. See [API contract maintenance](../api-contract.md) for the current workflow. Client repositories have not been migrated.
+> Superseded for bot contract distribution. See [API contract maintenance](../api-contract.md) for the current workflow, which no longer checks compatibility. Client repositories have not been migrated.
 
 `bot` owns and distributes the HTTP and SSE API contract from its route and response Zod schemas. `spec` holds authored specifications and links to `bot` releases.
 

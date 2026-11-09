@@ -23,20 +23,32 @@ import type { Workspaces } from "../workspaces/workspace";
 import { devWorkspaceEnv } from "./dev-workspaces";
 import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
 import type { ServerSettings } from "./server-settings";
+import { openAPIDocument } from "../contract/api-contract";
 
 const TENANT_PREFIXES = ["/v1/", `${VIEWER_PREFIX}/`, "/api/auth/"];
 
 const SERVER_PATHS = [
   ...TENANT_PREFIXES.map((prefix) => `${prefix}*`),
   "/health",
+  "/openapi.json",
   CLIENT_DOCUMENT_PATH,
 ];
+
+let openAPI: string | undefined;
 
 function hostedResponse(
   path: string,
   oauthClient: ClientDocument | undefined,
 ): Response | undefined {
   if (path === "/health") return Response.json({ status: "ok", apiVersion: 1 });
+
+  if (path === "/openapi.json") {
+    openAPI ??= JSON.stringify(openAPIDocument());
+
+    return new Response(openAPI, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   if (path === CLIENT_DOCUMENT_PATH)
     return oauthClient

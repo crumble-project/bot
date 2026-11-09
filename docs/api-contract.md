@@ -1,13 +1,12 @@
 # API contract maintenance
 
-`bot` generates the HTTP and server-sent event (SSE) specifications from its Zod route and response schemas. Each Git commit identifies its generated artifacts. The OpenAPI `info.version` remains a required document field; it is not a release identifier and does not need a bump for each change, only a higher major version for a breaking change.
+`bot` generates the HTTP and server-sent event (SSE) specifications from its Zod route and response schemas. A running server serves the same document at `GET /openapi.json` without authentication; client integrations should read it there or from `openapi/`. The OpenAPI `info.version` is a required document field, not a release identifier. Nothing enforces compatibility: coordinate breaking changes with the client repositories by hand.
 
 ## Exported artifacts
 
 ```bash
 bun run openapi:generate
 bun run openapi:check
-bun run contract:validate
 ```
 
 | Artifact | Source |
@@ -23,12 +22,7 @@ bun run contract:validate
 ## Change workflow
 
 1. Update the Zod schema and route handler together, using stable operation IDs.
-2. Stage the source changes and commit them. The pre-commit hook generates and stages the artifacts from the staged source.
-3. Push. The pre-push hook runs `bun run check` and `bun run contract:validate`, then compares against `origin/main`'s `openapi` directory.
-
-To compare by hand, run `bun run contract:compatibility BASELINE_DIRECTORY`, replacing `BASELINE_DIRECTORY` with the path to the base commit's `openapi` directory. It needs oasdiff 1.35.0. Pull request CI checks out the exact base commit and runs this comparison automatically. It rejects breaking HTTP and event schema changes unless `info.version` has a higher major version than the base, and saves the reports as a workflow artifact. Bump the major version for an intentional break, and coordinate it before merging. A comparison with the base commit does not establish compatibility with every older deployed server or client.
-
-The hook preserves unstaged edits to generated files. If you skip the hook, run `bun run openapi:generate` and stage the artifacts yourself.
+2. Run `bun run openapi:generate` and commit the regenerated `openapi/` files with the change. `bun run check` fails while they are stale.
 
 The repository does not publish contract releases or bundles. To retrieve the specification for a server revision, use that revision's committed `openapi/` directory.
 
