@@ -100,6 +100,10 @@ methods:
 If a server is offline or its sign-in has expired, the bot answers without
 that server's tools.
 
+Signing out immediately removes the local OAuth authorization. Older sign-in
+or refresh requests can't restore it. Signing out doesn't revoke the grant at
+the MCP server; revoke it there separately if needed.
+
 ### Tokens in a Password Manager
 
 A bearer token can come from 1Password or Bitwarden Secrets Manager instead of

@@ -467,6 +467,152 @@ async function laterCapture(
   };
 }
 
+async function resumedCapture(restarted: boolean) {
+  const desk = fakeDesk();
+
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: '- [3] textbox "Field" value="hunter2"',
+        screenshot_width: 1,
+      },
+    ],
+  });
+
+  const tool = createComputerUse(guest.shell, { fills: desk.fills });
+  await tool.run({ action: "read" }, BACKGROUND_CONTEXT);
+  await readThenFill(
+    "https://github.com/login",
+    { login: "github", field: "password", ref: "p1:2" },
+    {},
+    fakeLogins(undefined, desk),
+  );
+  expect(desk.record).toHaveLength(1);
+
+  if (restarted) guest.state.processStart = "Thu Oct 30 11:00:00 2026";
+
+  return tool.run({ action: "capture", mode: "vision" }, BACKGROUND_CONTEXT);
+}
+
+test("a resumed job refreshes passwords filled by another job", async () => {
+  const result = await resumedCapture(false);
+  expect(text(result)).not.toContain("hunter2");
+  expect(text(result)).toContain("[login github password]");
+  expect(result.content.some((part) => part.type === "image")).toBe(false);
+});
+
+test("a resumed job scrubs later passwords after Chromium restarts", async () => {
+  const result = await resumedCapture(true);
+  expect(text(result)).not.toContain("hunter2");
+  expect(text(result)).toContain("[login github password]");
+  expect(result.content.some((part) => part.type === "image")).toBe(true);
+});
+
+test("a failed refresh refuses an initialized job", async () => {
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: "desktop content",
+        screenshot_width: 1,
+      },
+    ],
+  });
+
+  let fail = false;
+
+  const tool = createComputerUse(guest.shell, {
+    fills: {
+      list: async () => {
+        if (fail) throw new Error("store unavailable");
+
+        return [];
+      },
+      add: async () => undefined,
+    },
+  });
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+  const count = guest.calls.length;
+  fail = true;
+
+  const result = await tool.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(text(result)).not.toContain("desktop content");
+  expect(result.content.some((part) => part.type === "image")).toBe(false);
+  expect(guest.calls).toHaveLength(count);
+});
+
+test("password typing waits for persistence", async () => {
+  let entered!: () => void;
+  let release!: () => void;
+
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  const desk = fakeDesk();
+  desk.fills.add = async (fill) => {
+    entered();
+    await gate;
+    desk.record.push(fill);
+  };
+
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    get_browser_state: signIn("https://github.com/login"),
+    browser_type: [{ effect: "unverifiable", summary: "typed 7 char(s)" }],
+  });
+
+  const fake = fakeLogins(undefined, desk);
+
+  const tool = createComputerUse(guest.shell, {
+    logins: fake.logins,
+    fills: desk.fills,
+  });
+
+  await tool.run({ action: "read" }, BACKGROUND_CONTEXT);
+
+  const pending = tool.run(
+    { action: "fill_login", login: "github", field: "password", ref: "p1:2" },
+    BACKGROUND_CONTEXT,
+  );
+
+  await started;
+  expect(typed(guest)).toHaveLength(0);
+  release();
+  expect((await pending).isError).toBe(false);
+  expect(typed(guest)).toHaveLength(1);
+});
+
+test("a failed exposure write prevents typing", async () => {
+  const desk = fakeDesk();
+  desk.fills.add = async () => {
+    throw new Error("write unavailable");
+  };
+
+  const { result, guest } = await readThenFill(
+    "https://github.com/login",
+    { login: "github", field: "password", ref: "p1:2" },
+    {},
+    fakeLogins(undefined, desk),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(typed(guest)).toHaveLength(0);
+});
+
 test("a later job has an earlier job's password replaced, and no screenshot while that Chromium runs", async () => {
   const desk = fakeDesk();
 

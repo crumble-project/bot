@@ -44,7 +44,10 @@ The bot and its desktop jobs see each login's name and hosts, never its
 values. The password is also replaced in everything the job reads back from
 the desktop, such as page text, for as long as the bot exists. While the
 browser a password was typed into is still running, the job gets no
-screenshots, because a screenshot could show it.
+screenshots, because a screenshot could show it. This protection applies across
+desktop jobs, including jobs that resume after another job fills a password.
+When the browser restarts, screenshots return, but historical passwords remain
+replaced. If Crumble can't read the safety records, it refuses the desktop call.
 
 The username and one-time code are less protected. A page that says "Signed in
 as ada@example.com" tells the bot the username.

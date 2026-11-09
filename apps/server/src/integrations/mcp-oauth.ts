@@ -7,7 +7,7 @@ import {
   type McpOAuthState,
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
-import type { MCPServer } from "./mcp-server-repository";
+import { McpServerRepository, type MCPServer } from "./mcp-server-repository";
 import { Effect } from "effect";
 import { MCP_OAUTH_WEB_PATH } from "../contract/mcp-oauth";
 import { secretKey } from "../secrets/secret-key";
@@ -22,6 +22,7 @@ import { InvalidInput, isAppError, errorText } from "../shared/errors";
  */
 type SavedOAuth = {
   redirectUrl: string;
+  generation: string;
   state: McpOAuthState;
   clientId: string | null;
 };
@@ -98,11 +99,14 @@ export type SecretStorage = {
   set(key: string, value: string): void;
   delete(key: string): void;
   clientSecret(serverId: string): Promise<string | undefined>;
+  currentServer(serverId: string): MCPServer | null;
 };
 
 export const secretStorage = (
-  run: Runner<ServerSecrets | Secrets>,
+  run: Runner<ServerSecrets | Secrets | McpServerRepository>,
 ): SecretStorage => ({
+  currentServer: (serverId) =>
+    run.runSync(McpServerRepository.use((servers) => servers.get(serverId))),
   clientSecret: (serverId) =>
     run.runPromise(
       Secrets.use((secrets) =>
@@ -150,6 +154,56 @@ export function signOut(storage: SecretStorage, serverId: string) {
   storage.delete(oauthStateKey(serverId));
 }
 
+function expired(): never {
+  throw new InvalidInput({ message: "This sign-in has expired; start again" });
+}
+
+function checkServer(storage: SecretStorage, server: MCPServer) {
+  const current = storage.currentServer(server.id);
+
+  if (
+    !current ||
+    current.oauthClientId !== server.oauthClientId ||
+    new URL(current.url).href !== new URL(server.url).href
+  )
+    expired();
+}
+
+function capture(
+  storage: SecretStorage,
+  server: MCPServer,
+): SavedOAuth | undefined {
+  checkServer(storage, server);
+  const saved = read(storage, server.id);
+
+  if (!saved) return undefined;
+
+  if (saved.generation) return saved;
+  const upgraded = { ...saved, generation: crypto.randomUUID() };
+  write(storage, server.id, upgraded);
+
+  return upgraded;
+}
+
+function guarded(
+  storage: SecretStorage,
+  server: MCPServer,
+  generation: string,
+): SavedOAuth {
+  checkServer(storage, server);
+  const saved = read(storage, server.id);
+
+  if (
+    !saved ||
+    saved.generation !== generation ||
+    saved.clientId !== server.oauthClientId ||
+    new URL(saved.state.serverUrl).href !== new URL(server.url).href
+  )
+    return expired();
+
+  return saved;
+}
+
 function provider(
   storage: SecretStorage,
   server: MCPServer,
@@ -157,15 +211,14 @@ function provider(
   onRedirect: (url: URL) => void,
   document: ClientDocument | undefined,
   secret: string | undefined,
+  generation: string,
 ) {
   const stateStore: McpOAuthStateStore = {
-    load: () => read(storage, server.id)?.state,
-    save: (state) =>
-      write(storage, server.id, {
-        redirectUrl,
-        state,
-        clientId: server.oauthClientId,
-      }),
+    load: () => guarded(storage, server, generation).state,
+    save: (state) => {
+      const saved = guarded(storage, server, generation);
+      write(storage, server.id, { ...saved, state });
+    },
   };
 
   const options: McpOAuthProviderOptions = {
@@ -201,9 +254,12 @@ export async function connectionAuth(
   server: MCPServer,
   document?: ClientDocument,
 ): Promise<AuthProvider | undefined> {
-  const saved = read(storage, server.id);
+  const saved = capture(storage, server);
 
   if (!saved?.state.tokens?.access_token) return undefined;
+  guarded(storage, server, saved.generation);
+  const secret = await ownerSecret(storage, server);
+  guarded(storage, server, saved.generation);
 
   return adaptOAuthProvider(
     provider(
@@ -212,7 +268,8 @@ export async function connectionAuth(
       saved.redirectUrl,
       () => undefined,
       document,
-      await ownerSecret(storage, server),
+      secret,
+      saved.generation,
     ),
   );
 }
@@ -256,20 +313,25 @@ function restartIfChanged(
   server: MCPServer,
   redirectUrl: string,
 ) {
-  const saved = read(storage, server.id);
+  const saved = capture(storage, server);
 
   if (
     saved?.redirectUrl === redirectUrl &&
     saved.state.serverUrl === server.url &&
     saved.clientId === server.oauthClientId
   )
-    return;
+    return saved;
 
-  write(storage, server.id, {
+  const next = {
     redirectUrl,
+    generation: crypto.randomUUID(),
     state: { serverUrl: server.url },
     clientId: server.oauthClientId,
-  });
+  };
+
+  write(storage, server.id, next);
+
+  return next;
 }
 
 export async function startAuthorization(
@@ -278,8 +340,10 @@ export async function startAuthorization(
   redirectUrl: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
-  restartIfChanged(storage, server, redirectUrl);
+  const saved = restartIfChanged(storage, server, redirectUrl);
   let authorizationUrl: URL | undefined;
+  const secret = await ownerSecret(storage, server);
+  guarded(storage, server, saved.generation);
 
   const oauth = provider(
     storage,
@@ -289,7 +353,8 @@ export async function startAuthorization(
       authorizationUrl = url;
     },
     document,
-    await ownerSecret(storage, server),
+    secret,
+    saved.generation,
   );
 
   let result;
@@ -308,6 +373,8 @@ export async function startAuthorization(
 
     unavailable(server, error);
   }
+
+  guarded(storage, server, saved.generation);
 
   if (result === "AUTHORIZED") return { authorized: true };
 
@@ -328,12 +395,16 @@ export async function finishAuthorization(
   iss?: string,
   document?: ClientDocument,
 ) {
-  const saved = read(storage, server.id);
+  const saved = capture(storage, server);
 
   if (!saved?.state.oauthState || saved.state.oauthState !== state)
     throw new InvalidInput({
       message: "This sign-in has expired; start again",
     });
+
+  guarded(storage, server, saved.generation);
+  const secret = await ownerSecret(storage, server);
+  guarded(storage, server, saved.generation);
 
   const oauth = provider(
     storage,
@@ -341,7 +412,8 @@ export async function finishAuthorization(
     saved.redirectUrl,
     () => undefined,
     document,
-    await ownerSecret(storage, server),
+    secret,
+    saved.generation,
   );
 
   let result;
@@ -362,7 +434,7 @@ export async function finishAuthorization(
       message: `${server.name} did not accept the sign-in`,
     });
   // The state and verifier answer one attempt only.
-  const done = read(storage, server.id)!;
+  const done = guarded(storage, server, saved.generation);
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;
   write(storage, server.id, { ...done, state: rest });
 }
