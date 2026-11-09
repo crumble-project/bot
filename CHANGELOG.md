@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitHub owner sign-out removes local authorization before attempting remote revocation. Older refreshes and sign-in completions can no longer restore signed-out state or overwrite a newer sign-in.
 - MCP sign-out and OAuth client changes now prevent older sign-in and refresh requests from restoring local authorization. Sign-out does not revoke the remote grant.
 - Resumed desktop jobs refresh password protection after other jobs fill logins, preventing stale exposure records from leaking passwords in desktop output.
 - Native sign-in accepts the iOS app's new `ng.crumbli.ios:/oauth/callback` redirect instead of `dev.crumble.ios:/oauth/callback`.

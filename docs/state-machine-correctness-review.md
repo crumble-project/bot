@@ -12,6 +12,7 @@ No application code, existing tests, dependencies, or configuration were changed
 
 ## Remediation status
 
+- **F03 implemented:** GitHub owner mutations now use transactional authorization identities, and sign-out removes local state before remote revocation. All 20 focused tests pass, including installation-token routing after a stale refresh. Independent review found no meaningful issues. See the [specification](designs/github-owner-authorization-invalidation.md) and [F03 evidence](#finding-f03).
 - **F02 implemented:** Persisted OAuth generations prevent older sign-in and refresh work from restoring local authorization after sign-out or client changes. All 20 focused tests pass; independent review found no issues. See the [implemented specification](designs/mcp-oauth-invalidation.md) and [F02 verification evidence](#finding-f02). Sign-out does not revoke the remote grant.
 - **F01 implemented:** Computer-use calls refresh persisted password-exposure records before dispatch and refuse dispatch if refreshing fails. Historical password scrubbing and Chromium-instance screenshot rules remain unchanged. All 34 focused tests pass; independent review found no issues. See the [implemented specification](designs/password-exposure-refresh.md) and [F01 verification evidence](#finding-f01). The audit classifications and counts remain historical findings, not a count of unresolved defects.
 
@@ -808,6 +809,10 @@ Pending records survive restart; expired records are ignored but not automatical
 <a id="finding-f03"></a>
 
 #### F03 — P1, high confidence — GitHub owner refresh resurrects a signed-out owner (I11)
+
+**Remediation implemented:** Owner refresh now updates only the captured authorization incarnation inside a transaction; it cannot insert a missing row. Sign-in admission/completion are fenced by persisted epoch and owner identity. Sign-out atomically rotates the epoch and deletes the local owner before best-effort remote revocation, with no late local deletion. Metadata uses existing encrypted secret storage without a schema migration.
+
+**Verification:** Before production changes, `bun test apps/server/src/github-apps/github-app-users.test.ts apps/server/src/github-apps/github-apps.test.ts` had 17 failures and 2 passes. The routing regression returned the synthetic refreshed owner token instead of an installation token. After the fix, all 19 focused tests passed with 71 assertions, independently rerun by a fresh reviewer. An additional callback-admission case and revocation-token assertion bring the final focused run to 20 passing tests with 76 assertions. Coverage includes same-user replacement, delayed completion, pending-only invalidation, local-first revocation, legacy identity initialization, App removal, refresh serialization, malformed metadata, and transaction rollback under injected writes. These fixtures do not prove remote token validity or crash durability. Fresh review found no meaningful issues. `CRUMBLE_VM_TESTS=0 CRUMBLE_RAILWAY_TESTS=0 bun run check` passed with 1,100 passed, 118 skipped, and 0 failed. Documentation checks passed, including strict link validation. Earlier root checks stopped on a test-fixture fetch type error and test-spacing lint error, both corrected before the passing run.
 
 **References:** `apps/server/src/github-apps/github-app-users.ts:108–136` (unconditional upsert), `:235–262` (sign-out), `:273–330` (refresh-only semaphore and save), `apps/server/src/github-apps/github-apps.ts:579–581` (owner-vs-installation credential choice), `apps/server/src/github-apps/github-apps-api.ts:98–111` (public sign-out).
 
