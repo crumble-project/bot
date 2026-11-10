@@ -68,9 +68,9 @@ letters, numbers, and `.`, `_`, `~`, `+`, or `-`, up to 64 characters, and
 can't be `.` or `..`. Each username and each bot can have only one line, and
 you can add up to 64 lines.
 
-**Can call you** stays off for a new line. Turn it on to let that line's bot
-call you; see [Calls from a bot](#calls-from-a-bot). **Can call other people**
-also stays off; see [The bot calls someone else](#the-bot-calls-someone-else).
+**Calls you** is cleared for a new line. Select it to let that line's bot
+call you; see [Calls from a bot](#calls-from-a-bot). **Calls others** is also
+cleared; see [The bot calls someone else](#the-bot-calls-someone-else).
 
 If you delete a line's bot, the line shows **Bot deleted**: choose another bot
 or remove the line before saving. If you disable a line's bot, the line shows
@@ -78,9 +78,12 @@ or remove the line before saving. If you disable a line's bot, the line shows
 again.
 
 **Connection** shows whether the voice gateway is connected. While it's
-connected and has reported its lines, each saved line shows **Registered**, or
-why your telephone system didn't accept it, for example a missing password. **Reset**
-discards unsaved edits.
+connected and has reported its lines, each saved line shows **Registered** or
+**Not registered**; hold the pointer over it to see the reason your telephone
+system gave. Before that, the **Status** column shows **Off** while the voice
+gateway is turned off, **Offline** while it isn't connected, **Connecting**,
+or **Waiting** until it reports its lines. A line you added or changed shows
+**Not saved** until you select **Save**. **Reset** discards unsaved edits.
 
 ## Spoken messages
 
@@ -91,7 +94,7 @@ without lists, tables, code, or links.
 
 ## Calls from a bot
 
-A bot whose line has **Can call you** turned on can call you with its
+A bot whose line has **Calls you** selected can call you with its
 `call_owner` tool. The bot is offered the tool only while the voice gateway is
 on, the bot is enabled, and a voice gateway that can place calls is
 connected. The bot uses it when you ask it to call you, or for news too urgent
@@ -108,8 +111,8 @@ one under **Your numbers**. The bot can't dial anything else.
 3. If you don't answer, the line is busy, or the call fails, the bot learns
    why and carries on in its chat.
 
-Crumble checks the line again when the bot places the call, so turning off
-**Can call you**, removing the line, disabling the bot, or turning off the
+Crumble checks the line again when the bot places the call, so clearing
+**Calls you**, removing the line, disabling the bot, or turning off the
 voice gateway stops a call the bot was about to place. If you stop the bot's
 turn while your phone rings, the voice gateway hangs up. One tool call rings
 you at most once, even if the voice gateway reconnects or Crumble restarts.
@@ -127,11 +130,10 @@ calls.
 
 ### Turn it on
 
-Two switches must both be on:
+Two settings must both be on:
 
-- In **Settings** > **Voice gateway**, turn on **Can call other people** for
-  the bot's line. It's off for a new line, and it doesn't need **Can call
-  you**.
+- In **Settings** > **Voice gateway**, select **Calls others** for the
+  bot's line. It's cleared for a new line, and it doesn't need **Calls you**.
 - In the voice gateway's own configuration file, set `call.allowOutside` to
   `true`. It's `false` by default, so whoever runs the voice gateway decides
   whether its telephone account may dial numbers that aren't yours. While it's
@@ -161,8 +163,7 @@ request.
 
 If Crumble can't place the call, the card shows why and the request stays
 pending, so you can approve it again later. For example, the voice gateway
-isn't connected, the line has a call, or **Can call other people** was turned
-off. After you approve, the card shows **Calling**, then how the call went:
+isn't connected, the line has a call, or **Calls others** was cleared. After you approve, the card shows **Calling**, then how the call went:
 **Answered**, **Not answered**, **Busy**, or **Failed** with the reason. Select
 the card to open the call beside the chat: its goal, the opening, and what the
 bot and the callee said. During the call, the transcript updates as they talk.
@@ -204,7 +205,7 @@ the voice gateway checks it once more before it dials:
   satellite networks (`+870`, `+881`, `+882`) can't be called. This list
   doesn't cover premium numbers in other countries.
 - It can't be one of **Your numbers**, written the same way. To have a bot call
-  you, use **Can call you**.
+  you, use **Calls you**.
 
 ### What the speech provider receives
 
@@ -251,8 +252,8 @@ waits for about 3 seconds of silence, and ends the call. The chat then shows
 
 - One voice gateway per account. A second voice gateway with the same token
   replaces the first.
-- Nothing limits how often a bot calls you. If a bot calls too often, turn off
-  **Can call you** for its line.
+- Nothing limits how often a bot calls you. If a bot calls too often, clear
+  **Calls you** for its line.
 - Restarting Crumble ends the calls bots are placing. The voice gateway hangs
   up a phone that still rings. A call already answered survives the restart:
   Crumble ends it only if the voice gateway doesn't reconnect within a minute.

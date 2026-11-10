@@ -189,7 +189,9 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
       await type(username, "ada-2");
       await act(async () =>
         container
-          .querySelectorAll<HTMLButtonElement>('[role="switch"]')[1]!
+          .querySelector<HTMLInputElement>(
+            'input[aria-label="Line 1 can call you"]',
+          )!
           .click(),
       );
       await submit();
@@ -216,7 +218,7 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
   );
 });
 
-test("a line's Can call other people switch is described and saved as callsOthers", async () => {
+test("a line's Calls others checkbox is described and saved as callsOthers", async () => {
   const bodies: unknown[] = [];
 
   const line = {
@@ -244,25 +246,24 @@ test("a line's Can call other people switch is described and saved as callsOther
     },
     async ({ container, button }) => {
       await waitFor(
-        () => container.querySelector('[role="switch"]') !== null,
+        () =>
+          container.querySelector(
+            'input[aria-label="Line 1 can call other people"]',
+          ) !== null,
         "the form",
       );
 
-      const others =
-        container.querySelectorAll<HTMLElement>('[role="switch"]')[2]!;
+      const others = container.querySelector<HTMLInputElement>(
+        'input[aria-label="Line 1 can call other people"]',
+      )!;
 
-      const label = [...container.querySelectorAll("label")].find(
-        (each) => each.textContent === "Can call other people",
-      );
-
-      expect(label).toBeDefined();
       expect(
         document.getElementById(others.getAttribute("aria-describedby")!)
           ?.textContent,
       ).toBe(
         "Only for calls to friends and family who know about it and agreed beforehand. The legal situation for calling anyone else is not settled.",
       );
-      expect(others.getAttribute("aria-checked")).toBe("false");
+      expect(others.checked).toBe(false);
       expect(button("Save")?.disabled).toBe(true);
 
       await act(async () => others.click());

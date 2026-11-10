@@ -3,13 +3,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   IconArrowDown,
   IconArrowUp,
-  IconDeviceLandlinePhone,
   IconKey,
   IconPhone,
+  IconTrash,
   IconUser,
+  IconX,
 } from "@tabler/icons-react";
 import { voiceGatewayConfigInput } from "@crumble/server/contract/voice-gateway";
-import { randomId } from "@/lib/utils";
+import { cn, randomId } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,13 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
 import {
   Page,
@@ -34,6 +42,7 @@ import {
   SectionEmpty,
   SettingRow,
 } from "@/components/page";
+import { Heading } from "@/features/automations/table-frame";
 import { type Bot, botsQuery } from "@/features/bots/api";
 import {
   AddRowButton,
@@ -112,6 +121,21 @@ const UNAVAILABLE_LABELS: Record<
     description:
       "The voice gateway leaves this line out until the bot is enabled.",
   },
+};
+
+const GATEWAY_UNREACHABLE: Record<
+  Exclude<VoiceGateway["status"], "connected">,
+  { label: string; detail: string }
+> = {
+  disconnected: {
+    label: "Offline",
+    detail: "The voice gateway isn't connected.",
+  },
+  connecting: {
+    label: "Connecting",
+    detail: "The voice gateway is connecting.",
+  },
+  error: { label: "Offline", detail: "The voice gateway can't connect." },
 };
 
 type Errors = Record<string, string | undefined>;
@@ -363,18 +387,46 @@ function savedLineState(gateway: VoiceGateway, line: DraftLine) {
     (item) => item.username === username,
   );
 
-  if (unavailable) return UNAVAILABLE_LABELS[unavailable.reason];
+  if (unavailable) {
+    const { badge, description } = UNAVAILABLE_LABELS[unavailable.reason];
+
+    return { label: badge ?? description, detail: description, badge: true };
+  }
+
+  if (!gateway.config.enabled)
+    return { label: "Off", detail: "The voice gateway is turned off." };
+
+  if (gateway.status !== "connected")
+    return GATEWAY_UNREACHABLE[gateway.status];
 
   const report = gateway.lines.find((item) => item.username === username);
 
-  if (!report) return null;
+  if (!report)
+    return {
+      label: "Waiting",
+      detail: "The voice gateway hasn't reported this line yet.",
+    };
 
-  return {
-    badge: null,
-    description: report.registered
-      ? "Registered"
-      : (report.error ?? "Not registered"),
-  };
+  if (report.registered) return { label: "Registered" };
+
+  return { label: "Not registered", detail: report.error ?? undefined };
+}
+
+function LineStatus({ state }: { state: ReturnType<typeof savedLineState> }) {
+  if (!state) return <span className="text-muted-foreground">Not saved</span>;
+
+  if (state.badge)
+    return (
+      <Badge variant="outline" title={state.detail}>
+        {state.label}
+      </Badge>
+    );
+
+  return (
+    <span className="text-muted-foreground" title={state.detail}>
+      {state.label}
+    </span>
+  );
 }
 
 function LineRow({
@@ -383,97 +435,234 @@ function LineRow({
   bots,
   gateway,
   error,
+  selected,
+  onSelect,
   onChange,
-  onRemove,
 }: {
   line: DraftLine;
   index: number;
   bots: Bot[];
   gateway: VoiceGateway;
   error: string | undefined;
+  selected: boolean;
+  onSelect: (selected: boolean) => void;
   onChange: (next: Partial<DraftLine>) => void;
-  onRemove: () => void;
 }) {
-  const state = savedLineState(gateway, line);
   const botName = bots.find((bot) => bot.id === line.botId)?.name;
-  const callsOwnerId = `voice-line-${line.id}-calls-owner`;
-  const callsOthersId = `voice-line-${line.id}-calls-others`;
+  const invalid = Boolean(error) || undefined;
+  const rowState = selected ? "selected" : undefined;
 
   return (
-    <SettingRow
-      tile={
-        <RowTile>
-          <IconDeviceLandlinePhone />
-        </RowTile>
-      }
-      title={
-        <>
+    <>
+      <TableRow
+        data-state={rowState}
+        className={cn("hover:bg-transparent", error && "border-0")}
+      >
+        <TableCell className="w-0">
+          <input
+            type="checkbox"
+            className="checkbox"
+            aria-label={`Select line ${index + 1}`}
+            checked={selected}
+            onChange={(event) => onSelect(event.target.checked)}
+          />
+        </TableCell>
+        <TableCell>
           <Input
             aria-label={`SIP username for line ${index + 1}`}
-            placeholder="SIP username"
             value={line.username}
             autoComplete="off"
             spellCheck={false}
-            className="h-8 max-w-40 font-mono"
-            aria-invalid={Boolean(error) || undefined}
+            className="min-w-32 font-mono"
+            aria-invalid={invalid}
             onChange={(event) => onChange({ username: event.target.value })}
           />
+        </TableCell>
+        <TableCell>
           <Input
             aria-label={`Display name for line ${index + 1}`}
-            placeholder={botName ?? "Display name"}
+            placeholder={botName}
             value={line.displayName}
             autoComplete="off"
-            className="h-8 max-w-40"
+            className="min-w-32"
             onChange={(event) => onChange({ displayName: event.target.value })}
           />
-          {state?.badge && <Badge variant="outline">{state.badge}</Badge>}
-        </>
-      }
-      description={
-        <>
-          {fieldError(error) ?? state?.description}
-          <span id={`${callsOthersId}-help`} className="block">
-            {CALLS_OTHERS_HELP}
-          </span>
-        </>
-      }
-    >
-      <BotSelect
-        label={`Bot for line ${index + 1}`}
-        bots={bots}
-        value={line.botId || null}
-        invalid={Boolean(error)}
-        onChange={(botId) => onChange({ botId: botId ?? "" })}
-      />
-      <label
-        htmlFor={callsOwnerId}
-        className="ml-2 text-xs whitespace-nowrap text-muted-foreground"
+        </TableCell>
+        <TableCell>
+          <BotSelect
+            label={`Bot for line ${index + 1}`}
+            bots={bots}
+            value={line.botId || null}
+            invalid={Boolean(error)}
+            onChange={(botId) => onChange({ botId: botId ?? "" })}
+          />
+        </TableCell>
+        <TableCell className="text-center">
+          <input
+            type="checkbox"
+            className="checkbox"
+            aria-label={`Line ${index + 1} can call you`}
+            checked={line.callsOwner}
+            onChange={(event) => onChange({ callsOwner: event.target.checked })}
+          />
+        </TableCell>
+        <TableCell className="text-center">
+          <input
+            type="checkbox"
+            className="checkbox"
+            aria-label={`Line ${index + 1} can call other people`}
+            aria-describedby="voice-lines-calls-others-help"
+            checked={line.callsOthers}
+            onChange={(event) =>
+              onChange({ callsOthers: event.target.checked })
+            }
+          />
+        </TableCell>
+        <TableCell>
+          <LineStatus state={savedLineState(gateway, line)} />
+        </TableCell>
+      </TableRow>
+      {error && (
+        <TableRow data-state={rowState} className="hover:bg-transparent">
+          <TableCell />
+          <TableCell colSpan={6} className="pt-0">
+            {fieldError(error)}
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
+
+function SelectAllLines({
+  count,
+  total,
+  onChange,
+}: {
+  count: number;
+  total: number;
+  onChange: (selected: boolean) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="checkbox"
+      aria-label="Select all lines"
+      ref={(node) => {
+        if (node) node.indeterminate = count > 0 && count < total;
+      }}
+      checked={count > 0 && count === total}
+      onChange={(event) => onChange(event.target.checked)}
+    />
+  );
+}
+
+function LinesTable({
+  draft,
+  bots,
+  errors,
+  gateway,
+  selected,
+  setSelected,
+  setLine,
+}: Pick<FieldsProps, "draft" | "bots" | "errors" | "gateway"> & {
+  selected: Set<string>;
+  setSelected: (selected: Set<string>) => void;
+  setLine: (id: string, next: Partial<DraftLine>) => void;
+}) {
+  const count = draft.lines.filter((line) => selected.has(line.id)).length;
+
+  const select = (id: string, on: boolean) => {
+    const next = new Set(selected);
+
+    if (on) next.add(id);
+    else next.delete(id);
+    setSelected(next);
+  };
+
+  return (
+    <div className="px-2 py-1">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <Heading className="w-0">
+              <SelectAllLines
+                count={count}
+                total={draft.lines.length}
+                onChange={(on) =>
+                  setSelected(
+                    new Set(on ? draft.lines.map((line) => line.id) : []),
+                  )
+                }
+              />
+            </Heading>
+            <Heading>SIP username</Heading>
+            <Heading>Display name</Heading>
+            <Heading>Bot</Heading>
+            <Heading className="text-center">Calls you</Heading>
+            <Heading className="text-center">Calls others</Heading>
+            <Heading>Status</Heading>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {draft.lines.map((line, index) => (
+            <LineRow
+              key={line.id}
+              line={line}
+              index={index}
+              bots={bots}
+              gateway={gateway}
+              error={errors[`lines.${index}`]}
+              selected={selected.has(line.id)}
+              onSelect={(on) => select(line.id, on)}
+              onChange={(next) => setLine(line.id, next)}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function LineSelectionActions({
+  count,
+  onDelete,
+  onClear,
+}: {
+  count: number;
+  onDelete: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title="Clear selection"
+        onClick={onClear}
       >
-        Can call you
-      </label>
-      <Switch
-        id={callsOwnerId}
-        checked={line.callsOwner}
-        onCheckedChange={(callsOwner) => onChange({ callsOwner })}
-      />
-      <label
-        htmlFor={callsOthersId}
-        className="ml-2 text-xs whitespace-nowrap text-muted-foreground"
+        <IconX />
+      </Button>
+      <span className="pr-1 text-sm tabular-nums">{count} selected</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        onClick={onDelete}
       >
-        Can call other people
-      </label>
-      <Switch
-        id={callsOthersId}
-        aria-describedby={`${callsOthersId}-help`}
-        checked={line.callsOthers}
-        onCheckedChange={(callsOthers) => onChange({ callsOthers })}
-      />
-      <RemoveRowButton title="Remove line" onClick={onRemove} />
-    </SettingRow>
+        <IconTrash data-icon="inline-start" />
+        Delete
+      </Button>
+    </div>
   );
 }
 
 function LinesSection({ draft, bots, errors, gateway, patch }: FieldsProps) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const count = draft.lines.filter((line) => selected.has(line.id)).length;
+
   const setLine = (id: string, next: Partial<DraftLine>) =>
     patch({
       lines: draft.lines.map((line) =>
@@ -481,47 +670,65 @@ function LinesSection({ draft, bots, errors, gateway, patch }: FieldsProps) {
       ),
     });
 
+  const addLine = () =>
+    patch({
+      lines: [
+        ...draft.lines,
+        {
+          id: randomId(),
+          username: "",
+          botId: "",
+          displayName: "",
+          callsOwner: false,
+          callsOthers: false,
+        },
+      ],
+    });
+
   return (
     <Section
       title="Lines"
-      description="Each line is an account on your telephone system that one bot answers. Its SIP password stays with the voice gateway. Callers hear the display name, or the bot's name when it's empty."
+      footer={
+        <>
+          Calls others:{" "}
+          <span id="voice-lines-calls-others-help">{CALLS_OTHERS_HELP}</span>
+        </>
+      }
+      description="SIP accounts your bots answer."
       action={
-        <AddRowButton
-          label="Line"
-          disabled={!bots.length}
-          onClick={() =>
-            patch({
-              lines: [
-                ...draft.lines,
-                {
-                  id: randomId(),
-                  username: "",
-                  botId: "",
-                  displayName: "",
-                  callsOwner: false,
-                  callsOthers: false,
-                },
-              ],
-            })
-          }
-        />
+        count > 0 ? (
+          <LineSelectionActions
+            count={count}
+            onClear={() => setSelected(new Set())}
+            onDelete={() => {
+              patch({
+                lines: draft.lines.filter((line) => !selected.has(line.id)),
+              });
+              setSelected(new Set());
+            }}
+          />
+        ) : (
+          <AddRowButton
+            label="Line"
+            disabled={!bots.length}
+            onClick={addLine}
+          />
+        )
       }
     >
-      {draft.lines.length === 0 && <SectionEmpty>No lines yet.</SectionEmpty>}
-      {draft.lines.map((line, index) => (
-        <LineRow
-          key={line.id}
-          line={line}
-          index={index}
+      {draft.lines.length === 0 ? (
+        <SectionEmpty>No lines yet.</SectionEmpty>
+      ) : (
+        <LinesTable
+          draft={draft}
           bots={bots}
+          errors={errors}
           gateway={gateway}
-          error={errors[`lines.${index}`]}
-          onChange={(next) => setLine(line.id, next)}
-          onRemove={() =>
-            patch({ lines: draft.lines.filter((item) => item.id !== line.id) })
-          }
+          selected={selected}
+          setSelected={setSelected}
+          setLine={setLine}
         />
-      ))}
+      )}
       {errors["lines"] && (
         <div className="px-3 py-2">{fieldError(errors["lines"])}</div>
       )}
