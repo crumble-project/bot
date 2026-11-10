@@ -9,12 +9,21 @@ import { AgentRepository } from "../bot-store/agent-repository";
 import type { Activity } from "./bots";
 import { BotDeletion } from "../bot-ports/bot-deletion";
 import { BotNotices } from "../bot-ports/bot-notices";
+import { CallNotes } from "../bot-ports/call-notes";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
 
 export const isGroupTurn = (execution: Execution) =>
   parseRequestId(execution.requestId).kind === "group-turn";
+
+/** A turn in an outside call's conversation: what the callee said. */
+export const isCallTurn = (execution: Pick<Execution, "requestId">) =>
+  parseRequestId(execution.requestId).kind === "outside-call";
+
+/** A bot chat turn, whose previews and replies reach the owner's activity; group and call turns are not. */
+export const isChatTurn = (execution: Execution) =>
+  !isGroupTurn(execution) && !isCallTurn(execution);
 
 export type BotsContext = {
   readonly agents: AgentRepository["Service"];
@@ -25,6 +34,7 @@ export type BotsContext = {
   readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
   readonly notices: BotNotices["Service"];
+  readonly callNotes: CallNotes["Service"];
   readonly deletion: BotDeletion["Service"];
   readonly scope: Scope.Scope;
   readonly listeners: ReturnType<typeof keyedListeners>;
@@ -47,6 +57,7 @@ export const botsContext = Effect.gen(function* () {
     events: yield* EventRepository,
     runtime: yield* BotRuntime,
     notices: yield* BotNotices,
+    callNotes: yield* CallNotes,
     deletion: yield* BotDeletion,
     scope: yield* Effect.scope,
     listeners: keyedListeners(),

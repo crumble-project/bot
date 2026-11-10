@@ -2,49 +2,15 @@ import { Effect, Layer } from "effect";
 import { Bots } from "../bots/bots";
 import { logged } from "../shared/app-errors";
 import { voiceCallRequest } from "../shared/request-ids";
-import {
-  VoiceGateway,
-  type VoiceCallChange,
-  type VoiceCallEnd,
-} from "./voice-gateway";
-
-const ENDED_BECAUSE: Record<VoiceCallEnd, string | null> = {
-  hungUp: null,
-  botHungUp: "the bot hung up",
-  maxDuration: "it reached its maximum length",
-  failed: "the call failed",
-  stopping: "the voice gateway stopped",
-  lost: "the voice gateway lost its connection",
-  revoked: "the voice gateway token was revoked",
-  lineChanged: "the line was given to another bot or turned off",
-};
-
-const count = (value: number, unit: string) =>
-  `${value} ${unit}${value === 1 ? "" : "s"}`;
-
-function lasted(ms: number) {
-  const minutes = Math.floor(ms / 60_000);
-
-  if (minutes < 1) return "less than a minute";
-  const hours = Math.floor(minutes / 60);
-
-  if (!hours) return count(minutes, "minute");
-
-  return minutes % 60
-    ? `${count(hours, "hour")} ${count(minutes % 60, "minute")}`
-    : count(hours, "hour");
-}
-
-/** The one line both the owner and the woken bot read. */
-export function callEndedText(reason: VoiceCallEnd, ms: number) {
-  const because = ENDED_BECAUSE[reason];
-
-  return `Call ended after ${lasted(ms)}${because ? `: ${because}` : ""}.`;
-}
+import { CallRequests } from "./call-requests";
+import { endNotice } from "./call-notices";
+import { callEndedText } from "./call-text";
+import { markOutsideCall } from "./outside-calls";
+import { VoiceGateway, type VoiceCallChange } from "./voice-gateway";
 
 const mark = Effect.fnUntraced(function* (
   bots: Bots["Service"],
-  change: VoiceCallChange,
+  change: Exclude<VoiceCallChange, { phase: "missed" }>,
 ) {
   const { callId, botId, direction, greeting } = change.call;
 
@@ -65,28 +31,12 @@ const mark = Effect.fnUntraced(function* (
     change.endedAt - change.call.startedAt,
   );
 
-  const requestId = voiceCallRequest(callId, "ended");
-
-  const enabled = Effect.map(bots.agent(botId), (bot) => bot.enabled);
-
-  if (change.wakes && (yield* enabled)) {
-    // A bot disabled since the check refuses the notice; its marker is still due.
-    const woken = yield* bots.notice(botId, text, requestId).pipe(
-      Effect.as(true),
-      Effect.catchTag("Conflict", (refused) =>
-        Effect.flatMap(enabled, (still) =>
-          still ? Effect.fail(refused) : Effect.succeed(false),
-        ),
-      ),
-    );
-
-    if (woken) return;
-  }
-
-  yield* bots.recordCallEvent(
+  yield* endNotice(
+    bots,
     botId,
     { callId, phase: "ended", direction, text },
-    requestId,
+    voiceCallRequest(callId, "ended"),
+    change.wakes,
   );
 });
 
@@ -95,9 +45,14 @@ export const callMarkers = Layer.effectDiscard(
   Effect.gen(function* () {
     const gateway = yield* VoiceGateway;
     const bots = yield* Bots;
+    const requests = yield* CallRequests;
 
     yield* gateway.handleCalls((change) =>
-      mark(bots, change).pipe(
+      Effect.gen(function* () {
+        if (yield* markOutsideCall({ bots, requests }, change)) return;
+
+        if (change.phase !== "missed") yield* mark(bots, change);
+      }).pipe(
         logged(
           "Voice call marker failed",
           change.call.botId,

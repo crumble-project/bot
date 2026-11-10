@@ -33,6 +33,7 @@ import {
 } from "../../src/skills/default-skills";
 import { OwnerSkills } from "../../src/skills/owner-skills";
 import { VoiceGateway } from "../../src/voice-gateway/voice-gateway";
+import { CallRequests } from "../../src/voice-gateway/call-requests";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
 export type TestServices = {
@@ -46,6 +47,7 @@ export type TestServices = {
   providerAuth?: ProviderSignInsAccess;
   viewerTickets?: ViewerTickets;
   voiceGateway?: VoiceGateway["Service"];
+  callRequests?: CallRequests["Service"];
 };
 
 type TestBots = BotsAccess & {
@@ -78,12 +80,13 @@ const noIntegrations = McpIntegrations.of({
 const testPush = (push: Runner<Push> | undefined) =>
   push?.runSync(Push.use(Effect.succeed)) ?? noPush;
 
+// Its scope stays open, as an account's does: an outside call settles in it. Nothing starts its ticker.
 export const testVoiceGateway = (core: Runner<CoreServices>) =>
   core.runSync(
-    Layer.build(VoiceGateway.layer("test-account")).pipe(
-      Effect.map(Context.get(VoiceGateway)),
-      Effect.scoped,
-    ),
+    Layer.buildWithScope(
+      VoiceGateway.layer("test-account"),
+      Scope.makeUnsafe(),
+    ).pipe(Effect.map(Context.get(VoiceGateway))),
   );
 
 function testServices(
@@ -116,6 +119,10 @@ function testServices(
         standaloneSignIns(bots.core, pluginProviders([meliousPlugin()])),
     ),
     Context.add(BotRequests, notReached<BotRequests["Service"]>()),
+    Context.add(
+      CallRequests,
+      services.callRequests ?? notReached<CallRequests["Service"]>(),
+    ),
     Context.add(
       MessageGateway,
       MessageGateway.of({

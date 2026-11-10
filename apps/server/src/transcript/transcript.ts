@@ -51,6 +51,7 @@ import {
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
   REACTION_TOOL_NAME,
+  REQUEST_CALL_TOOL_NAME,
   REQUEST_CREDENTIAL_TOOL_NAME,
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
@@ -104,7 +105,11 @@ export type TranscriptMessage = {
     multiple?: boolean;
   };
   heldAction?: { id: string; job: string };
-  call?: { callId: string; direction: CallEventData["direction"] };
+  call?: {
+    callId: string;
+    direction: CallEventData["direction"];
+    callee?: string;
+  };
   attachments?: AttachmentInfo[];
   toolCallId?: string;
   toolName?: string | undefined;
@@ -174,6 +179,7 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
 const OWNER_REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
   [REQUEST_CREDENTIAL_TOOL_NAME, "credential"],
   [REQUEST_LOGIN_TOOL_NAME, "login"],
+  [REQUEST_CALL_TOOL_NAME, "approval"],
 ]);
 
 export function latestReply(messages: TranscriptMessage[]) {
@@ -428,7 +434,9 @@ function normalizeCallEvent(
   const parsed = callEventData.safeParse(entry.data);
 
   if (!parsed.success) return [];
-  const { callId, phase, direction, greeting, text, timestamp } = parsed.data;
+
+  const { callId, phase, direction, callee, greeting, text, timestamp } =
+    parsed.data;
 
   return [
     {
@@ -441,7 +449,7 @@ function normalizeCallEvent(
           ? (greeting ?? "Call started")
           : (text ?? "Call ended"),
       timestamp,
-      call: { callId, direction },
+      call: { callId, direction, ...(callee !== undefined && { callee }) },
     },
   ];
 }

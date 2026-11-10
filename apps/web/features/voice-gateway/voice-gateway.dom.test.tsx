@@ -204,6 +204,7 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
             botId: BOT_ID,
             displayName: null,
             callsOwner: true,
+            callsOthers: false,
           },
         ],
       });
@@ -211,6 +212,73 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
         () => container.textContent?.includes("Saved") === true,
         "the saved state",
       );
+    },
+  );
+});
+
+test("a line's Can call other people switch is described and saved as callsOthers", async () => {
+  const bodies: unknown[] = [];
+
+  const line = {
+    username: "ada",
+    botId: BOT_ID,
+    displayName: null,
+    callsOwner: false,
+  };
+
+  const stored = describeGateway({
+    config: { enabled: false, ownerNumbers: ["+4930123"], lines: [line] },
+  });
+
+  await renderPage(
+    async (path, init) => {
+      if (path !== "/v1/voice-gateway") return null;
+
+      if (init?.method !== "PUT") return Response.json(stored);
+
+      const body = JSON.parse(await new Response(init.body).text());
+
+      bodies.push(body);
+
+      return Response.json({ ...stored, config: body });
+    },
+    async ({ container, button }) => {
+      await waitFor(
+        () => container.querySelector('[role="switch"]') !== null,
+        "the form",
+      );
+
+      const others =
+        container.querySelectorAll<HTMLElement>('[role="switch"]')[2]!;
+
+      const label = [...container.querySelectorAll("label")].find(
+        (each) => each.textContent === "Can call other people",
+      );
+
+      expect(label).toBeDefined();
+      expect(
+        document.getElementById(others.getAttribute("aria-describedby")!)
+          ?.textContent,
+      ).toBe(
+        "Only for calls to friends and family who know about it and agreed beforehand. The legal situation for calling anyone else is not settled.",
+      );
+      expect(others.getAttribute("aria-checked")).toBe("false");
+      expect(button("Save")?.disabled).toBe(true);
+
+      await act(async () => others.click());
+      await act(async () =>
+        container
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          ),
+      );
+      await waitFor(() => bodies.length === 1, "the save");
+
+      expect(bodies[0]).toStrictEqual({
+        ...stored.config,
+        lines: [{ ...line, callsOthers: true }],
+      });
     },
   );
 });

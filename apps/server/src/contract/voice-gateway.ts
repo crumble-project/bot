@@ -32,6 +32,10 @@ export const voiceGatewayConfigInput = z
               description: "The name callers hear; null uses the bot's name.",
             }),
             callsOwner: z.boolean(),
+            callsOthers: z.boolean().exactOptional().openapi({
+              description:
+                "Whether the line's bot may ask to call people other than the owner, each call after the owner approved it. Absent means false.",
+            }),
           })
           .strict(),
       )
@@ -141,6 +145,8 @@ export const voiceGatewayReplacedEvent = z
 
 export const VOICE_CALL_GREETING_MAX = 1000;
 
+export const CALL_PARTIES = ["owner", "outside"] as const;
+
 export const voiceCallEvent = z
   .object({
     callId: z.uuid(),
@@ -148,15 +154,21 @@ export const voiceCallEvent = z
       description: "The line the call is placed from.",
     }),
     to: z.string().openapi({
-      description: "The owner number to dial, the first in the owner's list.",
+      description:
+        "The number to dial: for a call to the owner, the first in the owner's list; for an outside call, the number the owner approved, digits with an optional leading +.",
     }),
     greeting: z.string().min(1).max(VOICE_CALL_GREETING_MAX).openapi({
-      description: "What the bot says when the owner answers.",
+      description:
+        "What the bot says when the call is answered: for an outside call, the opening the owner approved, to be spoken verbatim.",
+    }),
+    party: z.enum(CALL_PARTIES).optional().openapi({
+      description:
+        "Who is called: owner, or outside, someone other than the owner after the owner approved the bot's call request. Absent means owner. Dial an outside call only when the voice gateway's own config allows it, else report it failed.",
     }),
   })
   .openapi("VoiceCallEvent", {
     description:
-      "A bot asks to call the owner. Sent only to a stream opened with calls=true, and sent again after a reconnect until the call is acknowledged; ignore a callId you already dial.",
+      "A bot asks to call the owner, or someone else after the owner approved it. Sent only to a stream opened with calls=true, and sent again after a reconnect until the call is acknowledged; ignore a callId you already dial.",
   });
 
 export const voiceCallCancelEvent = z
@@ -169,7 +181,7 @@ export const voiceCallCancelEvent = z
 export const voiceGatewayEventsInput = z.object({
   calls: z.stringbool().optional().openapi({
     description:
-      "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, and call events arrive on this stream.",
+      "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, approved call requests can dial, and call events arrive on this stream.",
   }),
 });
 
@@ -249,6 +261,59 @@ export const voiceLinesReportInput = z
       .max(64),
   })
   .strict();
+
+export const CALL_REQUEST_STATUSES = [
+  "pending",
+  "declined",
+  "calling",
+  "ended",
+] as const;
+
+export const CALL_REQUEST_OUTCOMES = [
+  "answered",
+  "unanswered",
+  "busy",
+  "failed",
+] as const;
+
+export const CALL_CALLEE_MAX = 100;
+
+export const CALL_GOAL_MAX = 1000;
+
+export const callRequestResponse = z
+  .object({
+    id: z.string(),
+    agentId: z.string(),
+    number: z.string().openapi({
+      description:
+        "The number to dial, normalized: digits with an optional leading +.",
+    }),
+    callee: z.string().openapi({ description: "Who the bot calls." }),
+    goal: z.string(),
+    opening: z.string().openapi({
+      description: "What the bot says first when the callee answers.",
+    }),
+    status: z.enum(CALL_REQUEST_STATUSES).openapi({
+      description:
+        "pending: waiting for the owner. calling: approved, and the call rings or runs. ended: see outcome.",
+    }),
+    callId: z.string().nullable(),
+    conversationId: z.string().nullable(),
+    outcome: z.enum(CALL_REQUEST_OUTCOMES).nullable().openapi({
+      description: "Set once the status is ended.",
+    }),
+    error: z.string().nullable().openapi({
+      description: "Why a failed call failed.",
+    }),
+    requestedAt: z.string(),
+    decidedAt: z.string().nullable(),
+    endedAt: z.string().nullable(),
+  })
+  .openapi("CallRequest");
+
+export type CallRequest = z.infer<typeof callRequestResponse>;
+
+export type CallParty = (typeof CALL_PARTIES)[number];
 
 export type VoiceCallEvent = z.infer<typeof voiceCallEvent>;
 

@@ -155,7 +155,7 @@ const origin = z
   .object({
     kind: z.string().openapi({
       description:
-        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, or call (a voice gateway call ended, which starts a bot turn). Clients may receive other values later.",
+        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, call (a voice gateway call ended, which starts a bot turn), call_request (the owner declined a call request), or callee (what the callee of an outside call said, in that call's conversation only). Clients may receive other values later.",
     }),
     name: z.string().optional(),
     agentId: z.string().optional(),
@@ -236,7 +236,12 @@ const message = z
       .object({
         callId: z.string(),
         direction: z.enum(["inbound", "outbound"]).openapi({
-          description: "outbound: the bot called the owner.",
+          description:
+            "outbound: the bot called the owner, or the callee of an outside call.",
+        }),
+        callee: z.string().optional().openapi({
+          description:
+            "Set on an outside call, which the bot placed to someone other than the owner: who it called. A call-started event then reads as the bot calling the callee, its content the opening.",
         }),
       })
       .optional()

@@ -56,6 +56,7 @@ The token reaches no other route.
 | **Bot desktop**          | `POST /v1/agents/{id}/desktop/viewer`, `/v1/agents/{id}/desktop/control`, `GET /v1/agents/{id}/desktop/status`                                                                                                                                                                  |
 | **Credentials**          | `/v1/agents/{id}/credentials`, `/v1/agents/{id}/credentials/{name}`, `/v1/agents/{id}/credentials/{name}/uses`                                                                                                                                                                  |
 | **Logins**               | `/v1/agents/{id}/logins`, `/v1/agents/{id}/logins/{name}`, `/v1/agents/{id}/logins/{name}/uses`                                                                                                                                                                                 |
+| **Call requests**        | `/v1/agents/{id}/call-requests`, `POST /v1/agents/{id}/call-requests/{requestId}/approve`, `POST /v1/agents/{id}/call-requests/{requestId}/decline`, `/v1/agents/{id}/call-requests/{requestId}/transcript`                                                                     |
 | **Intent checks**        | `/v1/agents/{id}/held-actions`, `POST /v1/agents/{id}/held-actions/{actionId}/approve`, `POST /v1/agents/{id}/held-actions/{actionId}/decline`, `/v1/judge-model`                                                                                                               |
 | **Memories**             | `/v1/memories`, `/v1/memories/{id}`, `/v1/agents/{id}/memories`, `/v1/agents/{id}/memories/{memoryId}`                                                                                                                                                                          |
 | **Skills**               | `/v1/skills`, `/v1/skills/{id}`, `/v1/skills/{id}/update`, `/v1/skills/github/browse`, `/v1/skills/github/install`, `/v1/skills/updates/check`, `/v1/agents/{id}/skills`, `/v1/agents/{id}/skills/{skillId}`                                                                    |
@@ -93,6 +94,12 @@ either start report or a spoken message means the call ended: hang up. In a
 bot's transcript, calls show as `call-started` and `call-ended` events with a
 `call` field, and an end that wakes the bot as a message with `origin.kind`
 `call`.
+
+An approved call request sends a `call` event with `party` `outside`. While
+the line's active call is that outside call, its messages, events, and
+execution reads go to the call's own conversation, never the bot chat, and the
+`call` field of its events carries `callee`. Any other use of an outside
+call's ID answers `409`: hang up.
 
 A chat snapshot's `partial` is empty unless you open
 `/v1/agents/{id}/events?partial=true`. Then it carries the text of the reply

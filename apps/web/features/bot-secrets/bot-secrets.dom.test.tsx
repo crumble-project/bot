@@ -251,6 +251,7 @@ const requestCard = async (
           attachmentPath: () => "",
           jobStatus: () => undefined,
           onOpenJob: () => {},
+          onOpenCall: () => {},
         }}
         message={{
           id: "m1",

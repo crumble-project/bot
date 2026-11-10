@@ -1,4 +1,5 @@
 import { botRequestResult } from "@/features/bot-requests/bot-request-card";
+import { callRequestResult } from "@/features/call-requests/call-request-card";
 import { desktopScreenshotResult } from "@/features/bot-desktop/desktop-screenshot";
 import { credentialRequestResult } from "@/features/credentials/credential-request";
 import { heldActionEvent } from "@/features/bot-desktop/held-action";
@@ -18,6 +19,7 @@ const TOOL_RESULTS: MessageCard[] = [
   credentialRequestResult,
   loginRequestResult,
   botRequestResult,
+  callRequestResult,
   jobResult,
 ];
 
@@ -47,7 +49,8 @@ export function shownInChat(message: Message) {
     case "toolResult":
       return cardOf(message) !== null;
     case "event":
-      return message.content.trim() !== "";
+      // An outside call shows as one card where its end notice is.
+      return message.content.trim() !== "" && !message.call?.callee;
     default:
       return false;
   }

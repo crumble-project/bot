@@ -20,6 +20,7 @@ const chat: CardChat = {
   attachmentPath: () => "",
   jobStatus: () => undefined,
   onOpenJob: () => {},
+  onOpenCall: () => {},
 };
 
 test("a failed job's event shows its reason", () => {

@@ -117,19 +117,26 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
-/** A bot chat's snapshot stream. `opened` can refuse the stream before it sends anything, by returning null. */
+/**
+ * A bot chat's snapshot stream, or another of the bot's conversations' with `conversationId`. `opened` can refuse the
+ * stream before it sends anything, by returning null.
+ */
 export const chatEventStream = async (
   c: Context,
   service: BotsAccess,
   options: {
     agentId: string;
+    conversationId?: string | undefined;
     snapshot: SnapshotOptions;
     opened?: (close: () => void) => Promise<StreamCleanup | null>;
   },
 ) => {
   const { snapshot, opened } = options;
   const agent = service.agent(options.agentId);
-  const chat = await service.chat(agent.id);
+
+  const chat = options.conversationId
+    ? { id: options.conversationId }
+    : await service.chat(agent.id);
 
   return streamEvents(c, async ({ stream, close, onClose }) => {
     if (opened) {

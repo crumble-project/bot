@@ -51,7 +51,8 @@ describe("Store", () => {
     const db = new Database(join(dir, "store.sqlite"));
 
     db.run(
-      `DROP TABLE relayed_job_questions;
+      `DROP TABLE call_requests;
+      DROP TABLE relayed_job_questions;
       DROP TABLE delegation_receipts;
       DROP TABLE bot_message_requests;
       ALTER TABLE conversations DROP COLUMN chat;
@@ -59,7 +60,7 @@ describe("Store", () => {
       ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
       ALTER TABLE skills DROP COLUMN copied_from_skill_id;
-      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 4)`,
+      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 5)`,
     );
     db.close();
     const reopened = new Store(dir);
@@ -207,14 +208,15 @@ describe("Store", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
 
-    db.run(`DROP TABLE relayed_job_questions;
+    db.run(`DROP TABLE call_requests;
+      DROP TABLE relayed_job_questions;
       DROP TABLE delegation_receipts;
       DROP TABLE bot_message_requests;
       ALTER TABLE conversations DROP COLUMN chat;
       ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
-      DELETE FROM __drizzle_migrations WHERE id = (SELECT MAX(id) FROM __drizzle_migrations)`);
+      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 2)`);
     db.query("INSERT INTO settings (key, value) VALUES (?, ?)").run(
       `chat:${agent.id}`,
       JSON.stringify(chat.id),

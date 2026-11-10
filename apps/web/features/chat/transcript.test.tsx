@@ -23,6 +23,7 @@ const chat: CardChat = {
   attachmentPath: () => "/screen",
   jobStatus: () => undefined,
   onOpenJob: () => {},
+  onOpenCall: () => {},
 };
 
 test("attachment image URLs follow replacement and unmount", async () => {

@@ -21,6 +21,8 @@ export type InputOrigin =
   | { kind: "bot_request" }
   | { kind: "review" }
   | { kind: "call" }
+  | { kind: "callee"; name: string }
+  | { kind: "call_request" }
   | { kind: JobKindName; name: string };
 
 export const isBotOrigin = (origin: { kind: string } | undefined) =>
@@ -48,6 +50,8 @@ const REQUEST_SOURCES: Record<
   bot_request: undefined,
   review: undefined,
   call: undefined,
+  callee: undefined,
+  call_request: undefined,
   coding: undefined,
   desktop: undefined,
 };
@@ -72,6 +76,8 @@ export type TurnSource =
   | { kind: "credential"; name: string }
   | { kind: "bot_request" }
   | { kind: "call" }
+  | { kind: "callee" }
+  | { kind: "call_request" }
   | { kind: "owner"; via?: string };
 
 export function turnSource({
@@ -103,6 +109,10 @@ export function turnSource({
       return { kind: "owner", via: VOICE_VIA };
     case "voice-call":
       return { kind: "call" };
+    case "outside-call":
+      return { kind: "callee" };
+    case "call-request":
+      return { kind: "call_request" };
     default:
       return { kind: "owner" };
   }

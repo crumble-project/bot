@@ -83,7 +83,7 @@
               "credential",
               "login"
             ],
-            "description": "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later."
+            "description": "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check, or a call request), credential, or login (a request the owner saves or declines). Clients may receive other values later."
           }
         },
         "required": [
@@ -277,13 +277,21 @@
           },
           "to": {
             "type": "string",
-            "description": "The owner number to dial, the first in the owner's list."
+            "description": "The number to dial: for a call to the owner, the first in the owner's list; for an outside call, the number the owner approved, digits with an optional leading +."
           },
           "greeting": {
             "type": "string",
             "minLength": 1,
             "maxLength": 1000,
-            "description": "What the bot says when the owner answers."
+            "description": "What the bot says when the call is answered: for an outside call, the opening the owner approved, to be spoken verbatim."
+          },
+          "party": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "outside"
+            ],
+            "description": "Who is called: owner, or outside, someone other than the owner after the owner approved the bot's call request. Absent means owner. Dial an outside call only when the voice gateway's own config allows it, else report it failed."
           }
         },
         "required": [
@@ -292,7 +300,7 @@
           "to",
           "greeting"
         ],
-        "description": "A bot asks to call the owner. Sent only to a stream opened with calls=true, and sent again after a reconnect until the call is acknowledged; ignore a callId you already dial."
+        "description": "A bot asks to call the owner, or someone else after the owner approved it. Sent only to a stream opened with calls=true, and sent again after a reconnect until the call is acknowledged; ignore a callId you already dial."
       },
       "VoiceCallCancelEvent": {
         "type": "object",
@@ -1422,7 +1430,11 @@
                   "inbound",
                   "outbound"
                 ],
-                "description": "outbound: the bot called the owner."
+                "description": "outbound: the bot called the owner, or the callee of an outside call."
+              },
+              "callee": {
+                "type": "string",
+                "description": "Set on an outside call, which the bot placed to someone other than the owner: who it called. A call-started event then reads as the bot calling the callee, its content the opening."
               }
             },
             "required": [
@@ -1481,7 +1493,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, or call (a voice gateway call ended, which starts a bot turn). Clients may receive other values later."
+            "description": "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, call (a voice gateway call ended, which starts a bot turn), call_request (the owner declined a call request), or callee (what the callee of an outside call said, in that call's conversation only). Clients may receive other values later."
           },
           "name": {
             "type": "string"
@@ -2439,6 +2451,106 @@
           "createdAgentId",
           "requestedAt",
           "decidedAt"
+        ]
+      },
+      "CallRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string",
+            "description": "The number to dial, normalized: digits with an optional leading +."
+          },
+          "callee": {
+            "type": "string",
+            "description": "Who the bot calls."
+          },
+          "goal": {
+            "type": "string"
+          },
+          "opening": {
+            "type": "string",
+            "description": "What the bot says first when the callee answers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "declined",
+              "calling",
+              "ended"
+            ],
+            "description": "pending: waiting for the owner. calling: approved, and the call rings or runs. ended: see outcome."
+          },
+          "callId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conversationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "answered",
+              "unanswered",
+              "busy",
+              "failed",
+              null
+            ],
+            "description": "Set once the status is ended."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a failed call failed."
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "number",
+          "callee",
+          "goal",
+          "opening",
+          "status",
+          "callId",
+          "conversationId",
+          "outcome",
+          "error",
+          "requestedAt",
+          "decidedAt",
+          "endedAt"
         ]
       },
       "CredentialUse": {
@@ -7003,13 +7115,18 @@
                               },
                               "callsOwner": {
                                 "type": "boolean"
+                              },
+                              "callsOthers": {
+                                "type": "boolean",
+                                "description": "Whether the line's bot may ask to call people other than the owner, each call after the owner approved it. Absent means false."
                               }
                             },
                             "required": [
                               "username",
                               "botId",
                               "displayName",
-                              "callsOwner"
+                              "callsOwner",
+                              "callsOthers"
                             ],
                             "additionalProperties": false
                           },
@@ -7249,13 +7366,18 @@
                         },
                         "callsOwner": {
                           "type": "boolean"
+                        },
+                        "callsOthers": {
+                          "type": "boolean",
+                          "description": "Whether the line's bot may ask to call people other than the owner, each call after the owner approved it. Absent means false."
                         }
                       },
                       "required": [
                         "username",
                         "botId",
                         "displayName",
-                        "callsOwner"
+                        "callsOwner",
+                        "callsOthers"
                       ],
                       "additionalProperties": false
                     },
@@ -7318,13 +7440,18 @@
                               },
                               "callsOwner": {
                                 "type": "boolean"
+                              },
+                              "callsOthers": {
+                                "type": "boolean",
+                                "description": "Whether the line's bot may ask to call people other than the owner, each call after the owner approved it. Absent means false."
                               }
                             },
                             "required": [
                               "username",
                               "botId",
                               "displayName",
-                              "callsOwner"
+                              "callsOwner",
+                              "callsOthers"
                             ],
                             "additionalProperties": false
                           },
@@ -7757,10 +7884,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, and call events arrive on this stream."
+              "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, approved call requests can dial, and call events arrive on this stream."
             },
             "required": false,
-            "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, and call events arrive on this stream.",
+            "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, approved call requests can dial, and call events arrive on this stream.",
             "name": "calls",
             "in": "query"
           }
@@ -7862,7 +7989,7 @@
     "/v1/voice/lines/{username}/messages": {
       "post": {
         "operationId": "sendSpokenMessage",
-        "description": "Sends what the owner said on a call to the line's bot. The same IDs with other content answer 409, and so does a callId whose call ended: hang up. A callId the server doesn't know is accepted.",
+        "description": "Sends what the owner said on a call to the line's bot. On the line's active outside call, what the callee said goes to that call's conversation instead, never the bot chat, under requestId outside-call:{callId}:{requestId}. The same IDs with other content answer 409, and so do a callId whose call ended and an outside call's ID that is not the line's active call: hang up. A callId the server doesn't know is accepted.",
         "security": [
           {
             "VoiceGatewayToken": []
@@ -8017,7 +8144,7 @@
             "$ref": "#/components/schemas/HeartbeatEvent"
           }
         },
-        "description": "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
+        "description": "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. While the line's active call is an outside call, the snapshots are that call's conversation instead. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
         "security": [
           {
             "VoiceGatewayToken": []
@@ -8052,6 +8179,17 @@
             "required": false,
             "description": "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends.",
             "name": "partial",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The call the turn belongs to. For the line's active outside call, the stream sends that call's conversation; for another outside call's ID it answers 409: hang up. Without it, the stream follows the line's active call."
+            },
+            "required": false,
+            "description": "The call the turn belongs to. For the line's active outside call, the stream sends that call's conversation; for another outside call's ID it answers 409: hang up. Without it, the stream follows the line's active call.",
+            "name": "callId",
             "in": "query"
           }
         ],
@@ -8152,7 +8290,7 @@
     "/v1/voice/lines/{username}/executions/{executionId}": {
       "get": {
         "operationId": "getSpokenExecution",
-        "description": "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot.",
+        "description": "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot or a callee's message on its outside call; 409 for a callee's message whose outside call is not the line's active call.",
         "security": [
           {
             "VoiceGatewayToken": []
@@ -8275,7 +8413,7 @@
     "/v1/voice/lines/{username}/calls/{callId}": {
       "put": {
         "operationId": "startVoiceCall",
-        "description": "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended or another call is active on the line: hang up.",
+        "description": "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended, another call is active on the line, or the callId is an outside call's that no longer rings: hang up.",
         "security": [
           {
             "VoiceGatewayToken": []
@@ -17556,6 +17694,517 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BotRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/call-requests": {
+      "get": {
+        "operationId": "listCallRequests",
+        "description": "The bot's call requests, newest first: its proposals to phone someone other than the owner, and how each call went.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CallRequest"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/call-requests/{requestId}/approve": {
+      "post": {
+        "operationId": "approveCallRequest",
+        "description": "Approves a pending call request and dials at once; returns once the voice gateway was asked to call, with the status calling. 409, with the request still pending, when the request is not pending, the number no longer passes the number rules, calls to other people are switched off for the line, no voice gateway that places calls is connected, or the line has a call.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/call-requests/{requestId}/decline": {
+      "post": {
+        "operationId": "declineCallRequest",
+        "description": "Declines a pending call request; the bot gets a notice.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/call-requests/{requestId}/transcript": {
+      "get": {
+        "operationId": "getCallRequestTranscript",
+        "description": "The messages of the call's conversation: the callee's words as user messages and the bot's replies. Empty before the call, and when the callee objected to the call.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "requestId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptPage"
                 }
               }
             }

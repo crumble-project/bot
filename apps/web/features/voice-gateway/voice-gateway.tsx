@@ -55,6 +55,7 @@ type DraftLine = {
   botId: string;
   displayName: string;
   callsOwner: boolean;
+  callsOthers: boolean;
 };
 
 type Draft = {
@@ -70,18 +71,22 @@ const draftOf = (config: VoiceGatewayConfig): Draft => ({
     ...line,
     id: randomId(),
     displayName: line.displayName ?? "",
+    callsOthers: line.callsOthers ?? false,
   })),
 });
 
 const configOf = (draft: Draft): VoiceGatewayConfig => ({
   enabled: draft.enabled,
   ownerNumbers: draft.ownerNumbers.map((number) => number.value.trim()),
-  lines: draft.lines.map(({ username, botId, displayName, callsOwner }) => ({
-    username: username.trim(),
-    botId,
-    displayName: displayName.trim() || null,
-    callsOwner,
-  })),
+  lines: draft.lines.map(
+    ({ username, botId, displayName, callsOwner, callsOthers }) => ({
+      username: username.trim(),
+      botId,
+      displayName: displayName.trim() || null,
+      callsOwner,
+      callsOthers,
+    }),
+  ),
 });
 
 const refresh = () =>
@@ -116,6 +121,9 @@ type Parsed = ReturnType<typeof voiceGatewayConfigInput.safeParse>;
 type Issue = NonNullable<Parsed["error"]>["issues"][number];
 
 const NUMBER_RULE = "Use up to 32 digits, * or #, with an optional + in front.";
+
+const CALLS_OTHERS_HELP =
+  "Only for calls to friends and family who know about it and agreed beforehand. The legal situation for calling anyone else is not settled.";
 
 const USERNAME_RULE = "Use up to 64 letters, numbers, or . _ ~ + -";
 
@@ -389,6 +397,7 @@ function LineRow({
   const state = savedLineState(gateway, line);
   const botName = bots.find((bot) => bot.id === line.botId)?.name;
   const callsOwnerId = `voice-line-${line.id}-calls-owner`;
+  const callsOthersId = `voice-line-${line.id}-calls-others`;
 
   return (
     <SettingRow
@@ -420,7 +429,14 @@ function LineRow({
           {state?.badge && <Badge variant="outline">{state.badge}</Badge>}
         </>
       }
-      description={fieldError(error) ?? state?.description}
+      description={
+        <>
+          {fieldError(error) ?? state?.description}
+          <span id={`${callsOthersId}-help`} className="block">
+            {CALLS_OTHERS_HELP}
+          </span>
+        </>
+      }
     >
       <BotSelect
         label={`Bot for line ${index + 1}`}
@@ -439,6 +455,18 @@ function LineRow({
         id={callsOwnerId}
         checked={line.callsOwner}
         onCheckedChange={(callsOwner) => onChange({ callsOwner })}
+      />
+      <label
+        htmlFor={callsOthersId}
+        className="ml-2 text-xs whitespace-nowrap text-muted-foreground"
+      >
+        Can call other people
+      </label>
+      <Switch
+        id={callsOthersId}
+        aria-describedby={`${callsOthersId}-help`}
+        checked={line.callsOthers}
+        onCheckedChange={(callsOthers) => onChange({ callsOthers })}
       />
       <RemoveRowButton title="Remove line" onClick={onRemove} />
     </SettingRow>
@@ -471,6 +499,7 @@ function LinesSection({ draft, bots, errors, gateway, patch }: FieldsProps) {
                   botId: "",
                   displayName: "",
                   callsOwner: false,
+                  callsOthers: false,
                 },
               ],
             })
@@ -705,8 +734,12 @@ function VoiceGatewayEditor({
       >
         <NumbersSection {...fields} />
         <LinesSection {...fields} />
+        {/* Compared in draft form: a stored line may omit callsOthers, which a save always sends. */}
         <SaveBar
-          dirty={JSON.stringify(config) !== JSON.stringify(gateway.config)}
+          dirty={
+            JSON.stringify(config) !==
+            JSON.stringify(configOf(draftOf(gateway.config)))
+          }
           save={save}
           onReset={() => {
             restart(gateway.config);

@@ -62,6 +62,7 @@ export const ExtensionPosition = {
   webSearch: 65,
   reaction: 70,
   voice: 75,
+  callRequests: 76,
   jobs: 80,
   botRequests: 85,
   codemode: 90,

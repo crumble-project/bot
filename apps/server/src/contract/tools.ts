@@ -14,6 +14,7 @@ export const REQUEST_BOT_TOOL_NAME = "request_bot";
 export const REACTION_TOOL_NAME = "react";
 export const CALL_OWNER_TOOL_NAME = "call_owner";
 export const HANG_UP_TOOL_NAME = "hang_up";
+export const REQUEST_CALL_TOOL_NAME = "request_call";
 export const PASS_TOOL_NAME = "pass";
 export const DISPLAY_TOOL_NAME = "show";
 export const WEB_SEARCH_TOOL_NAME = "web_search";

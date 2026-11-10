@@ -157,6 +157,9 @@
                   "inbound",
                   "outbound"
                 ]
+              },
+              "callee": {
+                "type": "string"
               }
             },
             "required": [

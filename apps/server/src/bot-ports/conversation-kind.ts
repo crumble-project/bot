@@ -6,6 +6,7 @@ import type {
   Extension,
 } from "@earendil-works/pi-durable";
 import type { Agent } from "../contract/agents";
+import { inChat } from "../shared/chat-only";
 
 export type BotTool = ReturnType<typeof defineTool>;
 
@@ -20,10 +21,12 @@ export type ConversationParts = {
   offered: Extension[];
 };
 
+/** `bare`: the prompt is `standing` and the clock alone, without the identity line, skills, or memory. */
 export type ConversationPrompt = {
   standing?: (agent: Agent) => string[];
   addition?: string;
   skillWriting?: boolean;
+  bare?: true;
 };
 
 export type ConversationStyle = {
@@ -58,5 +61,5 @@ export const chatTools = (
 ];
 
 export const CHAT_STYLE: ConversationStyle = {
-  tools: (parts) => chatTools(parts, parts.offered),
+  tools: (parts) => chatTools(parts, parts.offered.filter(inChat)),
 };

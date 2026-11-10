@@ -46,6 +46,7 @@ import {
   voiceGatewayEventsInput,
   voiceGatewayResponse,
   voiceGatewayTokenResponse,
+  callRequestResponse,
   voiceCallStartInput,
   voiceLineCallParams,
   voiceLineParams,
@@ -96,6 +97,13 @@ export const chatEventsInput = snapshotInput.extend({
 
 export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
+});
+
+const voiceLineEventsInput = chatEventsInput.extend({
+  callId: z.uuid().optional().openapi({
+    description:
+      "The call the turn belongs to. For the line's active outside call, the stream sends that call's conversation; for another outside call's ID it answers 409: hang up. Without it, the stream follows the line's active call.",
+  }),
 });
 
 export const heldActionDeclineInput = z.object({
@@ -366,7 +374,7 @@ export const routes = {
     path: "/v1/voice/lines/{username}/messages",
     operationId: "sendSpokenMessage",
     description:
-      "Sends what the owner said on a call to the line's bot. The same IDs with other content answer 409, and so does a callId whose call ended: hang up. A callId the server doesn't know is accepted.",
+      "Sends what the owner said on a call to the line's bot. On the line's active outside call, what the callee said goes to that call's conversation instead, never the bot chat, under requestId outside-call:{callId}:{requestId}. The same IDs with other content answer 409, and so do a callId whose call ended and an outside call's ID that is not the line's active call: hang up. A callId the server doesn't know is accepted.",
     request: { params: voiceLineParams, body: body(spokenMessageInput) },
     responses: { 202: json(response.executionResponse) },
   }),
@@ -379,8 +387,8 @@ export const routes = {
       heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
     },
     description:
-      "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
-    request: { params: voiceLineParams, query: chatEventsInput },
+      "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. While the line's active call is an outside call, the snapshots are that call's conversation instead. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
+    request: { params: voiceLineParams, query: voiceLineEventsInput },
     responses: {
       200: {
         description: "SSE stream, not a JSON array",
@@ -393,7 +401,7 @@ export const routes = {
     path: "/v1/voice/lines/{username}/executions/{executionId}",
     operationId: "getSpokenExecution",
     description:
-      "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot.",
+      "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot or a callee's message on its outside call; 409 for a callee's message whose outside call is not the line's active call.",
     request: { params: voiceLineParams.extend({ executionId: z.string() }) },
     responses: {
       200: json(
@@ -418,7 +426,7 @@ export const routes = {
     path: "/v1/voice/lines/{username}/calls/{callId}",
     operationId: "startVoiceCall",
     description:
-      "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended or another call is active on the line: hang up.",
+      "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended, another call is active on the line, or the callId is an outside call's that no longer rings: hang up.",
     request: { params: voiceLineCallParams, body: body(voiceCallStartInput) },
     responses: { 204: empty },
   }),
@@ -1058,6 +1066,44 @@ export const routes = {
     description: "Declines a pending bot request.",
     request: { params: id.extend({ requestId: z.string() }) },
     responses: { 200: json(response.botRequestResponse) },
+  }),
+  listCallRequests: define({
+    method: "get",
+    path: "/v1/agents/{id}/call-requests",
+    operationId: "listCallRequests",
+    description:
+      "The bot's call requests, newest first: its proposals to phone someone other than the owner, and how each call went.",
+    request: { params: id },
+    responses: { 200: json(z.array(callRequestResponse)) },
+  }),
+  approveCallRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/call-requests/{requestId}/approve",
+    operationId: "approveCallRequest",
+    description:
+      "Approves a pending call request and dials at once; returns once the voice gateway was asked to call, with the status calling. 409, with the request still pending, when the request is not pending, the number no longer passes the number rules, calls to other people are switched off for the line, no voice gateway that places calls is connected, or the line has a call.",
+    request: { params: id.extend({ requestId: z.string() }) },
+    responses: { 200: json(callRequestResponse) },
+  }),
+  declineCallRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/call-requests/{requestId}/decline",
+    operationId: "declineCallRequest",
+    description: "Declines a pending call request; the bot gets a notice.",
+    request: { params: id.extend({ requestId: z.string() }) },
+    responses: { 200: json(callRequestResponse) },
+  }),
+  callRequestTranscript: define({
+    method: "get",
+    path: "/v1/agents/{id}/call-requests/{requestId}/transcript",
+    operationId: "getCallRequestTranscript",
+    description:
+      "The messages of the call's conversation: the callee's words as user messages and the bot's replies. Empty before the call, and when the callee objected to the call.",
+    request: {
+      params: id.extend({ requestId: z.string() }),
+      query: historyInput,
+    },
+    responses: { 200: json(response.historyResponse) },
   }),
   saveAgentCredential: define({
     method: "put",

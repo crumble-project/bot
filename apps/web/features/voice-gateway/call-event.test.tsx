@@ -11,6 +11,7 @@ const chat: CardChat = {
   attachmentPath: () => "",
   jobStatus: () => undefined,
   onOpenJob: () => {},
+  onOpenCall: () => {},
 };
 
 const event = (
@@ -66,6 +67,18 @@ test("a call marker reads Call started, the bot called you with its greeting, or
     expect(markup).toContain("tabler-icon-phone");
     expect(markup).not.toContain("aria-expanded");
   }
+});
+
+test("an outside call's start marker is left out of the chat: its card stands for the call", () => {
+  const message = event("call-started", "outbound", "Hi, this is Ada.");
+
+  expect(shownInChat(message)).toBe(true);
+  expect(
+    shownInChat({
+      ...message,
+      call: { callId: "c1", direction: "outbound", callee: "Trattoria Roma" },
+    }),
+  ).toBe(false);
 });
 
 test("a call notice is drawn as the same marker, with the bot's reaction, not as the owner's message", () => {

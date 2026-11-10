@@ -13,8 +13,10 @@ import { z } from "zod";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { Agent } from "../contract/agents";
 import {
+  CALL_PARTIES,
   defaultVoiceGatewayConfig,
   voiceGatewayConfigInput,
+  type CallParty,
   type VoiceCallEndReason,
   type VoiceCallEvent,
   type VoiceCallReport,
@@ -54,7 +56,18 @@ const issuedToken = z.object({
 
 type IssuedToken = z.infer<typeof issuedToken>;
 
-/** The active calls and the IDs of ended ones, kept across a restart. */
+const outsideCall = z.object({
+  callId: z.string(),
+  requestId: z.string(),
+  conversationId: z.string(),
+  botId: z.string(),
+  callee: z.string(),
+});
+
+/** An outside call's ID and where its callee's words go; stored before its call event is sent. */
+export type OutsideCall = z.infer<typeof outsideCall>;
+
+/** The active calls, the IDs of ended ones, and the outside calls' IDs, kept across a restart. */
 const storedCalls = z.object({
   active: z.array(
     z.object({
@@ -62,6 +75,7 @@ const storedCalls = z.object({
       username: z.string(),
       botId: z.string(),
       direction: z.enum(CALL_DIRECTIONS),
+      party: z.enum(CALL_PARTIES).optional(),
       greeting: z.string().optional(),
       startedAt: z.number(),
       confirmedAt: z.number(),
@@ -70,6 +84,7 @@ const storedCalls = z.object({
     }),
   ),
   ended: z.array(z.string()),
+  outside: z.array(outsideCall).optional(),
 });
 
 const digest = (token: string) => createHash("sha256").update(token).digest();
@@ -134,13 +149,60 @@ type CallEnd = {
   error?: string | undefined;
 };
 
-export type VoiceCallResult =
+type SettledCall =
   | CallEnd
-  | { outcome: "refused"; reason: string }
   | { outcome: "unacknowledged" | "timedOut" | "revoked" };
 
+export type VoiceCallResult =
+  | SettledCall
+  | { outcome: "refused"; reason: string };
+
+// A call to the owner is refused to its bot; an outside call to the owner approving it.
+const REFUSALS = {
+  owner: {
+    noLine: "You have no line.",
+    switchedOff: "Calls to the owner are switched off for your line.",
+    onCall: "You are on a call with the owner now.",
+    ringing: "A call to the owner is already ringing.",
+  },
+  outside: {
+    noLine: "The bot has no line.",
+    switchedOff: "Calls to other people are switched off for the bot's line.",
+    onCall: "The bot's line has a call now.",
+    ringing: "A call on the bot's line is already ringing.",
+  },
+} satisfies Record<CallParty, Record<string, string>>;
+
+// Lowercase without a period, like the voice gateway's own errors, as each ends a sentence the owner reads.
+const UNREPORTED = {
+  unacknowledged: "the voice gateway did not take the call",
+  timedOut: "the voice gateway did not report how the call ended",
+  revoked: "the voice gateway token was revoked",
+};
+
+function missOf(result: SettledCall): OutsideCallMiss {
+  switch (result.outcome) {
+    case "unanswered":
+    case "busy":
+      return { outcome: result.outcome };
+    case "failed":
+      return { outcome: "failed", error: result.error };
+    case "answered":
+      return {
+        outcome: "failed",
+        error: "the call was answered but did not start",
+      };
+    default:
+      return { outcome: "failed", error: UNREPORTED[result.outcome] };
+  }
+}
+
+/** `started`: its start report made it the line's active call. */
 type PendingCall = {
   key: string;
+  botId: string;
+  party: CallParty;
+  started?: boolean;
   event: VoiceCallEvent;
   acknowledged: Deferred.Deferred<void>;
   settled: Deferred.Deferred<CallEnd | { outcome: "revoked" }>;
@@ -148,6 +210,20 @@ type PendingCall = {
 
 /** `key` names the tool call, so running it again never dials again. */
 type CallRequest = { key: string; botId: string; greeting: string };
+
+/** An approved call request to dial; its `requestId` is the key, so one request never dials twice. */
+type OutsideCallRequest = {
+  botId: string;
+  requestId: string;
+  callId: string;
+  conversationId: string;
+  callee: string;
+  number: string;
+  opening: string;
+};
+
+/** Where a line's turns go: the bot chat, or the call conversation of the line's active outside call. */
+export type LineRoute = VoiceLine & { outside: OutsideCall | null };
 
 type LiveStream = VoiceEventsStream & { connectedAt: string; openedAt: number };
 
@@ -167,6 +243,7 @@ export type VoiceCall = {
   username: string;
   botId: string;
   direction: CallEventData["direction"];
+  party: CallParty;
   greeting?: string | undefined;
   startedAt: number;
   confirmedAt: number;
@@ -174,7 +251,13 @@ export type VoiceCall = {
   hangUp?: boolean | undefined;
 };
 
-/** `wakes`: the end starts a bot turn, unless the bot is disabled. */
+/** How an outside call that never started settled; results the voice gateway did not report count as failed. */
+export type OutsideCallMiss = {
+  outcome: "unanswered" | "busy" | "failed";
+  error?: string | undefined;
+};
+
+/** `wakes`: the end starts a bot turn, unless the bot is disabled. `missed`: an outside call that never started. */
 export type VoiceCallChange =
   | { phase: "started"; call: VoiceCall }
   | {
@@ -183,6 +266,11 @@ export type VoiceCallChange =
       reason: VoiceCallEnd;
       endedAt: number;
       wakes: boolean;
+    }
+  | {
+      phase: "missed";
+      call: { callId: string; botId: string };
+      miss: OutsideCallMiss;
     };
 
 type VoiceCallHandler = (change: VoiceCallChange) => Effect.Effect<void>;
@@ -214,8 +302,15 @@ export class VoiceGateway extends Context.Service<
     ) => Effect.Effect<(() => void) | null>;
     /** Why `botId` cannot call the owner now, or null when it can. */
     readonly callRefusal: (botId: string) => Effect.Effect<string | null>;
-    /** Whether the bot's line has an active call. */
-    readonly onCall: (botId: string) => Effect.Effect<boolean>;
+    /** Why `botId` cannot place an outside call now, worded for the owner, or null when it can. */
+    readonly othersRefusal: (botId: string) => Effect.Effect<string | null>;
+    /** Whether the bot's line may call people other than the owner. */
+    readonly callsOthers: (botId: string) => Effect.Effect<boolean>;
+    /** Who the bot's line has an active call with, or null without one; `callee` names an outside call's. */
+    readonly currentCall: (
+      botId: string,
+    ) => Effect.Effect<{ party: CallParty; callee?: string } | null>;
+    readonly isActive: (callId: string) => Effect.Effect<boolean>;
     /** Marks the bot's active call to end once its reply was read aloud; false when it has none. */
     readonly hangUp: (botId: string) => Effect.Effect<boolean>;
     /** Whether the bot asked to end the active call on the line. */
@@ -226,16 +321,32 @@ export class VoiceGateway extends Context.Service<
       callId: string,
       hash: string,
     ) => Effect.Effect<true | null, NotFound | Conflict>;
-    /** The line a spoken message on `callId` reaches; Conflict when that call ended. */
+    /** Where a message on `callId` goes; Conflict when that call ended, or is an outside call that is not the line's active call. */
     readonly speak: (
       username: string,
       callId: string,
       hash: string,
-    ) => Effect.Effect<VoiceLine | null, NotFound | Conflict>;
+    ) => Effect.Effect<LineRoute | null, NotFound | Conflict>;
+    /**
+     * Where the line's turns go: to the active outside call's conversation when `callId` is it, or, without `callId`,
+     * while the line has one. Conflict for an outside call's ID that is not the line's active call.
+     */
+    readonly route: (
+      username: string,
+      hash: string,
+      callId: string | undefined,
+    ) => Effect.Effect<LineRoute | null, NotFound | Conflict>;
     /** Sends a `call` event and waits until the call settles, its wait runs out, or the effect is interrupted, which sends `cancel`. */
     readonly callOwner: (
       request: CallRequest,
     ) => Effect.Effect<VoiceCallResult>;
+    /**
+     * Stores the outside call's ID, then sends its `call` event; the refusal, or null once sent. It does not wait: the
+     * call's settling runs in the service's scope and announces a call that never started as `missed`.
+     */
+    readonly callOutside: (
+      request: OutsideCallRequest,
+    ) => Effect.Effect<string | null>;
     /** Null when the token changed since `hash` was matched. */
     readonly reportCall: (
       callId: string,
@@ -247,7 +358,7 @@ export class VoiceGateway extends Context.Service<
       hash: string,
       lines: VoiceLinesReport,
     ) => Effect.Effect<void, Conflict>;
-    /** Receives every call start and end once, in order, after the change is made. */
+    /** Receives every call start, end, and missed outside call once, in order, after the change is made. */
     readonly handleCalls: (
       handler: VoiceCallHandler,
     ) => Effect.Effect<void, never, Scope.Scope>;
@@ -282,10 +393,20 @@ export class VoiceGateway extends Context.Service<
         ).data;
 
         const active = new Map<string, VoiceCall>(
-          stored?.active.map((call) => [call.username, call]),
+          stored?.active.map((call) => [
+            call.username,
+            { ...call, party: call.party ?? "owner" },
+          ]),
         );
 
         const ended = new Set<string>(stored?.ended);
+
+        const outside = new Map<string, OutsideCall>(
+          stored?.outside?.map((call) => [call.callId, call]),
+        );
+
+        // Usernames of lines that may call people other than the owner.
+        let othersAllowed = new Set<string>();
         // A reloaded call waits for the voice gateway from the first tick on.
         let reloaded = active.size > 0;
         let unsaved = false;
@@ -319,6 +440,7 @@ export class VoiceGateway extends Context.Service<
               }),
             ),
             ended: [...ended],
+            outside: [...outside.values()],
           });
         });
 
@@ -330,6 +452,18 @@ export class VoiceGateway extends Context.Service<
 
         const activeCall = (callId: string) =>
           [...active.values()].find((call) => call.callId === callId);
+
+        // A ringing or active outside call keeps its ID, so a report for it is never taken for a call with the owner.
+        const rememberOutside = (call: OutsideCall) => {
+          outside.set(call.callId, call);
+          unsaved = true;
+
+          for (const id of outside.keys()) {
+            if (outside.size <= KEPT_ENDED) return;
+
+            if (!pending.has(id) && !activeCall(id)) outside.delete(id);
+          }
+        };
 
         const tombstone = (callId: string) => {
           ended.add(callId);
@@ -436,6 +570,12 @@ export class VoiceGateway extends Context.Service<
             ownerNumbers: current.ownerNumbers,
             lines: servedLines(current, yield* agents.list),
           };
+
+          othersAllowed = new Set(
+            current.lines.flatMap((line) =>
+              line.callsOthers ? [line.username] : [],
+            ),
+          );
 
           const previous = served;
 
@@ -614,43 +754,65 @@ export class VoiceGateway extends Context.Service<
             }),
           );
 
+        const switchedOn = (
+          line: VoiceGatewayServedConfig["lines"][number],
+          party: CallParty,
+        ) =>
+          party === "owner"
+            ? line.callsOwner
+            : othersAllowed.has(line.username);
+
+        const lineRefusal = (
+          line: VoiceGatewayServedConfig["lines"][number],
+          party: CallParty,
+        ) => {
+          const texts = REFUSALS[party];
+
+          if (!switchedOn(line, party)) return texts.switchedOff;
+
+          if (!live?.calls)
+            return "No voice gateway that can place calls is connected.";
+
+          if (active.has(line.username)) return texts.onCall;
+
+          return [...pending.values()].some(
+            (call) => call.event.username === line.username,
+          )
+            ? texts.ringing
+            : null;
+        };
+
+        const callLine = (
+          current: VoiceGatewayServedConfig,
+          botId: string,
+          party: CallParty,
+        ) => {
+          const found = current.lines.find((served) => served.botId === botId);
+
+          if (!current.enabled)
+            return { refusal: "The voice gateway is disabled.", line: null };
+
+          if (!found) return { refusal: REFUSALS[party].noLine, line: null };
+          const refusal = lineRefusal(found, party);
+
+          return refusal ? { refusal, line: null } : { refusal, line: found };
+        };
+
         const callTarget = (
           current: VoiceGatewayServedConfig,
           botId: string,
         ) => {
-          const found = current.lines.find((served) => served.botId === botId);
+          const { refusal, line } = callLine(current, botId, "owner");
 
-          const refused = (refusal: string) => ({ refusal, target: null });
-
-          if (!current.enabled)
-            return refused("The voice gateway is disabled.");
-
-          if (!found) return refused("You have no line.");
-
-          if (!found.callsOwner)
-            return refused(
-              "Calls to the owner are switched off for your line.",
-            );
-
-          if (!live?.calls)
-            return refused(
-              "No voice gateway that can place calls is connected.",
-            );
-
-          if (active.has(found.username))
-            return refused("You are on a call with the owner now.");
-
-          if (
-            [...pending.values()].some(
-              (call) => call.event.username === found.username,
-            )
-          )
-            return refused("A call to the owner is already ringing.");
-
-          return {
-            refusal: null,
-            target: { username: found.username, to: current.ownerNumbers[0]! },
-          };
+          return line
+            ? {
+                refusal,
+                target: {
+                  username: line.username,
+                  to: current.ownerNumbers[0]!,
+                },
+              }
+            : { refusal, target: null };
         };
 
         const callRefusal = (botId: string) =>
@@ -661,11 +823,39 @@ export class VoiceGateway extends Context.Service<
             ),
           );
 
+        const othersRefusal = (botId: string) =>
+          locked(
+            Effect.map(
+              reconcile,
+              (current) => callLine(current, botId, "outside").refusal,
+            ),
+          );
+
+        const callsOthers = (botId: string) =>
+          locked(
+            Effect.map(reconcile, (current) =>
+              current.lines.some(
+                (served) =>
+                  served.botId === botId && othersAllowed.has(served.username),
+              ),
+            ),
+          );
+
         const callOf = (botId: string) =>
           [...active.values()].find((call) => call.botId === botId);
 
-        const onCall = (botId: string) =>
-          Effect.sync(() => callOf(botId) !== undefined);
+        const currentCall = (botId: string) =>
+          Effect.sync(() => {
+            const call = callOf(botId);
+            const callee = call && outside.get(call.callId)?.callee;
+
+            return call
+              ? { party: call.party, ...(callee !== undefined && { callee }) }
+              : null;
+          });
+
+        const isActive = (callId: string) =>
+          Effect.sync(() => activeCall(callId) !== undefined);
 
         const hangUp = (botId: string) =>
           locked(
@@ -711,6 +901,8 @@ export class VoiceGateway extends Context.Service<
 
               const call: PendingCall = {
                 key: request.key,
+                botId: request.botId,
+                party: "owner",
                 event: {
                   callId: crypto.randomUUID(),
                   ...target,
@@ -723,6 +915,58 @@ export class VoiceGateway extends Context.Service<
               };
 
               pending.set(call.event.callId, call);
+              live?.send({ event: "call", data: call.event });
+
+              return { refusal: null, call };
+            }),
+          );
+
+        const placeOutside = (request: OutsideCallRequest) =>
+          locked(
+            Effect.gen(function* () {
+              if (placed.has(request.requestId))
+                return {
+                  refusal: "This call request was already placed.",
+                  call: null,
+                };
+
+              const { refusal, line } = callLine(
+                yield* reconcile,
+                request.botId,
+                "outside",
+              );
+
+              if (!line) return { refusal, call: null };
+              placed.add(request.requestId);
+              forgetPlaced();
+
+              const call: PendingCall = {
+                key: request.requestId,
+                botId: request.botId,
+                party: "outside",
+                event: {
+                  callId: request.callId,
+                  username: line.username,
+                  to: request.number,
+                  greeting: request.opening,
+                  party: "outside",
+                },
+                acknowledged: yield* Deferred.make<void>(),
+                settled: yield* Deferred.make<
+                  CallEnd | { outcome: "revoked" }
+                >(),
+              };
+
+              pending.set(request.callId, call);
+              rememberOutside({
+                callId: request.callId,
+                requestId: request.requestId,
+                conversationId: request.conversationId,
+                botId: request.botId,
+                callee: request.callee,
+              });
+              // Stored before the event is sent, so no start report for it can ever begin a call with the owner.
+              yield* save;
               live?.send({ event: "call", data: call.event });
 
               return { refusal: null, call };
@@ -768,6 +1012,38 @@ export class VoiceGateway extends Context.Service<
           return yield* settle(call).pipe(Effect.ensuring(drop(call)));
         });
 
+        // An answered call that started ends through its end report instead.
+        const missed = (call: PendingCall, result: SettledCall) =>
+          locked(
+            Effect.sync(() => {
+              if (call.started) return;
+              const { callId } = call.event;
+
+              tombstone(callId);
+              calls.push({
+                phase: "missed",
+                call: { callId, botId: call.botId },
+                miss: missOf(result),
+              });
+            }),
+          );
+
+        const callOutside = Effect.fn("VoiceGateway.callOutside")(function* (
+          request: OutsideCallRequest,
+        ) {
+          const { refusal, call } = yield* placeOutside(request);
+
+          if (!call) return refusal;
+
+          yield* settle(call).pipe(
+            Effect.ensuring(drop(call)),
+            Effect.flatMap((result) => missed(call, result)),
+            Effect.forkIn(scope),
+          );
+
+          return null;
+        });
+
         // Null when the token changed; Conflict once the call ended.
         const onCallLine = <A, E>(
           username: string,
@@ -808,18 +1084,28 @@ export class VoiceGateway extends Context.Service<
         ) => {
           const placed = pending.get(callId);
 
+          // Only its start report while it rings makes an outside call active; it never becomes a call with the owner.
+          if (outside.has(callId) && !placed)
+            return Effect.fail(
+              new Conflict({ message: "The outside call is not ringing" }),
+            );
+
           if (busy(username, callId, placed))
             return Effect.fail(
               new Conflict({ message: "Another call is active on the line" }),
             );
 
-          if (placed) settlePending(placed, { outcome: "answered" });
+          if (placed) {
+            placed.started = true;
+            settlePending(placed, { outcome: "answered" });
+          }
 
           const call: VoiceCall = {
             callId,
             username,
             botId: found.botId,
             direction: placed ? "outbound" : "inbound",
+            party: placed?.party ?? "owner",
             greeting: placed?.event.greeting,
             startedAt: now,
             confirmedAt: now,
@@ -845,15 +1131,56 @@ export class VoiceGateway extends Context.Service<
             }),
           );
 
-        const speak = (username: string, callId: string, hash: string) =>
-          onCallLine(username, callId, hash, (found, current) =>
-            Effect.sync(() => {
-              if (current?.callId === callId && !current.spoken) {
-                current.spoken = true;
-                unsaved = true;
-              }
+        const notActive = () =>
+          Effect.fail(
+            new Conflict({
+              message: "The outside call is not active on the line",
+            }),
+          );
 
-              return found;
+        const speak = (username: string, callId: string, hash: string) =>
+          onCallLine(username, callId, hash, (found, current) => {
+            const ongoing = outside.get(callId) ?? null;
+
+            if (ongoing && current?.callId !== callId) return notActive();
+
+            if (current?.callId === callId && !current.spoken) {
+              current.spoken = true;
+              unsaved = true;
+            }
+
+            return Effect.succeed({ ...found, outside: ongoing });
+          });
+
+        const outsideOn = (username: string) => {
+          const current = active.get(username);
+
+          return current?.party === "outside"
+            ? (outside.get(current.callId) ?? null)
+            : null;
+        };
+
+        const route = (
+          username: string,
+          hash: string,
+          callId: string | undefined,
+        ) =>
+          locked(
+            Effect.gen(function* () {
+              const found = yield* lineIn(yield* reconcile, username, hash);
+
+              if (!found) return null;
+              const ongoing = outsideOn(username);
+
+              if (callId === undefined) return { ...found, outside: ongoing };
+
+              if (outside.has(callId) && ongoing?.callId !== callId)
+                return yield* notActive();
+
+              return {
+                ...found,
+                outside: ongoing?.callId === callId ? ongoing : null,
+              };
             }),
           );
 
@@ -976,12 +1303,17 @@ export class VoiceGateway extends Context.Service<
           openLine,
           openEvents,
           callRefusal,
-          onCall,
+          othersRefusal,
+          callsOthers,
+          currentCall,
+          isActive,
           hangUp,
           hangingUp,
           callOwner,
+          callOutside,
           startCall,
           speak,
+          route,
           reportCall,
           reportLines,
           handleCalls,

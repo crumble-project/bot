@@ -33,7 +33,7 @@ export const replyEvent = z
     groupName: z.string().optional(),
     waitingFor: z.enum(WAITING_FOR).optional().openapi({
       description:
-        "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
+        "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check, or a call request), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
     }),
   })
   .openapi("ReplyEvent");
@@ -56,7 +56,7 @@ export type ReplyActivity = {
   /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
   jobName?: string;
   groupName?: string;
-  /** Set when the reply waits for the owner's answer: a held desktop action, or a credential or login request. */
+  /** Set when the reply waits for the owner's answer: a held desktop action or call request, or a credential or login request. */
   waitingFor?: WaitingFor;
 };
 

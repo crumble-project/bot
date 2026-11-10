@@ -44,6 +44,7 @@ import {
   positiveId,
 } from "../shared/entry-ids";
 import { HarnessFiles } from "../shared/harness-files";
+import { isCallOnly } from "../shared/chat-only";
 import type { defineAnchorTask } from "../shared/anchor-task";
 import { ProviderModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
@@ -118,10 +119,14 @@ export type RuntimeSnapshot = {
   updatedAt: number;
 };
 
-/** Options for a chat snapshot. `partial` opts into the in-flight reply text, which snapshots hide by default. */
+/**
+ * Options for a chat snapshot. `partial` opts into the in-flight reply text, which snapshots hide by default. `own`
+ * reads the given conversation's transcript; without it a snapshot reads the bot chat's, whatever conversation it is.
+ */
 export type SnapshotOptions = {
   limit?: number | undefined;
   partial?: boolean | undefined;
+  own?: boolean | undefined;
 };
 
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
@@ -626,7 +631,7 @@ export class AgentRuntime {
         model: modelRef(model ?? agent),
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
         extensions: style.extensions?.(parts) ?? {
-          remove: [record.jobKnowledgeExtension],
+          remove: [record.jobKnowledgeExtension, ...offered.filter(isCallOnly)],
         },
         instructions: conversationInstructions(
           agent,
@@ -900,10 +905,19 @@ export class AgentRuntime {
     );
 
     if (!conversation) throw new Error("Conversation not found");
+
     // Read transcript before attaching the live view. A run may commit an
     // intermediate assistant entry while the view is being attached; the
     // active-run guard below then filters it from this snapshot.
-    const transcript = await readTranscript(harness, agent.id, options);
+    const transcript = options.own
+      ? await readConversationTranscript(
+          harness,
+          agent.id,
+          conversation.id,
+          options,
+        )
+      : await readTranscript(harness, agent.id, options);
+
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
 
     try {
@@ -1014,6 +1028,28 @@ export class AgentRuntime {
           harness,
           agent.id,
           job.conversationId,
+          options,
+        ),
+      false,
+    );
+  }
+
+  /** A conversation's own transcript, such as an outside call's, with unfinished assistant entries hidden. */
+  async conversationHistory(
+    agent: Agent,
+    conversationId: string,
+    options: HistoryOptions = {},
+  ) {
+    const { harness } = await this.open(agent);
+
+    return this.visible(
+      harness,
+      options,
+      () =>
+        readConversationTranscript(
+          harness,
+          agent.id,
+          localConversationId(agent.id, conversationId),
           options,
         ),
       false,

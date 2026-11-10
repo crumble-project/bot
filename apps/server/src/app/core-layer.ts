@@ -3,6 +3,7 @@ import { DesktopControl } from "../bot-desktop/desktop-control";
 import { HeldActions } from "../bot-desktop/held-actions";
 import { BotDeletion } from "../bot-ports/bot-deletion";
 import { BotNotices } from "../bot-ports/bot-notices";
+import { CallNotes } from "../bot-ports/call-notes";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
 import { MintedCredentials } from "../credentials/minted-credentials";
@@ -48,7 +49,9 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(
       Layer.mergeAll(BotSecretRequests.layer, BotSecretUses.layer),
     ),
-    Layer.provideMerge(Layer.mergeAll(BotNotices.layer, BotDeletion.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(BotNotices.layer, BotDeletion.layer, CallNotes.layer),
+    ),
     Layer.provideMerge(secretsLayer(passwordManagers)),
     Layer.provideMerge(productLayer(dataDir)),
   );

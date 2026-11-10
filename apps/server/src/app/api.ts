@@ -55,12 +55,15 @@ import type { EventSources } from "../event-sources/event-sources";
 import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
 import { registerVoiceGatewayRoutes } from "../voice-gateway/voice-gateway-api";
 import type { VoiceGateway } from "../voice-gateway/voice-gateway";
+import { registerCallRequestRoutes } from "../voice-gateway/call-requests-api";
+import { CallRequests } from "../voice-gateway/call-requests";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 
 export type ApiServices =
   | CoreServices
   | BotRequests
+  | CallRequests
   | BotWorkspaces
   | OwnerSkills
   | EventSources
@@ -112,6 +115,7 @@ function apiContext(
       ),
     ),
     botRequests: Context.get(services, BotRequests),
+    callRequests: Context.get(services, CallRequests),
     provider: providerSchema(providerAuth.models),
     models: providerAuth.models,
     providerAuth,
@@ -158,6 +162,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerLoginRoutes,
   registerHeldActionRoutes,
   registerBotRequestRoutes,
+  registerCallRequestRoutes,
   registerMemoryRoutes,
   registerBotSkillRoutes,
   registerLearningRoutes,

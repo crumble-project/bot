@@ -86,6 +86,13 @@ import { EventDispatcher } from "../automations/event-dispatcher";
 import { VoiceGateway } from "../voice-gateway/voice-gateway";
 import { callMarkers } from "../voice-gateway/call-markers";
 import { callOwnerTools } from "../voice-gateway/call-owner";
+import { callConversations } from "../voice-gateway/call-conversation";
+import { CallRequests } from "../voice-gateway/call-requests";
+import {
+  outsideCalls,
+  recoverOutsideCalls,
+} from "../voice-gateway/outside-calls";
+import { requestCallTools } from "../voice-gateway/request-call";
 import { eventPayloadTools } from "../automations/event-tools";
 import { usesDesktop } from "../contract/tools";
 import type { ServerSettings } from "./server-settings";
@@ -216,7 +223,11 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
       return BotRuntime.layer(join(dataDir, "agents"), {
         jobExtensions: (agent) => jobExtensions(jobKinds, agent).job,
-        conversationKinds: () => [groupConversations(), reviewConversations()],
+        conversationKinds: () => [
+          groupConversations(),
+          reviewConversations(),
+          callConversations(),
+        ],
         env: (agent, target, context) =>
           conversationEnv(jobKinds, agent, target, context),
       });
@@ -281,7 +292,13 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
-    Layer.mergeAll(callOwnerTools, callMarkers).pipe(
+    Layer.mergeAll(
+      callOwnerTools,
+      callMarkers,
+      requestCallTools,
+      outsideCalls,
+    ).pipe(
+      Layer.provideMerge(CallRequests.layer),
       Layer.provideMerge(VoiceGateway.layer(options.tenantId)),
     ),
     EventDispatcher.layer.pipe(Layer.provide(automations)),
@@ -358,6 +375,7 @@ const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
   yield* (yield* MessageGateway).start;
   yield* (yield* EventRelay).start;
   yield* (yield* EventDispatcher).start;
+  yield* recoverOutsideCalls;
   yield* (yield* VoiceGateway).start;
   scheduler.start();
 });

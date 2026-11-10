@@ -349,6 +349,8 @@ function originLabel(message: Message) {
 
   if (origin.kind === "bot_request") return "Bot request";
 
+  if (origin.kind === "call_request") return "Call request";
+
   if (origin.kind === "call") return "Call";
 
   return originContent(origin);

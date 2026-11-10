@@ -69,6 +69,12 @@ Restoring a backup discards changes made after that backup. There is no automati
 This is an intentional breaking change for native clients. Native support requires [apple#3](https://github.com/crumble-project/apple/issues/3) and
 [android#7](https://github.com/crumble-project/android/issues/7) before those clients can use the new contract.
 
+## Outside calls
+
+A bot with a line that may call other people (`callsOthers` on a line of `PUT /v1/voice-gateway`, absent means `false`) gets the `request_call` tool. Its result's `details` is the stored `CallRequest`, the schema of `GET /v1/agents/{id}/call-requests`, which a card reads to show the request and **Approve** and **Decline**. `POST .../approve` dials at once and answers `409`, leaving the request `pending`, when the number rules or the line refuse the call.
+
+The `call` event's `party` is `owner` or `outside`; absent means `owner`. For an outside call, `to` is the approved number, normalized, and `greeting` the approved opening. The server stores an outside call's ID before it sends the event. The ID becomes the line's active call only by a start report while the call rings: every other start report, spoken message, line event stream (`callId` query), or execution read for it answers `409`. While it is active, the line's messages go to the call's own conversation under request IDs `outside-call:{callId}:{requestId}`, and the line's event stream and execution reads serve that conversation. A transcript event's `call` gains an optional `callee` for outside calls.
+
 ## Server-sent events
 
 All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie), except `/v1/voice/` streams, which take only a voice gateway token. All send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.

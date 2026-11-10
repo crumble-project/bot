@@ -7,9 +7,14 @@ import { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotsAccess } from "../bots/bots";
 import { chatEventStream } from "../bots/chat-api";
 import type { AgentRuntime } from "../bots/runtime";
-import { NotFound } from "../shared/errors";
+import type { Execution } from "../shared/domain";
+import { Conflict, NotFound } from "../shared/errors";
 import { streamEvents } from "../shared/event-stream";
-import { parseRequestId, voiceRequest } from "../shared/request-ids";
+import {
+  outsideCallRequest,
+  parseRequestId,
+  voiceRequest,
+} from "../shared/request-ids";
 import type { Runner } from "../shared/runner";
 import { VoiceGateway } from "./voice-gateway";
 
@@ -67,6 +72,29 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
   const matched = new WeakMap<Request, string>();
   const hash = (request: Request) => matched.get(request)!;
 
+  // A callee's message is read only on its line's active outside call, from that call's conversation.
+  const spokenOn = async (
+    username: string,
+    execution: Execution,
+    current: string,
+  ) => {
+    const request = parseRequestId(execution.requestId);
+
+    if (request.kind === "voice") return;
+
+    if (request.kind !== "outside-call")
+      throw new NotFound({ message: "Spoken message not found" });
+
+    const line = await run.runPromise(
+      gateway.route(username, current, request.callId),
+    );
+
+    if (!line) throw tokenChanged();
+
+    if (line.outside?.conversationId !== execution.conversationId)
+      throw new Conflict({ message: "The outside call is not active" });
+  };
+
   app.use(`${VOICE_GATEWAY_PREFIX}*`, async (c, next) => {
     const token = c.req.header(VOICE_GATEWAY_TOKEN_HEADER);
     const current = token ? gateway.matchToken(token) : null;
@@ -105,24 +133,36 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
 
     if (!line) throw tokenChanged();
 
+    // A callee's words reach only the call's conversation, never the bot chat.
     return c.json(
-      await service.sendChat(
-        line.botId,
-        content,
-        voiceRequest(callId, requestId),
-      ),
+      line.outside
+        ? await service.send(
+            line.outside.conversationId,
+            content,
+            outsideCallRequest(callId, requestId),
+          )
+        : await service.sendChat(
+            line.botId,
+            content,
+            voiceRequest(callId, requestId),
+          ),
       202,
     );
   });
   register(routes.voiceLineEvents, async (c) => {
     const { username } = c.req.valid("param");
-    const line = await run.runPromise(gateway.line(username, hash(c.req.raw)));
+    const { callId, ...snapshot } = c.req.valid("query");
+
+    const line = await run.runPromise(
+      gateway.route(username, hash(c.req.raw), callId),
+    );
 
     if (!line) throw tokenChanged();
 
     return chatEventStream(c, service, {
       agentId: line.botId,
-      snapshot: c.req.valid("query"),
+      conversationId: line.outside?.conversationId,
+      snapshot: line.outside ? { ...snapshot, own: true } : snapshot,
       opened: (close) =>
         run.runPromise(
           gateway.openLine({
@@ -144,12 +184,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
       ExecutionRepository.use((r) => r.get(executionId)),
     );
 
-    if (
-      !execution ||
-      execution.agentId !== line.botId ||
-      parseRequestId(execution.requestId).kind !== "voice"
-    )
+    if (!execution || execution.agentId !== line.botId)
       throw new NotFound({ message: "Spoken message not found" });
+    await spokenOn(username, execution, hash(c.req.raw));
 
     const reply =
       execution.status !== "done"

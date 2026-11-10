@@ -4,10 +4,16 @@ import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { CALL_OWNER_TOOL_NAME, HANG_UP_TOOL_NAME } from "../contract/tools";
 import { VOICE_CALL_GREETING_MAX } from "../contract/voice-gateway";
-import { chatOnly } from "../shared/chat-only";
+import { callOnly, chatOnly } from "../shared/chat-only";
+import { CallConversation } from "./call-conversation";
 import { VoiceGateway, type VoiceCallResult } from "./voice-gateway";
 
 type Calls = Pick<VoiceGateway["Service"], "callRefusal" | "callOwner">;
+
+type Offers = Pick<
+  VoiceGateway["Service"],
+  "callRefusal" | "callOwner" | "currentCall" | "hangUp"
+>;
 
 type HangUps = Pick<VoiceGateway["Service"], "hangUp">;
 
@@ -70,6 +76,18 @@ export function callOwnerExtension(botId: string, calls: Calls) {
   return chatOnly(defineExtension({ name: "voice-call", tools: [callOwner] }));
 }
 
+const hangUpResult = (ending: boolean) => ({
+  output: [
+    {
+      type: "text" as const,
+      text: ending
+        ? "The call ends once your reply was read aloud."
+        : "You are not on a call.",
+    },
+  ],
+  isError: !ending,
+});
+
 export function hangUpExtension(botId: string, calls: HangUps) {
   const hangUp = defineTool({
     name: HANG_UP_TOOL_NAME,
@@ -78,38 +96,68 @@ export function hangUpExtension(botId: string, calls: HangUps) {
       "Call it whenever the owner says goodbye or asks you to hang up, then write a short goodbye, which is read aloud before the line drops.",
     parameters: Type.Object({}),
     callers: ["model"],
-    execute: async () => {
-      const ending = await Effect.runPromise(calls.hangUp(botId));
-
-      return {
-        output: [
-          {
-            type: "text" as const,
-            text: ending
-              ? "The call ends once your reply was read aloud."
-              : "You are not on a call.",
-          },
-        ],
-        isError: !ending,
-      };
-    },
+    execute: async () =>
+      hangUpResult(await Effect.runPromise(calls.hangUp(botId))),
   });
 
   return chatOnly(defineExtension({ name: "voice-hang-up", tools: [hangUp] }));
+}
+
+/** `hang_up` for an outside call's conversation; `objected` withholds the call's transcript once the call ends. */
+export function outsideHangUpExtension(
+  botId: string,
+  callee: string,
+  calls: HangUps,
+) {
+  const hangUp = defineTool({
+    name: HANG_UP_TOOL_NAME,
+    description:
+      `Hang up the phone call you are on with ${callee}. Only this tool ends the call: saying goodbye does not. ` +
+      "Call it when the goal is reached or cannot be reached, or after you said you will check and call back, then write a short goodbye, which is read aloud before the line drops.",
+    parameters: Type.Object({
+      objected: Type.Optional(
+        Type.Boolean({
+          description: `True when ${callee} objected to talking to an AI or to the transcription: the call's transcript is then deleted.`,
+        }),
+      ),
+    }),
+    callers: ["model"],
+    execute: async ({ objected }, api, context) => {
+      if (objected)
+        await api.commit(async (tx) => {
+          (await tx.doc(CallConversation, api.conversationId)).objected = true;
+        }, context);
+
+      return hangUpResult(await Effect.runPromise(calls.hangUp(botId)));
+    },
+  });
+
+  return callOnly(
+    defineExtension({ name: "outside-call-hang-up", tools: [hangUp] }),
+  );
+}
+
+async function voiceOffers(agentId: string, gateway: Offers) {
+  const call = await Effect.runPromise(gateway.currentCall(agentId));
+
+  if (call?.party === "outside")
+    return [
+      outsideHangUpExtension(agentId, call.callee ?? "the callee", gateway),
+    ];
+
+  if (call) return [hangUpExtension(agentId, gateway)];
+
+  return (await Effect.runPromise(gateway.callRefusal(agentId)))
+    ? []
+    : [callOwnerExtension(agentId, gateway)];
 }
 
 export const callOwnerTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const gateway = yield* VoiceGateway;
 
-    yield* (yield* BotExtensions).register(
-      ExtensionPosition.voice,
-      async (agent) =>
-        (await Effect.runPromise(gateway.onCall(agent.id)))
-          ? [hangUpExtension(agent.id, gateway)]
-          : (await Effect.runPromise(gateway.callRefusal(agent.id)))
-            ? []
-            : [callOwnerExtension(agent.id, gateway)],
+    yield* (yield* BotExtensions).register(ExtensionPosition.voice, (agent) =>
+      voiceOffers(agent.id, gateway),
     );
   }),
 );

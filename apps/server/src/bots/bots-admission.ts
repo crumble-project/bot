@@ -22,7 +22,7 @@ type AdmissionDeps = {
 };
 
 export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
-  const { events, executions, monitors, runtime } = context;
+  const { callNotes, events, executions, monitors, runtime } = context;
   const { agent } = deps.lookup;
   const { settle } = deps.notifications;
 
@@ -34,6 +34,15 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });
 
+  // An outside call's goal and transcript reach the model, never the stored message.
+  const callNote = (execution: Execution) => {
+    const request = parseRequestId(execution.requestId);
+
+    return request.kind === "voice-call"
+      ? callNotes.note(execution.agentId, request.callId)
+      : Effect.succeed(undefined);
+  };
+
   const submit = Effect.fnUntraced(function* (
     execution: Execution,
     owner: Agent,
@@ -43,6 +52,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     const origin = yield* deps.origin(execution);
     const attachments = yield* executions.attachments(execution.id);
     const event = yield* eventInput(execution);
+    const call = yield* callNote(execution);
 
     const prepared = yield* pi(() =>
       runtime.prepareInput(
@@ -56,7 +66,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       prepared.modelContent,
       origin,
       execution.requestId,
-      event,
+      { event, call },
     );
 
     return yield* pi(() =>

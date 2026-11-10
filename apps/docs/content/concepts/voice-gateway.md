@@ -69,7 +69,8 @@ can't be `.` or `..`. Each username and each bot can have only one line, and
 you can add up to 64 lines.
 
 **Can call you** stays off for a new line. Turn it on to let that line's bot
-call you; see [Calls from a bot](#calls-from-a-bot).
+call you; see [Calls from a bot](#calls-from-a-bot). **Can call other people**
+also stays off; see [The bot calls someone else](#the-bot-calls-someone-else).
 
 If you delete a line's bot, the line shows **Bot deleted**: choose another bot
 or remove the line before saving. If you disable a line's bot, the line shows
@@ -113,6 +114,105 @@ voice gateway stops a call the bot was about to place. If you stop the bot's
 turn while your phone rings, the voice gateway hangs up. One tool call rings
 you at most once, even if the voice gateway reconnects or Crumble restarts.
 
+## The bot calls someone else
+
+A bot can also call someone other than you, such as a friend to ask about
+dinner, once you approved the call. This is an outside call, and the person it
+calls is the callee.
+
+**Use outside calls only to call friends and family who know about it and
+agreed beforehand.** The legal situation for calling anyone else, including
+businesses, is not settled. Don't use outside calls for advertising or sales
+calls.
+
+### Turn it on
+
+Two switches must both be on:
+
+- In **Settings** > **Voice gateway**, turn on **Can call other people** for
+  the bot's line. It's off for a new line, and it doesn't need **Can call
+  you**.
+- In the voice gateway's own configuration file, set `call.allowOutside` to
+  `true`. It's `false` by default, so whoever runs the voice gateway decides
+  whether its telephone account may dial numbers that aren't yours. While it's
+  off, an approved call fails with "outside calls are switched off on this
+  voice gateway".
+
+### Approve or decline a call request
+
+The bot can't dial by itself. It proposes the call with a call request, which
+appears as a card in the bot chat with:
+
+- the callee's name and the number;
+- the goal: what the call should achieve and its limits, for example "Book a
+  table for 2 on Friday between 19:00 and 20:00";
+- the opening: the first thing the bot says when the callee answers, read
+  aloud word for word.
+
+Before you approve, check that the opening says that it's an AI assistant,
+whom it calls for, that the call is transcribed, and why it calls. The card
+lists these four points above the opening. Crumble doesn't check the wording:
+your approval is the check.
+
+Select **Approve** to dial at once, or **Decline** to refuse. You can't edit a
+call request: to change it, decline it and tell the bot what to change. The
+bot gets a message when you decline. A bot can have only one pending call
+request.
+
+If Crumble can't place the call, the card shows why and the request stays
+pending, so you can approve it again later. For example, the voice gateway
+isn't connected, the line has a call, or **Can call other people** was turned
+off. After you approve, the card shows **Calling**, then how the call went:
+**Answered**, **Not answered**, **Busy**, or **Failed** with the reason. Select
+the card to open the call beside the chat: its goal, the opening, and what the
+bot and the callee said. During the call, the transcript updates as they talk.
+
+### During the call
+
+The call runs separately from the bot chat. The bot on the phone knows only
+the goal and the opening. It has none of the bot's memory, instructions,
+chat history, or tools, except hanging up. What the callee says never reaches
+the bot chat as a message from you, and you can keep chatting with the bot
+while the call runs.
+
+The bot works only towards the goal. If the callee asks for anything the goal
+doesn't cover, the bot says it will check and call back, and hangs up. When
+asked whether it's an AI or whether the call is transcribed, it says yes.
+
+If the callee objects to talking to an AI or to the transcription, the bot
+apologizes, says goodbye, and hangs up. The call's transcript is then
+withheld: the card shows none, and the bot only learns that the callee
+objected. Crumble doesn't delete the transcript from its storage.
+
+When the call ends, the bot gets one message about it, with the goal and the
+transcript, and tells you what came of the call or asks you about what's
+still open. A call that wasn't answered isn't tried again; the bot can make a
+new call request.
+
+### Which numbers a bot can call
+
+Crumble checks the number when the bot asks and again when you approve, and
+the voice gateway checks it once more before it dials:
+
+- Spaces, dashes, dots, and brackets are removed, and a leading `00` becomes
+  `+`. After that, the number may contain only digits, with an optional
+  leading `+`.
+- It must have 5 to 15 digits, so emergency and short numbers such as 112 or
+  110 can't be called.
+- German premium and service numbers (starting with `0900`, `0137`, `0180`, or
+  `118`, also after `+49`), international premium numbers (`+979`), and
+  satellite networks (`+870`, `+881`, `+882`) can't be called. This list
+  doesn't cover premium numbers in other countries.
+- It can't be one of **Your numbers**, written the same way. To have a bot call
+  you, use **Can call you**.
+
+### What the speech provider receives
+
+The voice gateway sends what the callee says to its speech provider, as on
+your own calls. In `realtime` mode, OpenAI keeps the call's content for up to
+30 days by default. The transcription endpoint used in `pipeline` mode keeps
+none. For `live` mode, check OpenAI's data retention terms.
+
 ## Calls in the chat
 
 Each call shows in the line's bot chat, so the bot and you can see what
@@ -123,6 +223,8 @@ happened on the phone:
   the greeting it said quoted below.
 - **Call ended** shows how long the call lasted and, unless it was hung up
   normally, why it ended: for example, the voice gateway lost its connection.
+- An outside call shows as one card where it ended, with the callee, the
+  outcome, and how long it lasted. Select it to open the call beside the chat.
 
 When a call ends, the bot gets one turn to finish what the call left open,
 for example to call you back as it promised. If nothing is open, it reacts to
@@ -157,3 +259,5 @@ waits for about 3 seconds of silence, and ends the call. The chat then shows
 - Crumble can't check caller IDs. Anyone who can send traffic from your
   telephone system's address can claim to call from your number and reach
   your bots as you.
+- An outside call shows the line's number to the callee. Someone who knows it
+  and can fake your caller ID can call the line and reach the bot as you.
