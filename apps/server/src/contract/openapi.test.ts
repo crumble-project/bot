@@ -79,4 +79,30 @@ describe("exported response and parameter schemas", () => {
       [],
     );
   });
+
+  test("voice gateway routes take only a voice gateway token, and no other route does", () => {
+    const security: [string, unknown][] = [];
+
+    for (const [route, path] of Object.entries(openAPIDocument().paths ?? {}))
+      for (const method of ["get", "put", "post", "patch", "delete"] as const) {
+        const operation = path?.[method];
+
+        if (operation) security.push([route, operation.security]);
+      }
+
+    const voice = security.filter(([route]) => route.startsWith("/v1/voice/"));
+    const tokenOnly = [{ VoiceGatewayToken: [] }];
+
+    expect(voice.length).toBeGreaterThan(0);
+    expect(
+      voice.filter(([, value]) => !Bun.deepEquals(value, tokenOnly)),
+    ).toEqual([]);
+    expect(
+      security.filter(
+        ([route, value]) =>
+          !route.startsWith("/v1/voice/") &&
+          JSON.stringify(value).includes("VoiceGatewayToken"),
+      ),
+    ).toEqual([]);
+  });
 });

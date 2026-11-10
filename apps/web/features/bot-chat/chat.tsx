@@ -206,6 +206,7 @@ function ChatTranscript({
 
   const chat: CardChat = {
     botId: bot.id,
+    botName: bot.name,
     attachmentPath: conversation.attachmentPath,
     jobStatus,
     onOpenJob,

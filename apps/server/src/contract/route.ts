@@ -83,3 +83,20 @@ export function define<const R extends RouteConfig>(config: R) {
     responses: { ...errors, ...config.responses },
   });
 }
+
+/** A route under `/v1/voice/`: only a voice gateway token reaches it, never a session. */
+export function defineVoiceGateway<const R extends RouteConfig>(config: R) {
+  const security: NonNullable<RouteConfig["security"]> = [
+    { VoiceGatewayToken: [] },
+  ];
+
+  return createRoute({
+    ...config,
+    security,
+    responses: {
+      ...errors,
+      401: json(error, "Missing, revoked, or replaced voice gateway token"),
+      ...config.responses,
+    },
+  });
+}

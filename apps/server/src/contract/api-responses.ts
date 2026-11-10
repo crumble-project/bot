@@ -23,6 +23,12 @@ import { SCHEDULE_KINDS } from "./schedules";
 import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
 import { replyEvent } from "./reply-event";
+import {
+  voiceCallCancelEvent,
+  voiceCallEvent,
+  voiceGatewayConfigEvent,
+  voiceGatewayReplacedEvent,
+} from "./voice-gateway";
 
 export const secretStatusResponse = z
   .object({
@@ -149,13 +155,13 @@ const origin = z
   .object({
     kind: z.string().openapi({
       description:
-        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, or group. Clients may receive other values later.",
+        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, or call (a voice gateway call ended, which starts a bot turn). Clients may receive other values later.",
     }),
     name: z.string().optional(),
     agentId: z.string().optional(),
     via: z.string().optional().openapi({
       description:
-        "On an owner message sent through a message gateway: the gateway's ID, such as `discord`.",
+        "On an owner message sent through a message gateway: the gateway's ID, such as `discord`. On a spoken message from a voice gateway call: `voice`.",
     }),
     source: z.string().optional().openapi({
       description:
@@ -198,7 +204,10 @@ const message = z
     }),
     stopReason: z.string().optional(),
     timestamp: z.number().optional(),
-    kind: z.string().optional(),
+    kind: z.string().optional().openapi({
+      description:
+        "The entry's kind. Events include bot-message, job-question, held-action, job-failure, reset, compaction, call-started (content: the greeting of a call the bot placed, or Call started), and call-ended (content: how the call ended, when it woke no bot turn). Clients may receive other values later.",
+    }),
     replyTo: z.string().optional(),
     replyPreview: z.string().optional(),
     origin: origin.optional(),
@@ -222,6 +231,17 @@ const message = z
       .openapi({
         description:
           "On a `held-action` event: the desktop job action waiting for the owner. Its state is under `/v1/agents/{id}/held-actions`.",
+      }),
+    call: z
+      .object({
+        callId: z.string(),
+        direction: z.enum(["inbound", "outbound"]).openapi({
+          description: "outbound: the bot called the owner.",
+        }),
+      })
+      .optional()
+      .openapi({
+        description: "On a `call-started` or `call-ended` event: the call.",
       }),
     attachments: z.array(attachment).optional(),
     toolCallId: z.string().optional(),
@@ -1140,4 +1160,24 @@ export const eventSchemas: {
     artifact: "group-chat-snapshot.schema.json",
   },
   { schema: desktopControlResponse, artifact: "desktop-control.schema.json" },
+  {
+    schema: voiceGatewayConfigEvent,
+    component: "VoiceGatewayConfigEvent",
+    artifact: "voice-gateway-config.schema.json",
+  },
+  {
+    schema: voiceCallEvent,
+    component: "VoiceCallEvent",
+    artifact: "voice-call.schema.json",
+  },
+  {
+    schema: voiceCallCancelEvent,
+    component: "VoiceCallCancelEvent",
+    artifact: "voice-call-cancel.schema.json",
+  },
+  {
+    schema: voiceGatewayReplacedEvent,
+    component: "VoiceGatewayReplacedEvent",
+    artifact: "voice-gateway-replaced.schema.json",
+  },
 ];

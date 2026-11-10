@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ACCOUNT_ID_PATTERN } from "../shared/account-id";
+import { credentialAccount } from "../shared/account-id";
 import { RfbProtocolError, rfbFilter } from "./rfb-filter";
 import type { DesktopStream } from "../workspaces/workspace";
 
@@ -45,14 +45,10 @@ export async function novncResponse(requestPath: string) {
     : undefined;
 }
 
-const TICKET = new RegExp(`^(${ACCOUNT_ID_PATTERN})\\.[A-Za-z0-9_-]+$`);
-
 const VIEWER_PATH = new RegExp(`^${VIEWER_PREFIX}/([^/]+)(?:/websockify)?$`);
 
-export const ticketOwner = (ticket: string) => TICKET.exec(ticket)?.[1];
-
 export const viewerPathOwner = (path: string) =>
-  ticketOwner(VIEWER_PATH.exec(path)?.[1] ?? "");
+  credentialAccount(VIEWER_PATH.exec(path)?.[1] ?? "");
 
 export type Viewer = { agentId: string; passive: boolean };
 

@@ -62,6 +62,7 @@ export const botsService = (context: BotsContext): Bots["Service"] => {
     snapshot: reads.snapshot,
     chat: chat.chat,
     recordBotMessage: chat.recordBotMessage,
+    recordCallEvent: chat.recordCallEvent,
     chatSnapshot: chat.chatSnapshot,
     history: reads.history,
     jobs: reads.jobs,

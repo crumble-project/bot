@@ -12,6 +12,11 @@
         "scheme": "bearer",
         "description": "Better Auth session token from /api/auth/sign-in/email. The legacy server token is not accepted."
       },
+      "VoiceGatewayToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The voice gateway token the owner issues in settings. It reaches only /v1/voice/ routes, which accept nothing else."
+      },
       "SessionCookie": {
         "type": "apiKey",
         "in": "cookie",
@@ -207,6 +212,105 @@
           "createdAt"
         ],
         "description": "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record."
+      },
+      "VoiceGatewayConfigEvent": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ownerNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "username": {
+                  "type": "string"
+                },
+                "botId": {
+                  "type": "string"
+                },
+                "botName": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string",
+                  "description": "The line's display name, or the bot's name."
+                },
+                "callsOwner": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "username",
+                "botId",
+                "botName",
+                "displayName",
+                "callsOwner"
+              ]
+            },
+            "description": "Lines whose bot is enabled; empty while the voice gateway is disabled."
+          }
+        },
+        "required": [
+          "enabled",
+          "ownerNumbers",
+          "lines"
+        ]
+      },
+      "VoiceCallEvent": {
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string",
+            "description": "The line the call is placed from."
+          },
+          "to": {
+            "type": "string",
+            "description": "The owner number to dial, the first in the owner's list."
+          },
+          "greeting": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "What the bot says when the owner answers."
+          }
+        },
+        "required": [
+          "callId",
+          "username",
+          "to",
+          "greeting"
+        ],
+        "description": "A bot asks to call the owner. Sent only to a stream opened with calls=true, and sent again after a reconnect until the call is acknowledged; ignore a callId you already dial."
+      },
+      "VoiceCallCancelEvent": {
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "callId"
+        ],
+        "description": "The call's turn was aborted or its wait ran out: hang up if it still rings."
+      },
+      "VoiceGatewayReplacedEvent": {
+        "type": "object",
+        "properties": {},
+        "description": "Another connection with the same voice gateway token took over; sent before this stream closes."
       },
       "Health": {
         "type": "object",
@@ -441,6 +545,171 @@
           "workspaceMemoryMib",
           "codingImage",
           "questionGraceMinutes"
+        ]
+      },
+      "Execution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "submissionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachmentsDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "conversationId",
+          "scheduleId",
+          "submissionId",
+          "requestId",
+          "prompt",
+          "status",
+          "error",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SpokenExecution": {
+        "type": "object",
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/Execution"
+          },
+          "reply": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The bot's reply, read by the message's submission; null unless the execution's status is done. A failed or cancelled execution never gets one."
+          },
+          "hangUp": {
+            "type": "boolean",
+            "description": "True when the bot asked to end the call: hang up once the reply was read aloud, then report the end with reason hungUp."
+          }
+        },
+        "required": [
+          "execution",
+          "reply",
+          "hangUp"
+        ]
+      },
+      "VoiceCallReport": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "ringing",
+                  "answered",
+                  "unanswered",
+                  "busy",
+                  "failed"
+                ],
+                "description": "For a call a bot placed: ringing acknowledges it as soon as dialing starts; the others settle it."
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "outcome"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "ended"
+                ],
+                "description": "A started call ended. Accepted for an active, ended, or unknown call; an unknown one can't be started afterwards."
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "hungUp",
+                  "maxDuration",
+                  "failed",
+                  "stopping"
+                ],
+                "description": "hungUp: the media ended or the dialog closed. maxDuration: the call reached its maximum length. failed: any other error. stopping: the voice gateway shut down."
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "outcome",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         ]
       },
       "GitHubApp": {
@@ -1081,7 +1350,8 @@
             "type": "number"
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "The entry's kind. Events include bot-message, job-question, held-action, job-failure, reset, compaction, call-started (content: the greeting of a call the bot placed, or Call started), and call-ended (content: how the call ended, when it woke no bot turn). Clients may receive other values later."
           },
           "replyTo": {
             "type": "string"
@@ -1140,6 +1410,27 @@
             ],
             "description": "On a `held-action` event: the desktop job action waiting for the owner. Its state is under `/v1/agents/{id}/held-actions`."
           },
+          "call": {
+            "type": "object",
+            "properties": {
+              "callId": {
+                "type": "string"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "inbound",
+                  "outbound"
+                ],
+                "description": "outbound: the bot called the owner."
+              }
+            },
+            "required": [
+              "callId",
+              "direction"
+            ],
+            "description": "On a `call-started` or `call-ended` event: the call."
+          },
           "attachments": {
             "type": "array",
             "items": {
@@ -1190,7 +1481,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, or group. Clients may receive other values later."
+            "description": "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, or call (a voice gateway call ended, which starts a bot turn). Clients may receive other values later."
           },
           "name": {
             "type": "string"
@@ -1200,7 +1491,7 @@
           },
           "via": {
             "type": "string",
-            "description": "On an owner message sent through a message gateway: the gateway's ID, such as `discord`."
+            "description": "On an owner message sent through a message gateway: the gateway's ID, such as `discord`. On a spoken message from a voice gateway call: `voice`."
           },
           "source": {
             "type": "string",
@@ -1557,85 +1848,6 @@
         "required": [
           "path",
           "expiresAt"
-        ]
-      },
-      "Execution": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "agentId": {
-            "type": "string"
-          },
-          "conversationId": {
-            "type": "string"
-          },
-          "scheduleId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "submissionId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "replyTo": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "attachmentsDigest": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "running",
-              "done",
-              "failed",
-              "cancelled"
-            ]
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "agentId",
-          "conversationId",
-          "scheduleId",
-          "submissionId",
-          "requestId",
-          "prompt",
-          "status",
-          "error",
-          "createdAt",
-          "updatedAt"
         ]
       },
       "Compaction": {
@@ -6666,6 +6878,1723 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice-gateway": {
+      "get": {
+        "operationId": "getVoiceGateway",
+        "description": "The account's voice gateway: its lines and the owner's numbers, when its token was issued, and the connection status.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "ownerNumbers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^\\+?[0-9*#]{1,32}$/u"
+                          },
+                          "maxItems": 20,
+                          "description": "The owner's phone numbers. A call from one of them reaches the line's bot as the owner; a bot calling the owner dials the first."
+                        },
+                        "lines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "username": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9._~+-]{1,64}$/u"
+                              },
+                              "botId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "description": "The name callers hear; null uses the bot's name."
+                              },
+                              "callsOwner": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "username",
+                              "botId",
+                              "displayName",
+                              "callsOwner"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 64
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "ownerNumbers",
+                        "lines"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "token": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "issuedAt"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connecting",
+                        "connected",
+                        "error"
+                      ]
+                    },
+                    "connectedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string"
+                          },
+                          "registered": {
+                            "type": "boolean"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "registered",
+                          "error"
+                        ]
+                      },
+                      "description": "Line registration as the connected voice gateway last reported it; empty until it reports and after it disconnects."
+                    },
+                    "unavailableLines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "botDeleted",
+                              "botDisabled"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "reason"
+                        ]
+                      },
+                      "description": "Configured lines whose bot was deleted or is disabled. The voice gateway does not receive them; a line comes back when its bot is enabled again."
+                    }
+                  },
+                  "required": [
+                    "config",
+                    "token",
+                    "status",
+                    "connectedAt",
+                    "lines",
+                    "unavailableLines"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateVoiceGateway",
+        "description": "Saves the voice gateway's lines and the owner's numbers. 400 for an unknown bot.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "ownerNumbers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^\\+?[0-9*#]{1,32}$/u"
+                    },
+                    "maxItems": 20,
+                    "description": "The owner's phone numbers. A call from one of them reaches the line's bot as the owner; a bot calling the owner dials the first."
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "username": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9._~+-]{1,64}$/u"
+                        },
+                        "botId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 64,
+                          "description": "The name callers hear; null uses the bot's name."
+                        },
+                        "callsOwner": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "username",
+                        "botId",
+                        "displayName",
+                        "callsOwner"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "ownerNumbers",
+                  "lines"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "ownerNumbers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^\\+?[0-9*#]{1,32}$/u"
+                          },
+                          "maxItems": 20,
+                          "description": "The owner's phone numbers. A call from one of them reaches the line's bot as the owner; a bot calling the owner dials the first."
+                        },
+                        "lines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "username": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9._~+-]{1,64}$/u"
+                              },
+                              "botId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 64,
+                                "description": "The name callers hear; null uses the bot's name."
+                              },
+                              "callsOwner": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "username",
+                              "botId",
+                              "displayName",
+                              "callsOwner"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 64
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "ownerNumbers",
+                        "lines"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "token": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "issuedAt"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connecting",
+                        "connected",
+                        "error"
+                      ]
+                    },
+                    "connectedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string"
+                          },
+                          "registered": {
+                            "type": "boolean"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "registered",
+                          "error"
+                        ]
+                      },
+                      "description": "Line registration as the connected voice gateway last reported it; empty until it reports and after it disconnects."
+                    },
+                    "unavailableLines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "botDeleted",
+                              "botDisabled"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "reason"
+                        ]
+                      },
+                      "description": "Configured lines whose bot was deleted or is disabled. The voice gateway does not receive them; a line comes back when its bot is enabled again."
+                    }
+                  },
+                  "required": [
+                    "config",
+                    "token",
+                    "status",
+                    "connectedAt",
+                    "lines",
+                    "unavailableLines"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice-gateway/token": {
+      "post": {
+        "operationId": "issueVoiceGatewayToken",
+        "description": "Issues the voice gateway token, returned only once. An earlier token stops working at once.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "issuedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "issuedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "revokeVoiceGatewayToken",
+        "description": "Revokes the voice gateway token. 404 when none is issued.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/events": {
+      "get": {
+        "operationId": "streamVoiceGatewayEvents",
+        "x-sse-events": {
+          "config": {
+            "$ref": "#/components/schemas/VoiceGatewayConfigEvent"
+          },
+          "call": {
+            "$ref": "#/components/schemas/VoiceCallEvent"
+          },
+          "cancel": {
+            "$ref": "#/components/schemas/VoiceCallCancelEvent"
+          },
+          "replaced": {
+            "$ref": "#/components/schemas/VoiceGatewayReplacedEvent"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/HeartbeatEvent"
+          }
+        },
+        "description": "Server-sent events for the voice gateway. A config event comes first and after every change to lines, owner numbers, or their bots. With calls=true, call and cancel events ask the gateway to place and hang up calls to the owner. One stream is live per account: a new connection sends replaced to the older one and closes it. Revoking or replacing the token closes the stream.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, and call events arrive on this stream."
+            },
+            "required": false,
+            "description": "With calls=true, the voice gateway declares it can place calls: bots with a line that may call the owner are offered the call_owner tool, and call events arrive on this stream.",
+            "name": "calls",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream, not a JSON array",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/lines/{username}/messages": {
+      "post": {
+        "operationId": "sendSpokenMessage",
+        "description": "Sends what the owner said on a call to the line's bot. The same IDs with other content answer 409, and so does a callId whose call ended: hang up. A callId the server doesn't know is accepted.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404."
+            },
+            "required": true,
+            "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404.",
+            "name": "username",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The call the message was spoken on."
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The message's ID within the call. Retrying with the same IDs and content returns the same execution."
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32000
+                  }
+                },
+                "required": [
+                  "callId",
+                  "requestId",
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execution"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/lines/{username}/events": {
+      "get": {
+        "operationId": "streamVoiceLineEvents",
+        "x-sse-events": {
+          "snapshot": {
+            "$ref": "#/components/schemas/ChatSnapshot"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/HeartbeatEvent"
+          }
+        },
+        "description": "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404."
+            },
+            "required": true,
+            "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404.",
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends."
+            },
+            "required": false,
+            "description": "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends.",
+            "name": "partial",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream, not a JSON array",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/lines/{username}/executions/{executionId}": {
+      "get": {
+        "operationId": "getSpokenExecution",
+        "description": "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404."
+            },
+            "required": true,
+            "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404.",
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "executionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpokenExecution"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/lines/{username}/calls/{callId}": {
+      "put": {
+        "operationId": "startVoiceCall",
+        "description": "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended or another call is active on the line: hang up.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404."
+            },
+            "required": true,
+            "description": "A line's SIP username. An unknown line, or one whose bot is deleted or disabled, answers 404.",
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The call's ID, the callId its spoken messages carry: a call event's callId for a call a bot placed."
+            },
+            "required": true,
+            "description": "The call's ID, the callId its spoken messages carry: a call event's callId for a call a bot placed.",
+            "name": "callId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/calls/{callId}": {
+      "post": {
+        "operationId": "reportVoiceCall",
+        "description": "Reports a call a bot placed: ringing as soon as dialing starts, then how it settled. A call not acknowledged within 15 seconds, or not settled within 3 minutes 30 seconds of its call event, is cancelled. 404 for a call that is neither waiting to settle nor active: hang up. ended reports that a started call ended, and answers 204 for any callId.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The callId of a call event."
+            },
+            "required": true,
+            "description": "The callId of a call event.",
+            "name": "callId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceCallReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/voice/lines": {
+      "put": {
+        "operationId": "reportVoiceLines",
+        "description": "Reports which lines the voice gateway registered with the telephone system. Accepted only while this token's /v1/voice/events stream is live, 409 otherwise; the owner sees the report in settings until that stream closes.",
+        "security": [
+          {
+            "VoiceGatewayToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "username": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "registered": {
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "username",
+                        "registered",
+                        "error"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 64
+                  }
+                },
+                "required": [
+                  "lines"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, revoked, or replaced voice gateway token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

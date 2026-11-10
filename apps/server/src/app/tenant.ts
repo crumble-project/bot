@@ -83,6 +83,9 @@ import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
 import { EventDispatcher } from "../automations/event-dispatcher";
+import { VoiceGateway } from "../voice-gateway/voice-gateway";
+import { callMarkers } from "../voice-gateway/call-markers";
+import { callOwnerTools } from "../voice-gateway/call-owner";
 import { eventPayloadTools } from "../automations/event-tools";
 import { usesDesktop } from "../contract/tools";
 import type { ServerSettings } from "./server-settings";
@@ -278,6 +281,9 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
+    Layer.mergeAll(callOwnerTools, callMarkers).pipe(
+      Layer.provideMerge(VoiceGateway.layer(options.tenantId)),
+    ),
     EventDispatcher.layer.pipe(Layer.provide(automations)),
     scriptRunRetention,
     botSecretUseRetention,
@@ -352,6 +358,7 @@ const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
   yield* (yield* MessageGateway).start;
   yield* (yield* EventRelay).start;
   yield* (yield* EventDispatcher).start;
+  yield* (yield* VoiceGateway).start;
   scheduler.start();
 });
 

@@ -32,6 +32,7 @@ import {
   type DefaultSkill,
 } from "../../src/skills/default-skills";
 import { OwnerSkills } from "../../src/skills/owner-skills";
+import { VoiceGateway } from "../../src/voice-gateway/voice-gateway";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
 export type TestServices = {
@@ -44,6 +45,7 @@ export type TestServices = {
   plugins?: readonly CrumblePlugin[];
   providerAuth?: ProviderSignInsAccess;
   viewerTickets?: ViewerTickets;
+  voiceGateway?: VoiceGateway["Service"];
 };
 
 type TestBots = BotsAccess & {
@@ -73,6 +75,17 @@ const noIntegrations = McpIntegrations.of({
   disconnect: () => Effect.void,
 });
 
+const testPush = (push: Runner<Push> | undefined) =>
+  push?.runSync(Push.use(Effect.succeed)) ?? noPush;
+
+export const testVoiceGateway = (core: Runner<CoreServices>) =>
+  core.runSync(
+    Layer.build(VoiceGateway.layer("test-account")).pipe(
+      Effect.map(Context.get(VoiceGateway)),
+      Effect.scoped,
+    ),
+  );
+
 function testServices(
   bots: TestBots,
   services: TestServices,
@@ -82,8 +95,6 @@ function testServices(
   const scheduler =
     services.scheduler ??
     standaloneScheduler(bots.core, (a, p, r, s) => bots.dispatch(a, p, r, s));
-
-  const push = services.push?.runSync(Push.use(Effect.succeed)) ?? noPush;
 
   const core = bots.core.runSync(Effect.context<CoreServices>());
 
@@ -98,7 +109,7 @@ function testServices(
       GroupChats,
       services.groupChats?.service ?? notReached<GroupChats["Service"]>(),
     ),
-    Context.add(Push, push),
+    Context.add(Push, testPush(services.push)),
     Context.add(
       ProviderSignIns,
       services.providerAuth ??
@@ -113,6 +124,10 @@ function testServices(
       }),
     ),
     Context.add(EventSources, notReached<EventSources["Service"]>()),
+    Context.add(
+      VoiceGateway,
+      services.voiceGateway ?? testVoiceGateway(bots.core),
+    ),
   );
 
   return Context.add(

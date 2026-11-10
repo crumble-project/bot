@@ -5,6 +5,7 @@ import { heldActionEvent } from "@/features/bot-desktop/held-action";
 import { jobFailureEvent, jobResult } from "@/features/jobs/job-card";
 import { jobQuestionEvent } from "@/features/jobs/job-question";
 import { loginRequestResult } from "@/features/logins/login-request";
+import { callEvent } from "@/features/voice-gateway/call-event";
 import { isJobKind } from "@crumble/server/contract/tools";
 import type { Message } from "@/features/chat/api";
 import { displayResult } from "@/features/chat/display";
@@ -24,6 +25,7 @@ const EVENTS: MessageCard[] = [
   jobQuestionEvent,
   heldActionEvent,
   jobFailureEvent,
+  callEvent,
 ];
 
 function cardOf(message: Message, cards = TOOL_RESULTS) {

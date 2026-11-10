@@ -18,6 +18,10 @@ bun run openapi:check
 | `openapi/learned-event.schema.json` | `learnedEvent` |
 | `openapi/desktop-control.schema.json` | `desktopControlResponse` |
 | `openapi/heartbeat.schema.json` | `heartbeatEvent` |
+| `openapi/voice-gateway-config.schema.json` | `voiceGatewayConfigEvent` |
+| `openapi/voice-call.schema.json` | `voiceCallEvent` |
+| `openapi/voice-call-cancel.schema.json` | `voiceCallCancelEvent` |
+| `openapi/voice-gateway-replaced.schema.json` | `voiceGatewayReplacedEvent` |
 
 ## Change workflow
 
@@ -67,7 +71,7 @@ This is an intentional breaking change for native clients. Native support requir
 
 ## Server-sent events
 
-All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie) and send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.
+All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie), except `/v1/voice/` streams, which take only a voice gateway token. All send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.
 
 | Endpoint | Event | JSON Schema asset |
 | --- | --- | --- |
@@ -80,3 +84,10 @@ All `/v1` streams require a Better Auth account session (a session bearer token 
 | `/v1/events` | `activity` | `activity-event.schema.json` |
 | `/v1/events` | `learned` | `learned-event.schema.json` |
 | `/v1/events` | `heartbeat` | `heartbeat.schema.json` |
+| `/v1/voice/events` | `config` | `voice-gateway-config.schema.json` |
+| `/v1/voice/events` | `call` | `voice-call.schema.json` |
+| `/v1/voice/events` | `cancel` | `voice-call-cancel.schema.json` |
+| `/v1/voice/events` | `replaced` | `voice-gateway-replaced.schema.json` |
+| `/v1/voice/events` | `heartbeat` | `heartbeat.schema.json` |
+| `/v1/voice/lines/{username}/events` | `snapshot` | `chat-snapshot.schema.json` |
+| `/v1/voice/lines/{username}/events` | `heartbeat` | `heartbeat.schema.json` |

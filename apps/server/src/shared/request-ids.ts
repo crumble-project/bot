@@ -24,6 +24,14 @@ export const botRequestRequest = (botRequestId: string) =>
 export const gatewayRequest = (adapterId: string, id: string) =>
   `gateway:${adapterId}:${id}`;
 
+export const voiceRequest = (callId: string, id: string) =>
+  `voice:${callId}:${id}`;
+
+export const VOICE_VIA = "voice";
+
+export const voiceCallRequest = (callId: string, phase: "started" | "ended") =>
+  `voice-call:${callId}:${phase}`;
+
 export const botMessageRequest = (executionId: string, status: string) =>
   `bot-message:${executionId}:${status}`;
 
@@ -61,6 +69,8 @@ export type ParsedRequest =
   | { kind: "notice"; notice: NoticeKind; name: string; id: string }
   | { kind: "bot-request"; botRequestId: string }
   | { kind: "gateway"; adapterId: string; id: string }
+  | { kind: "voice"; callId: string; id: string }
+  | { kind: "voice-call"; callId: string }
   | { kind: "review"; executionId: string }
   | { kind: "group-turn" }
   /** A client's own ID. Job deliveries and reports land here too: they never become executions, so nothing decodes them. */
@@ -106,6 +116,10 @@ export function parseRequestId(requestId: string): ParsedRequest {
       return { kind: "bot-request", botRequestId: subject };
     case "gateway":
       return { kind: "gateway", adapterId: subject, id: detail };
+    case "voice":
+      return { kind: "voice", callId: subject, id: detail };
+    case "voice-call":
+      return { kind: "voice-call", callId: subject };
     case "review":
       return { kind: "review", executionId: subject };
     default:

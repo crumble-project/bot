@@ -15,6 +15,8 @@ import {
   reviewRequest,
   scheduleRequest,
   scriptRequest,
+  voiceCallRequest,
+  voiceRequest,
 } from "./request-ids";
 
 const due = "2026-11-05T07:00:00.000Z";
@@ -31,6 +33,9 @@ describe("request IDs", () => {
     [noticeRequest("login", "github", "n1"), "login:github:n1"],
     [botRequestRequest("b1"), "bot-request:b1"],
     [gatewayRequest("discord", "u1"), "gateway:discord:u1"],
+    [voiceRequest("c1", "u1"), "voice:c1:u1"],
+    [voiceCallRequest("c1", "started"), "voice-call:c1:started"],
+    [voiceCallRequest("c1", "ended"), "voice-call:c1:ended"],
     [reviewRequest("x1"), "review:x1"],
     [groupTurnRequest("g1", "a1", 7), "group-turn:g1:a1:7"],
     [groupPostRequest("x1"), "group-turn:x1"],
@@ -71,6 +76,8 @@ describe("request IDs", () => {
       gatewayRequest("discord", "u1"),
       { kind: "gateway", adapterId: "discord", id: "u1" },
     ],
+    [voiceRequest("c1", "u1"), { kind: "voice", callId: "c1", id: "u1" }],
+    [voiceCallRequest("c1", "ended"), { kind: "voice-call", callId: "c1" }],
     [reviewRequest("x1"), { kind: "review", executionId: "x1" }],
     [groupTurnRequest("g1", "a1", 7), { kind: "group-turn" }],
     [groupPostRequest("x1"), { kind: "group-turn" }],

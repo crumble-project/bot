@@ -23,6 +23,8 @@ import {
   attachmentInfo,
   BOT_MESSAGE_ENTRY,
   botMessage,
+  CALL_ENTRY,
+  callEventData,
   contentText,
   GROUP_MESSAGE_ENTRY,
   groupMessageData,
@@ -34,6 +36,7 @@ import {
   MESSAGE_ENTRY,
   messageOrigin,
   USER_ENTRY,
+  type CallEventData,
   type GroupMessageData,
   type MessageOrigin,
   type ModelContent,
@@ -101,6 +104,7 @@ export type TranscriptMessage = {
     multiple?: boolean;
   };
   heldAction?: { id: string; job: string };
+  call?: { callId: string; direction: CallEventData["direction"] };
   attachments?: AttachmentInfo[];
   toolCallId?: string;
   toolName?: string | undefined;
@@ -417,6 +421,31 @@ function normalizeHeldAction(
   ];
 }
 
+function normalizeCallEvent(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = callEventData.safeParse(entry.data);
+
+  if (!parsed.success) return [];
+  const { callId, phase, direction, greeting, text, timestamp } = parsed.data;
+
+  return [
+    {
+      id: formatMessageId(entryId, 0),
+      entryId,
+      role: "event",
+      kind: `call-${phase}`,
+      content:
+        phase === "started"
+          ? (greeting ?? "Call started")
+          : (text ?? "Call ended"),
+      timestamp,
+      call: { callId, direction },
+    },
+  ];
+}
+
 function normalizeGroupMessage(
   entryId: string,
   entry: EntryRecord,
@@ -595,6 +624,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
 
   if (entry.kind === JOB_QUESTION_ENTRY)
     return normalizeJobQuestion(entryId, entry);
+
+  if (entry.kind === CALL_ENTRY) return normalizeCallEvent(entryId, entry);
 
   return normalizeModelEntry(entryId, entry);
 }

@@ -6,6 +6,7 @@ import {
   IconLock,
   IconLogin2,
   IconMessages,
+  IconPhone,
   IconPlug,
   IconScale,
   IconSparkles,
@@ -40,6 +41,7 @@ const SETTINGS_SECTIONS = [
     label: "Message gateways",
     icon: IconMessages,
   },
+  { to: "/settings/voice-gateway", label: "Voice gateway", icon: IconPhone },
   { to: "/settings/event-relay", label: "Event relay", icon: IconWebhook },
   { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;

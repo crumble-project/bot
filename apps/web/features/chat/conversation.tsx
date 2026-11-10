@@ -271,7 +271,10 @@ function ConversationRows({
         className={arrival(row.message)}
       >
         {isNotice(row.message) ? (
-          <NoticeRow message={row.message} />
+          <NoticeRow
+            message={row.message}
+            reactions={reactions.get(row.message.entryId)}
+          />
         ) : row.message.role === "user" ? (
           <OwnerMessage
             message={row.message}

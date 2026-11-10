@@ -19,6 +19,7 @@ const pending = new Promise<never>(() => {});
 
 const chat: CardChat = {
   botId: "bot",
+  botName: "Ada",
   attachmentPath: () => "/screen",
   jobStatus: () => undefined,
   onOpenJob: () => {},

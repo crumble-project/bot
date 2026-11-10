@@ -19,6 +19,7 @@ import type {
 } from "./runtime";
 import type { JobAnswerInput, SendOptions } from "./bots-submissions";
 import type { BotMessageEvent, PageOptions } from "../transcript/transcript";
+import type { CallEventData } from "../transcript/entries";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -92,6 +93,12 @@ export class Bots extends Context.Service<
     readonly recordBotMessage: (
       agentId: string,
       event: BotMessageEvent,
+      requestId: string,
+    ) => Effect.Effect<void, AppError>;
+    /** Writes a call marker the model never sees into the bot's chat. */
+    readonly recordCallEvent: (
+      agentId: string,
+      event: CallEventData,
       requestId: string,
     ) => Effect.Effect<void, AppError>;
     readonly chatSnapshot: (

@@ -53,6 +53,8 @@ import { registerGatewayRoutes } from "../message-gateway/gateway-api";
 import type { MessageGateway } from "../message-gateway/message-gateway";
 import type { EventSources } from "../event-sources/event-sources";
 import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
+import { registerVoiceGatewayRoutes } from "../voice-gateway/voice-gateway-api";
+import type { VoiceGateway } from "../voice-gateway/voice-gateway";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 
@@ -69,7 +71,8 @@ export type ApiServices =
   | ProviderSignIns
   | Push
   | Scheduler
-  | ScriptRuns;
+  | ScriptRuns
+  | VoiceGateway;
 
 export type ApiBots = BotsAccess & {
   core: Runner<ApiServices>;
@@ -143,6 +146,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerWebSearchRoutes,
   registerGatewayRoutes,
   registerEventSourceRoutes,
+  registerVoiceGatewayRoutes,
   registerJudgeModelRoutes,
   registerVisionModelRoutes,
   registerAgentRoutes,

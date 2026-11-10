@@ -1,7 +1,9 @@
 import {
   BOT_MESSAGE_ENTRY,
+  CALL_ENTRY,
   contentText,
   MESSAGE_ENTRY,
+  type CallEventData,
 } from "../transcript/entries";
 import type { InputOrigin } from "../transcript/origins";
 import {
@@ -826,6 +828,31 @@ export class AgentRuntime {
     event: BotMessageEvent,
     requestId: string,
   ) {
+    await this.record(agent, conversationId, requestId, {
+      kind: BOT_MESSAGE_ENTRY,
+      data: { ...event, timestamp: Date.now() },
+    });
+  }
+
+  async recordCallEvent(
+    agent: Agent,
+    conversationId: string,
+    event: CallEventData,
+    requestId: string,
+  ) {
+    await this.record(agent, conversationId, requestId, {
+      kind: CALL_ENTRY,
+      data: { ...event, timestamp: Date.now() },
+    });
+  }
+
+  /** A data-only entry: the model never sees it, and it lands at once, even mid-turn. */
+  private async record(
+    agent: Agent,
+    conversationId: string,
+    requestId: string,
+    entry: { kind: string; data: JsonValue },
+  ) {
     const conversation = await (
       await this.open(agent)
     ).harness.conversation(
@@ -835,14 +862,7 @@ export class AgentRuntime {
 
     if (!conversation) throw new Error("Conversation not found");
     await conversation.submit(
-      {
-        type: "write",
-        requestId,
-        entry: {
-          kind: BOT_MESSAGE_ENTRY,
-          data: { ...event, timestamp: Date.now() },
-        },
-      },
+      { type: "write", requestId, entry },
       BACKGROUND_CONTEXT,
     );
   }

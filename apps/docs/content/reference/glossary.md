@@ -37,6 +37,30 @@ A connection that sends the owner's messages from an external platform to an exi
 
 Avoid: Chat mirror, new session.
 
+### Voice gateway
+
+A connection that carries phone calls between the owner and a bot's chat over a telephone system: each bot has its own line, the owner's speech arrives as messages, and the bot's answers are spoken back. A bot can also call the owner.
+
+Avoid: Phone bot, voice session, call agent.
+
+### Spoken message
+
+An owner message the voice gateway heard on a call. The transcript marks it as spoken, and the bot's answer is read aloud.
+
+Avoid: Voice message, voice note.
+
+### Line
+
+An account on the owner's telephone system that one bot answers and calls from. A call to it reaches that bot's chat.
+
+Avoid: Extension, phone number, SIP account (in product language).
+
+### Voice gateway token
+
+The credential a voice gateway connects with. It reaches only the account's lines, their bots' chats, and call requests; the owner issues and revokes it in settings.
+
+Avoid: API key, password, session.
+
 ### Group chat
 
 A conversation between the owner and several bots, with one shared transcript in which every message shows its sender. It is separate from each member's bot chat.

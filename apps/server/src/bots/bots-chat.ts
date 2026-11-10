@@ -1,6 +1,8 @@
 import { pi } from "../shared/app-errors";
 import { Effect, Semaphore } from "effect";
+import type { CallEventData } from "../transcript/entries";
 import type { BotMessageEvent } from "../transcript/transcript";
+import type { Agent } from "../contract/agents";
 import type { AppError } from "../shared/errors";
 import type { ChatSnapshot } from "./bots";
 import type { BotsAnnouncements } from "./bots-announcements";
@@ -54,20 +56,37 @@ export const botsChat = (context: BotsContext, deps: ChatDeps) => {
       Effect.flatMap((opened) => deps.snapshot(opened.id, options)),
     );
 
+  const record = Effect.fnUntraced(function* (
+    agentId: string,
+    write: (owner: Agent, conversationId: string) => Promise<void>,
+  ) {
+    const opened = yield* chat(agentId);
+    const owner = yield* agent(agentId);
+
+    yield* pi(() => write(owner, opened.id));
+    yield* changed(opened.id);
+    yield* forkPreview(agentId, opened.id, agentId);
+  });
+
   const recordBotMessage = Effect.fn("Bots.recordBotMessage")(function* (
     agentId: string,
     event: BotMessageEvent,
     requestId: string,
   ) {
-    const opened = yield* chat(agentId);
-    const owner = yield* agent(agentId);
-
-    yield* pi(() =>
-      runtime.recordBotMessage(owner, opened.id, event, requestId),
+    yield* record(agentId, (owner, conversationId) =>
+      runtime.recordBotMessage(owner, conversationId, event, requestId),
     );
-    yield* changed(opened.id);
-    yield* forkPreview(agentId, opened.id, agentId);
   });
 
-  return { chat, chatSnapshot, recordBotMessage };
+  const recordCallEvent = Effect.fn("Bots.recordCallEvent")(function* (
+    agentId: string,
+    event: CallEventData,
+    requestId: string,
+  ) {
+    yield* record(agentId, (owner, conversationId) =>
+      runtime.recordCallEvent(owner, conversationId, event, requestId),
+    );
+  });
+
+  return { chat, chatSnapshot, recordBotMessage, recordCallEvent };
 };

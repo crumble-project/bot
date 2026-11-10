@@ -6,6 +6,8 @@ import type {
   EntryQuery,
   EntryRecord,
 } from "@earendil-works/pi-durable";
+import { voiceCallRequest } from "../shared/request-ids";
+import { messageTag, turnSource } from "../transcript/origins";
 import { ownerMessages } from "./owner-request";
 
 // SAFETY: IDs are opaque to ownerMessages, which only hands the chat's to scanEntries.
@@ -124,4 +126,35 @@ test("an event automation's prompt counts as the owner's request", async () => {
       },
     ],
   });
+});
+
+test("a call ended notice isn't the owner's message, nor tagged as one", async () => {
+  const requestId = voiceCallRequest("c1", "ended");
+
+  expect(turnSource({ requestId, scheduleId: null })).toEqual({
+    kind: "call",
+  });
+  expect(messageTag("call", requestId, "Call ended")).toBe("Call ended");
+  expect(
+    await ownerMessages(
+      chat(
+        [
+          message(1, "r1", "owner", "Call me back"),
+          message(2, requestId, "call", "Call ended after 4 minutes."),
+        ],
+        200,
+      ),
+      chatId,
+      [],
+    ),
+  ).toEqual({
+    messages: [{ requestId: "r1", text: "Call me back", from: "owner" }],
+  });
+  expect(
+    await ownerMessages(
+      chat([message(2, requestId, "call", "Call ended")], 200),
+      chatId,
+      [requestId],
+    ),
+  ).toEqual({ unknown: [requestId] });
 });
