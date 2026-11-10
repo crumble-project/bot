@@ -7111,7 +7111,7 @@
                                   "null"
                                 ],
                                 "maxLength": 64,
-                                "description": "The name callers hear; null uses the bot's name."
+                                "description": "The caller name sent to the telephone system; null uses the bot's name."
                               },
                               "callsOwner": {
                                 "type": "boolean"
@@ -7362,7 +7362,7 @@
                             "null"
                           ],
                           "maxLength": 64,
-                          "description": "The name callers hear; null uses the bot's name."
+                          "description": "The caller name sent to the telephone system; null uses the bot's name."
                         },
                         "callsOwner": {
                           "type": "boolean"
@@ -7436,7 +7436,7 @@
                                   "null"
                                 ],
                                 "maxLength": 64,
-                                "description": "The name callers hear; null uses the bot's name."
+                                "description": "The caller name sent to the telephone system; null uses the bot's name."
                               },
                               "callsOwner": {
                                 "type": "boolean"

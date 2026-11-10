@@ -7,7 +7,7 @@ const ENDED_BECAUSE: Record<VoiceCallEnd, string | null> = {
   failed: "the call failed",
   stopping: "the voice gateway stopped",
   lost: "the voice gateway lost its connection",
-  revoked: "the voice gateway token was revoked",
+  revoked: "the voice gateway token was revoked or replaced",
   lineChanged: "the line was given to another bot or turned off",
 };
 

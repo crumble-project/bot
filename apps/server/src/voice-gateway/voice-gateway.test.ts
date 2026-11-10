@@ -1254,7 +1254,9 @@ test("revoking the token fails pending calls", async () => {
   await voice.request("DELETE", "/v1/voice-gateway/token");
   expect(await pending).toMatchObject({
     output: [
-      { text: "The voice gateway token was revoked, so the call ended." },
+      {
+        text: "The voice gateway token was revoked or replaced, so the call ended.",
+      },
     ],
     isError: true,
   });
@@ -1834,7 +1836,7 @@ test("revoking the token ends calls with a marker and no bot turn", async () => 
       role: "event",
       kind: "call-ended",
       content:
-        "Call ended after less than a minute: the voice gateway token was revoked.",
+        "Call ended after less than a minute: the voice gateway token was revoked or replaced.",
     }),
   ]);
   expect(woken(callId)).toEqual([]);

@@ -177,7 +177,7 @@ const REFUSALS = {
 const UNREPORTED = {
   unacknowledged: "the voice gateway did not take the call",
   timedOut: "the voice gateway did not report how the call ended",
-  revoked: "the voice gateway token was revoked",
+  revoked: "the voice gateway token was revoked or replaced",
 };
 
 function missOf(result: SettledCall): OutsideCallMiss {

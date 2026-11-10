@@ -29,7 +29,8 @@ export const voiceGatewayConfigInput = z
             username: sipUsername,
             botId: z.uuid(),
             displayName: z.string().trim().max(64).nullable().openapi({
-              description: "The name callers hear; null uses the bot's name.",
+              description:
+                "The caller name sent to the telephone system; null uses the bot's name.",
             }),
             callsOwner: z.boolean(),
             callsOthers: z.boolean().exactOptional().openapi({

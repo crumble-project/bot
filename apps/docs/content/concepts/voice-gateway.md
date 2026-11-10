@@ -31,21 +31,22 @@ token**. The current token stops working at once, and the voice gateway
 disconnects until it uses the new one. To cut the voice gateway off, select
 **Revoke**.
 
-The token reaches only your lines and the chats of the bots that have one. It
-can't read other bots, change settings, or sign in to your account. Still,
+The token reaches only your lines, the chats of the bots that have one, and
+the conversation of an outside call while it runs. It can't read other bots,
+change settings, or sign in to your account. Still,
 anyone with the token can send messages to the bots that have a line, as you,
 so keep it as private as a password.
 
 ## Add your numbers
 
 Under **Your numbers**, select **Number** and enter each phone number you call
-from, as your telephone system shows it. A number uses digits, `*`, and `#`,
-with an optional leading `+`, up to 32 characters. You can add up to 20.
+from, as your telephone system shows it. A number uses up to 32 digits, `*`,
+and `#`, with an optional leading `+`. You can add up to 20.
 
 A call from one of these numbers reaches a bot as you, with the same
 authority as a message you type in the bot chat. Calls from any other number
-never reach a bot: the voice gateway handles them itself, for example by
-playing a recording.
+never reach a bot: the voice gateway rejects them or, if it's configured to,
+plays a recording.
 
 The order matters: use the arrows to put the number a bot should call first.
 To turn the voice gateway on, add at least one number.
@@ -59,8 +60,9 @@ your router, that one bot answers.
    password.
 2. In **Settings** > **Voice gateway**, under **Lines**, select **Line**.
 3. Enter the account's SIP username and choose the bot.
-4. Optionally, enter a display name. Callers hear the bot's name when it's
-   empty.
+4. Optionally, enter a display name, up to 64 characters. The voice gateway
+   sends it to your telephone system as the line's caller name, or the bot's
+   name when it's empty. The spoken greeting always uses the bot's name.
 5. Turn on **Voice gateway** under **Connection** and select **Save**.
 
 Give the SIP password to the voice gateway, not to Crumble. A username uses
@@ -103,7 +105,8 @@ to wait for a chat message.
 The bot writes only a greeting. Crumble chooses the number: always the first
 one under **Your numbers**. The bot can't dial anything else.
 
-1. The voice gateway dials you from the bot's line. Your phone rings for up to
+1. The voice gateway dials you from the bot's line. Your phone rings for as
+   long as the voice gateway's `call.unansweredAfter` setting allows, at most
    3 minutes.
 2. When you answer, you hear the greeting and the bot's turn ends. What you
    say next arrives in the bot's chat as spoken messages, as on a call you
@@ -142,14 +145,18 @@ Two settings must both be on:
 
 ### Approve or decline a call request
 
-The bot can't dial by itself. It proposes the call with a call request, which
-appears as a card in the bot chat with:
+The bot can't dial by itself. It proposes the call with its `request_call`
+tool, which creates a call request. The bot is offered the tool only in the
+bot chat, while its line has **Calls others** selected and no
+outside call is running. The call request appears as a card in the bot chat
+with:
 
-- the callee's name and the number;
+- the callee's name, up to 100 characters, and the number;
 - the goal: what the call should achieve and its limits, for example "Book a
   table for 2 on Friday between 19:00 and 20:00";
 - the opening: the first thing the bot says when the callee answers, read
-  aloud word for word.
+  aloud word for word. The goal and the opening can each have up to 1,000
+  characters.
 
 Before you approve, check that the opening says that it's an AI assistant,
 whom it calls for, that the call is transcribed, and why it calls. The card
@@ -158,8 +165,8 @@ your approval is the check.
 
 Select **Approve** to dial at once, or **Decline** to refuse. You can't edit a
 call request: to change it, decline it and tell the bot what to change. The
-bot gets a message when you decline. A bot can have only one pending call
-request.
+bot gets a message when you decline, and the card shows **Declined**. A bot
+can have only one pending call request.
 
 If Crumble can't place the call, the card shows why and the request stays
 pending, so you can approve it again later. For example, the voice gateway
@@ -171,10 +178,12 @@ bot and the callee said. During the call, the transcript updates as they talk.
 ### During the call
 
 The call runs separately from the bot chat. The bot on the phone knows only
-the goal and the opening. It has none of the bot's memory, instructions,
+its name, the callee's name, the goal, and the opening. It has none of the
+bot's memory, instructions,
 chat history, or tools, except hanging up. What the callee says never reaches
 the bot chat as a message from you, and you can keep chatting with the bot
-while the call runs.
+while the call runs. The line is busy during the call: you can't call it, and
+the bot can't call you.
 
 The bot works only towards the goal. If the callee asks for anything the goal
 doesn't cover, the bot says it will check and call back, and hangs up. When
@@ -182,12 +191,13 @@ asked whether it's an AI or whether the call is transcribed, it says yes.
 
 If the callee objects to talking to an AI or to the transcription, the bot
 apologizes, says goodbye, and hangs up. The call's transcript is then
-withheld: the card shows none, and the bot only learns that the callee
-objected. Crumble doesn't delete the transcript from its storage.
+withheld: the call shows only the opening and **No transcript.**, and the bot
+only learns that the callee objected. Crumble doesn't delete the transcript from its storage.
 
 When the call ends, the bot gets one message about it, with the goal and the
-transcript, and tells you what came of the call or asks you about what's
-still open. A call that wasn't answered isn't tried again; the bot can make a
+transcript, or the newest part of a long one, and tells you what came of the
+call or asks you about what's still open. A disabled bot gets no message; the
+chat shows only the card. A call that wasn't answered isn't tried again; the bot can make a
 new call request.
 
 ### Which numbers a bot can call
@@ -232,13 +242,15 @@ for example to call you back as it promised. If nothing is open, it reacts to
 the call's end with 👍 and writes nothing, and you get no notification. The
 bot gets this turn after a call it placed, and after a call you placed once
 you said something. It gets none when the bot is disabled or the voice
-gateway token was revoked.
+gateway token was revoked or issued again.
 
 Crumble also ends a call itself when the voice gateway can't report it: after
 60 seconds without a connected voice gateway, 15 seconds after the voice
-gateway reconnects without confirming the call, when the line gets another
-bot or is turned off, when the token is issued again or revoked, or 4 hours 5
-minutes after the call started.
+gateway reconnects without confirming the call, when the line is removed or
+gets another bot, when its bot is disabled or deleted, when the voice gateway
+is turned off, when the token is issued again or revoked, or 4 hours 5
+minutes after the call started. The voice gateway ends a call earlier, at its
+own `call.maxDuration`.
 
 While a line has a call, or a call the bot placed is ringing, the bot isn't
 offered `call_owner`, and a call it tries anyway is refused.
@@ -256,7 +268,8 @@ waits for about 3 seconds of silence, and ends the call. The chat then shows
   **Calls you** for its line.
 - Restarting Crumble ends the calls bots are placing. The voice gateway hangs
   up a phone that still rings. A call already answered survives the restart:
-  Crumble ends it only if the voice gateway doesn't reconnect within a minute.
+  Crumble ends it only if the voice gateway doesn't reconnect within a minute
+  or doesn't confirm the call after it reconnects.
 - Crumble can't check caller IDs. Anyone who can send traffic from your
   telephone system's address can claim to call from your number and reach
   your bots as you.

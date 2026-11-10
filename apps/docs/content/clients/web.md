@@ -42,6 +42,10 @@ A credential request card shows the hosts the credential is for. Select
 **Decline**. The value goes straight to the credentials service and never
 appears in the transcript.
 
+A call request card shows whom a bot wants to phone, the goal, and the
+opening it will say. Select **Approve** to dial or **Decline** to refuse; see
+[The bot calls someone else](/concepts/voice-gateway#the-bot-calls-someone-else).
+
 After you decide, a card collapses to show the outcome. Bot request decisions
 also appear as centered notices in the chat.
 

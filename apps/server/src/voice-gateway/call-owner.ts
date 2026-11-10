@@ -25,7 +25,8 @@ const OUTCOMES = {
   failed: "The call failed.",
   unacknowledged: "The voice gateway did not take the call.",
   timedOut: "The voice gateway did not report how the call ended.",
-  revoked: "The voice gateway token was revoked, so the call ended.",
+  revoked:
+    "The voice gateway token was revoked or replaced, so the call ended.",
 };
 
 const outcomeText = (result: VoiceCallResult) =>
@@ -117,7 +118,7 @@ export function outsideHangUpExtension(
     parameters: Type.Object({
       objected: Type.Optional(
         Type.Boolean({
-          description: `True when ${callee} objected to talking to an AI or to the transcription: the call's transcript is then deleted.`,
+          description: `True when ${callee} objected to talking to an AI or to the transcription: the call's transcript is then withheld from the owner.`,
         }),
       ),
     }),

@@ -75,7 +75,7 @@ Avoid: Contact, recipient.
 
 ### Voice gateway token
 
-The credential a voice gateway connects with. It reaches only the account's lines, their bots' chats, and call requests; the owner issues and revokes it in settings.
+The credential a voice gateway connects with. It reaches only the account's lines, their bots' chats, and the conversation of an outside call while it runs; the owner issues and revokes it in settings.
 
 Avoid: API key, password, session.
 
