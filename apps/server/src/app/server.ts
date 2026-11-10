@@ -24,6 +24,12 @@ import { devWorkspaceEnv } from "./dev-workspaces";
 import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
 import type { ServerSettings } from "./server-settings";
 import { openAPIDocument } from "../contract/api-contract";
+import { credentialAccount } from "../shared/account-id";
+import {
+  VOICE_GATEWAY_PREFIX,
+  VOICE_GATEWAY_TOKEN_HEADER,
+  voiceGatewayRefusal,
+} from "../voice-gateway/voice-gateway-api";
 
 const TENANT_PREFIXES = ["/v1/", `${VIEWER_PREFIX}/`, "/api/auth/"];
 
@@ -269,6 +275,45 @@ async function accountResponse(
   return response;
 }
 
+type VoiceGatewayHost = {
+  closed: boolean;
+  hasUser: (userId: string) => boolean;
+  forward: (userId: string) => Promise<Response | undefined>;
+};
+
+const BEARER = /^Bearer\s+(\S+)$/iu;
+
+/**
+ * A voice gateway token names its account, as a viewer ticket does; the account checks the secret. No session is
+ * read here, so a session never reaches these routes. An unknown account gets the same status, body, and headers
+ * as a wrong secret, though not the same timing.
+ */
+export async function voiceGatewayResponse(
+  request: Request,
+  host: VoiceGatewayHost,
+) {
+  if (host.closed) {
+    const response = closing();
+
+    response.headers.set("Cache-Control", "no-store");
+
+    return response;
+  }
+
+  const token = BEARER.exec(request.headers.get("authorization") ?? "")?.[1];
+  const account = token && credentialAccount(token);
+
+  if (!token || !account || !host.hasUser(account))
+    return voiceGatewayRefusal();
+
+  request.headers.set(VOICE_GATEWAY_TOKEN_HEADER, token);
+  const response = await host.forward(account);
+
+  if (response) response.headers.set("Cache-Control", "no-store");
+
+  return response;
+}
+
 async function adminResponse(state: ServerState, request: Request) {
   if (state.closed) return closing();
   const response = await state.admin!.fetch(request);
@@ -276,6 +321,25 @@ async function adminResponse(state: ServerState, request: Request) {
   response.headers.set("Cache-Control", "no-store");
 
   return response;
+}
+
+function apiResponse(
+  state: ServerState,
+  pool: TenantPool,
+  request: Request,
+  bunServer: Bun.Server<unknown>,
+  path: string,
+) {
+  if (path.startsWith(VOICE_GATEWAY_PREFIX))
+    return voiceGatewayResponse(request, {
+      closed: state.closed,
+      hasUser: (userId) => state.identity!.hasUser(userId),
+      forward: (userId) => forward(pool, request, bunServer, userId),
+    });
+
+  if (path.startsWith("/v1/admin/")) return adminResponse(state, request);
+
+  return accountResponse(state, pool, request, bunServer, path);
 }
 
 const requestHandler =
@@ -286,6 +350,7 @@ const requestHandler =
   ) =>
   async (request: Request, bunServer: Bun.Server<BunWebSocketData>) => {
     await state.ready;
+    request.headers.delete(VOICE_GATEWAY_TOKEN_HEADER);
     const path = new URL(request.url).pathname;
     const hosted = hostedResponse(path, oauthClient);
 
@@ -315,9 +380,7 @@ const requestHandler =
         { status: 403 },
       );
 
-    if (path.startsWith("/v1/admin/")) return adminResponse(state, request);
-
-    return accountResponse(state, pool, request, bunServer, path);
+    return apiResponse(state, pool, request, bunServer, path);
   };
 
 const serve = (

@@ -23,7 +23,7 @@ import {
 } from "../shared/limits";
 import { MAX_MCP_SERVER_NAME_CHARS } from "./limits";
 import * as response from "./api-responses";
-import { body, define, empty, error, json } from "./route";
+import { body, define, defineVoiceGateway, empty, error, json } from "./route";
 import { pushRoutes } from "./push";
 import { adminRoutes } from "./admin";
 import {
@@ -38,6 +38,20 @@ import {
   relayStatusResponse,
   relayUrlInput,
 } from "./event-sources";
+import {
+  spokenMessageInput,
+  voiceCallParams,
+  voiceCallReportInput,
+  voiceGatewayConfigInput,
+  voiceGatewayEventsInput,
+  voiceGatewayResponse,
+  voiceGatewayTokenResponse,
+  callRequestResponse,
+  voiceCallStartInput,
+  voiceLineCallParams,
+  voiceLineParams,
+  voiceLinesReportInput,
+} from "./voice-gateway";
 import {
   githubBotsInput,
   githubAppSignInInput,
@@ -74,8 +88,22 @@ export const snapshotInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
+export const chatEventsInput = snapshotInput.extend({
+  partial: z.stringbool().optional().openapi({
+    description:
+      "With partial=true, each snapshot's partial carries the reply text the bot is writing, updated about every 100 ms. Without it, partial stays empty and replies appear only when the turn ends.",
+  }),
+});
+
 export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
+});
+
+const voiceLineEventsInput = chatEventsInput.extend({
+  callId: z.uuid().optional().openapi({
+    description:
+      "The call the turn belongs to. For the line's active outside call, the stream sends that call's conversation; for another outside call's ID it answers 409: hang up. Without it, the stream follows the line's active call.",
+  }),
 });
 
 export const heldActionDeclineInput = z.object({
@@ -287,6 +315,138 @@ export const routes = {
       "Sets the event relay URL, or removes it with `null`, which disconnects the relay.",
     request: { body: body(relayUrlInput) },
     responses: { 200: json(relayStatusResponse) },
+  }),
+  voiceGateway: define({
+    method: "get",
+    path: "/v1/voice-gateway",
+    operationId: "getVoiceGateway",
+    description:
+      "The account's voice gateway: its lines and the owner's numbers, when its token was issued, and the connection status.",
+    responses: { 200: json(voiceGatewayResponse) },
+  }),
+  updateVoiceGateway: define({
+    method: "put",
+    path: "/v1/voice-gateway",
+    operationId: "updateVoiceGateway",
+    description:
+      "Saves the voice gateway's lines and the owner's numbers. 400 for an unknown bot.",
+    request: { body: body(voiceGatewayConfigInput) },
+    responses: { 200: json(voiceGatewayResponse) },
+  }),
+  issueVoiceGatewayToken: define({
+    method: "post",
+    path: "/v1/voice-gateway/token",
+    operationId: "issueVoiceGatewayToken",
+    description:
+      "Issues the voice gateway token, returned only once. An earlier token stops working at once.",
+    responses: { 201: json(voiceGatewayTokenResponse) },
+  }),
+  revokeVoiceGatewayToken: define({
+    method: "delete",
+    path: "/v1/voice-gateway/token",
+    operationId: "revokeVoiceGatewayToken",
+    description: "Revokes the voice gateway token. 404 when none is issued.",
+    responses: { 204: empty },
+  }),
+  voiceGatewayEvents: defineVoiceGateway({
+    method: "get",
+    path: "/v1/voice/events",
+    operationId: "streamVoiceGatewayEvents",
+    "x-sse-events": {
+      config: { $ref: "#/components/schemas/VoiceGatewayConfigEvent" },
+      call: { $ref: "#/components/schemas/VoiceCallEvent" },
+      cancel: { $ref: "#/components/schemas/VoiceCallCancelEvent" },
+      replaced: { $ref: "#/components/schemas/VoiceGatewayReplacedEvent" },
+      heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
+    },
+    description:
+      "Server-sent events for the voice gateway. A config event comes first and after every change to lines, owner numbers, or their bots. With calls=true, call and cancel events ask the gateway to place and hang up calls to the owner. One stream is live per account: a new connection sends replaced to the older one and closes it. Revoking or replacing the token closes the stream.",
+    request: { query: voiceGatewayEventsInput },
+    responses: {
+      200: {
+        description: "SSE stream, not a JSON array",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
+  sendSpokenMessage: defineVoiceGateway({
+    method: "post",
+    path: "/v1/voice/lines/{username}/messages",
+    operationId: "sendSpokenMessage",
+    description:
+      "Sends what the owner said on a call to the line's bot. On the line's active outside call, what the callee said goes to that call's conversation instead, never the bot chat, under requestId outside-call:{callId}:{requestId}. The same IDs with other content answer 409, and so do a callId whose call ended and an outside call's ID that is not the line's active call: hang up. A callId the server doesn't know is accepted.",
+    request: { params: voiceLineParams, body: body(spokenMessageInput) },
+    responses: { 202: json(response.executionResponse) },
+  }),
+  voiceLineEvents: defineVoiceGateway({
+    method: "get",
+    path: "/v1/voice/lines/{username}/events",
+    operationId: "streamVoiceLineEvents",
+    "x-sse-events": {
+      snapshot: { $ref: "#/components/schemas/ChatSnapshot" },
+      heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
+    },
+    description:
+      "The line's bot chat as server-sent events, the same as /v1/agents/{id}/events. While the line's active call is an outside call, the snapshots are that call's conversation instead. The stream closes when the line gets another bot, is removed, or its bot is deleted or disabled.",
+    request: { params: voiceLineParams, query: voiceLineEventsInput },
+    responses: {
+      200: {
+        description: "SSE stream, not a JSON array",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
+  spokenExecution: defineVoiceGateway({
+    method: "get",
+    path: "/v1/voice/lines/{username}/executions/{executionId}",
+    operationId: "getSpokenExecution",
+    description:
+      "A spoken message's execution, the bot's reply to it when its status is done, and whether the bot asked to hang up. Stop polling when the status is failed or cancelled: reply stays null. 404 unless the execution is a spoken message to the line's bot or a callee's message on its outside call; 409 for a callee's message whose outside call is not the line's active call.",
+    request: { params: voiceLineParams.extend({ executionId: z.string() }) },
+    responses: {
+      200: json(
+        z
+          .object({
+            execution: response.executionResponse,
+            reply: z.array(z.string()).nullable().openapi({
+              description:
+                "The bot's reply, read by the message's submission; null unless the execution's status is done. A failed or cancelled execution never gets one.",
+            }),
+            hangUp: z.boolean().openapi({
+              description:
+                "True when the bot asked to end the call: hang up once the reply was read aloud, then report the end with reason hungUp.",
+            }),
+          })
+          .openapi("SpokenExecution"),
+      ),
+    },
+  }),
+  startVoiceCall: defineVoiceGateway({
+    method: "put",
+    path: "/v1/voice/lines/{username}/calls/{callId}",
+    operationId: "startVoiceCall",
+    description:
+      "Reports that a call on the line started, before the greeting is spoken; send it again after every config event while the call runs. For a call a bot placed, it also settles the call as answered. A call nobody confirms within 15 seconds of a new events stream, or 60 seconds without one, ends. 409 when the call ended, another call is active on the line, or the callId is an outside call's that no longer rings: hang up.",
+    request: { params: voiceLineCallParams, body: body(voiceCallStartInput) },
+    responses: { 204: empty },
+  }),
+  reportVoiceCall: defineVoiceGateway({
+    method: "post",
+    path: "/v1/voice/calls/{callId}",
+    operationId: "reportVoiceCall",
+    description:
+      "Reports a call a bot placed: ringing as soon as dialing starts, then how it settled. A call not acknowledged within 15 seconds, or not settled within 3 minutes 30 seconds of its call event, is cancelled. 404 for a call that is neither waiting to settle nor active: hang up. ended reports that a started call ended, and answers 204 for any callId.",
+    request: { params: voiceCallParams, body: body(voiceCallReportInput) },
+    responses: { 204: empty },
+  }),
+  reportVoiceLines: defineVoiceGateway({
+    method: "put",
+    path: "/v1/voice/lines",
+    operationId: "reportVoiceLines",
+    description:
+      "Reports which lines the voice gateway registered with the telephone system. Accepted only while this token's /v1/voice/events stream is live, 409 otherwise; the owner sees the report in settings until that stream closes.",
+    request: { body: body(voiceLinesReportInput) },
+    responses: { 204: empty },
   }),
   githubApps: define({
     method: "get",
@@ -719,7 +879,7 @@ export const routes = {
     },
     description:
       "Server-sent events. Each snapshot event carries a ChatSnapshot JSON object in data. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. Reconnect by fetching the current snapshot; there is no Last-Event-ID replay.",
-    request: { params: id, query: snapshotInput },
+    request: { params: id, query: chatEventsInput },
     responses: {
       200: {
         description: "SSE stream, not a JSON array",
@@ -906,6 +1066,44 @@ export const routes = {
     description: "Declines a pending bot request.",
     request: { params: id.extend({ requestId: z.string() }) },
     responses: { 200: json(response.botRequestResponse) },
+  }),
+  listCallRequests: define({
+    method: "get",
+    path: "/v1/agents/{id}/call-requests",
+    operationId: "listCallRequests",
+    description:
+      "The bot's call requests, newest first: its proposals to phone someone other than the owner, and how each call went.",
+    request: { params: id },
+    responses: { 200: json(z.array(callRequestResponse)) },
+  }),
+  approveCallRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/call-requests/{requestId}/approve",
+    operationId: "approveCallRequest",
+    description:
+      "Approves a pending call request and dials at once; returns once the voice gateway was asked to call, with the status calling. 409, with the request still pending, when the request is not pending, the number no longer passes the number rules, calls to other people are switched off for the line, no voice gateway that places calls is connected, or the line has a call.",
+    request: { params: id.extend({ requestId: z.string() }) },
+    responses: { 200: json(callRequestResponse) },
+  }),
+  declineCallRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/call-requests/{requestId}/decline",
+    operationId: "declineCallRequest",
+    description: "Declines a pending call request; the bot gets a notice.",
+    request: { params: id.extend({ requestId: z.string() }) },
+    responses: { 200: json(callRequestResponse) },
+  }),
+  callRequestTranscript: define({
+    method: "get",
+    path: "/v1/agents/{id}/call-requests/{requestId}/transcript",
+    operationId: "getCallRequestTranscript",
+    description:
+      "The messages of the call's conversation: the callee's words as user messages and the bot's replies. Empty before the call, and when the callee objected to the call.",
+    request: {
+      params: id.extend({ requestId: z.string() }),
+      query: historyInput,
+    },
+    responses: { 200: json(response.historyResponse) },
   }),
   saveAgentCredential: define({
     method: "put",
@@ -1483,6 +1681,16 @@ export function contractApp() {
     description:
       "Better Auth session token from /api/auth/sign-in/email. The legacy server token is not accepted.",
   });
+  app.openAPIRegistry.registerComponent(
+    "securitySchemes",
+    "VoiceGatewayToken",
+    {
+      type: "http",
+      scheme: "bearer",
+      description:
+        "The voice gateway token the owner issues in settings. It reaches only /v1/voice/ routes, which accept nothing else.",
+    },
+  );
   app.openAPIRegistry.registerComponent("securitySchemes", "SessionCookie", {
     type: "apiKey",
     in: "cookie",

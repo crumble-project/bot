@@ -32,6 +32,8 @@ import {
   type DefaultSkill,
 } from "../../src/skills/default-skills";
 import { OwnerSkills } from "../../src/skills/owner-skills";
+import { VoiceGateway } from "../../src/voice-gateway/voice-gateway";
+import { CallRequests } from "../../src/voice-gateway/call-requests";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
 export type TestServices = {
@@ -44,6 +46,8 @@ export type TestServices = {
   plugins?: readonly CrumblePlugin[];
   providerAuth?: ProviderSignInsAccess;
   viewerTickets?: ViewerTickets;
+  voiceGateway?: VoiceGateway["Service"];
+  callRequests?: CallRequests["Service"];
 };
 
 type TestBots = BotsAccess & {
@@ -73,6 +77,18 @@ const noIntegrations = McpIntegrations.of({
   disconnect: () => Effect.void,
 });
 
+const testPush = (push: Runner<Push> | undefined) =>
+  push?.runSync(Push.use(Effect.succeed)) ?? noPush;
+
+// Its scope stays open, as an account's does: an outside call settles in it. Nothing starts its ticker.
+export const testVoiceGateway = (core: Runner<CoreServices>) =>
+  core.runSync(
+    Layer.buildWithScope(
+      VoiceGateway.layer("test-account"),
+      Scope.makeUnsafe(),
+    ).pipe(Effect.map(Context.get(VoiceGateway))),
+  );
+
 function testServices(
   bots: TestBots,
   services: TestServices,
@@ -82,8 +98,6 @@ function testServices(
   const scheduler =
     services.scheduler ??
     standaloneScheduler(bots.core, (a, p, r, s) => bots.dispatch(a, p, r, s));
-
-  const push = services.push?.runSync(Push.use(Effect.succeed)) ?? noPush;
 
   const core = bots.core.runSync(Effect.context<CoreServices>());
 
@@ -98,13 +112,17 @@ function testServices(
       GroupChats,
       services.groupChats?.service ?? notReached<GroupChats["Service"]>(),
     ),
-    Context.add(Push, push),
+    Context.add(Push, testPush(services.push)),
     Context.add(
       ProviderSignIns,
       services.providerAuth ??
         standaloneSignIns(bots.core, pluginProviders([meliousPlugin()])),
     ),
     Context.add(BotRequests, notReached<BotRequests["Service"]>()),
+    Context.add(
+      CallRequests,
+      services.callRequests ?? notReached<CallRequests["Service"]>(),
+    ),
     Context.add(
       MessageGateway,
       MessageGateway.of({
@@ -113,6 +131,10 @@ function testServices(
       }),
     ),
     Context.add(EventSources, notReached<EventSources["Service"]>()),
+    Context.add(
+      VoiceGateway,
+      services.voiceGateway ?? testVoiceGateway(bots.core),
+    ),
   );
 
   return Context.add(

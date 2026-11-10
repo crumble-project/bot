@@ -23,6 +23,8 @@ import {
   attachmentInfo,
   BOT_MESSAGE_ENTRY,
   botMessage,
+  CALL_ENTRY,
+  callEventData,
   contentText,
   GROUP_MESSAGE_ENTRY,
   groupMessageData,
@@ -34,6 +36,7 @@ import {
   MESSAGE_ENTRY,
   messageOrigin,
   USER_ENTRY,
+  type CallEventData,
   type GroupMessageData,
   type MessageOrigin,
   type ModelContent,
@@ -48,6 +51,7 @@ import {
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
   REACTION_TOOL_NAME,
+  REQUEST_CALL_TOOL_NAME,
   REQUEST_CREDENTIAL_TOOL_NAME,
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
@@ -101,6 +105,11 @@ export type TranscriptMessage = {
     multiple?: boolean;
   };
   heldAction?: { id: string; job: string };
+  call?: {
+    callId: string;
+    direction: CallEventData["direction"];
+    callee?: string;
+  };
   attachments?: AttachmentInfo[];
   toolCallId?: string;
   toolName?: string | undefined;
@@ -170,6 +179,7 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
 const OWNER_REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
   [REQUEST_CREDENTIAL_TOOL_NAME, "credential"],
   [REQUEST_LOGIN_TOOL_NAME, "login"],
+  [REQUEST_CALL_TOOL_NAME, "approval"],
 ]);
 
 export function latestReply(messages: TranscriptMessage[]) {
@@ -417,6 +427,33 @@ function normalizeHeldAction(
   ];
 }
 
+function normalizeCallEvent(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = callEventData.safeParse(entry.data);
+
+  if (!parsed.success) return [];
+
+  const { callId, phase, direction, callee, greeting, text, timestamp } =
+    parsed.data;
+
+  return [
+    {
+      id: formatMessageId(entryId, 0),
+      entryId,
+      role: "event",
+      kind: `call-${phase}`,
+      content:
+        phase === "started"
+          ? (greeting ?? "Call started")
+          : (text ?? "Call ended"),
+      timestamp,
+      call: { callId, direction, ...(callee !== undefined && { callee }) },
+    },
+  ];
+}
+
 function normalizeGroupMessage(
   entryId: string,
   entry: EntryRecord,
@@ -595,6 +632,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
 
   if (entry.kind === JOB_QUESTION_ENTRY)
     return normalizeJobQuestion(entryId, entry);
+
+  if (entry.kind === CALL_ENTRY) return normalizeCallEvent(entryId, entry);
 
   return normalizeModelEntry(entryId, entry);
 }

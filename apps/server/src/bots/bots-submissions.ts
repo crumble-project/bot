@@ -6,7 +6,7 @@ import type { Execution } from "../shared/domain";
 import { Conflict, REQUEST_ID_REUSED, type AppError } from "../shared/errors";
 import type { BotsAnnouncements } from "./bots-announcements";
 import type { BotsChat } from "./bots-chat";
-import { isGroupTurn, type BotsContext } from "./bots-context";
+import { isChatTurn, type BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 import { OWNER_TIMEZONE } from "./runtime";
@@ -90,7 +90,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     yield* admit(execution);
     yield* changed(conversationId);
 
-    if (!isGroupTurn(execution))
+    if (isChatTurn(execution))
       yield* forkPreview(execution.agentId, conversationId, execution.id);
 
     return (yield* executions.get(execution.id))!;

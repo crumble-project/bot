@@ -156,6 +156,11 @@ export function conversationInstructions(
   prompt: ConversationPrompt,
   clock: string,
 ) {
+  if (prompt.bare)
+    return [...(prompt.standing?.(agent) ?? []), clock]
+      .filter((part) => part.trim())
+      .join("\n\n");
+
   const { own, shared } = memoryLists(memory);
 
   // Stable parts first and the clock last, following Hermes Agent's prompt order.

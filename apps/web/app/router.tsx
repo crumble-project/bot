@@ -50,6 +50,7 @@ import {
   MessageGatewaysPage,
 } from "@/features/message-gateways/message-gateways";
 import { EventRelayPage } from "@/features/event-sources/event-relay";
+import { VoiceGatewayPage } from "@/features/voice-gateway/voice-gateway";
 import { PasswordManagersPage } from "@/features/password-managers/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/automations/automations";
@@ -331,6 +332,12 @@ const messageGatewayRoute = createRoute({
   },
 });
 
+const voiceGatewayRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/voice-gateway",
+  component: VoiceGatewayPage,
+});
+
 const eventRelayRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/event-relay",
@@ -379,6 +386,7 @@ export const router = createRouter({
         usersRoute,
         messageGatewaysRoute,
         messageGatewayRoute,
+        voiceGatewayRoute,
         eventRelayRoute,
         settingsSkillsRoute,
       ]),

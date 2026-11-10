@@ -1,6 +1,6 @@
 import type { Execution, OWNER_MESSAGE_SOURCES } from "../shared/domain";
 import type { JobKindName } from "../shared/job-kinds";
-import { askingBot, parseRequestId } from "../shared/request-ids";
+import { askingBot, parseRequestId, VOICE_VIA } from "../shared/request-ids";
 
 export const UNKNOWN_BOT_NAME = "Another bot";
 
@@ -20,6 +20,9 @@ export type InputOrigin =
   | { kind: "credential"; name: string }
   | { kind: "bot_request" }
   | { kind: "review" }
+  | { kind: "call" }
+  | { kind: "callee"; name: string }
+  | { kind: "call_request" }
   | { kind: JobKindName; name: string };
 
 export const isBotOrigin = (origin: { kind: string } | undefined) =>
@@ -46,6 +49,9 @@ const REQUEST_SOURCES: Record<
   credential: undefined,
   bot_request: undefined,
   review: undefined,
+  call: undefined,
+  callee: undefined,
+  call_request: undefined,
   coding: undefined,
   desktop: undefined,
 };
@@ -69,6 +75,9 @@ export type TurnSource =
   // Origins document no login kind, and clients label a login like a credential.
   | { kind: "credential"; name: string }
   | { kind: "bot_request" }
+  | { kind: "call" }
+  | { kind: "callee" }
+  | { kind: "call_request" }
   | { kind: "owner"; via?: string };
 
 export function turnSource({
@@ -96,6 +105,14 @@ export function turnSource({
       return { kind: "bot_request" };
     case "gateway":
       return { kind: "owner", via: request.adapterId };
+    case "voice":
+      return { kind: "owner", via: VOICE_VIA };
+    case "voice-call":
+      return { kind: "call" };
+    case "outside-call":
+      return { kind: "callee" };
+    case "call-request":
+      return { kind: "call_request" };
     default:
       return { kind: "owner" };
   }

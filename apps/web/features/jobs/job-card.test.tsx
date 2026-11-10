@@ -16,9 +16,11 @@ const failure: Message = {
 
 const chat: CardChat = {
   botId: "bot",
+  botName: "Ada",
   attachmentPath: () => "",
   jobStatus: () => undefined,
   onOpenJob: () => {},
+  onOpenCall: () => {},
 };
 
 test("a failed job's event shows its reason", () => {

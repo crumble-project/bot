@@ -4,9 +4,12 @@ import type { Message } from "./api";
 
 export type CardChat = {
   botId: string;
+  botName: string;
   attachmentPath: (entryId: string, index: number) => string;
   jobStatus: (job: JobRef) => string | undefined;
   onOpenJob: (job: JobRef) => void;
+  /** Opens a call request's call beside the chat. */
+  onOpenCall: (requestId: string) => void;
 };
 
 export type MessageCard = (

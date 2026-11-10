@@ -12,6 +12,8 @@ export const GROUP_MESSAGE_ENTRY = "crumble.group-message";
 export const JOB_QUESTION_ENTRY = "crumble.job-question";
 
 export const HELD_ACTION_ENTRY = "crumble.held-action";
+
+export const CALL_ENTRY = "crumble.voice-call";
 export const ASSISTANT_ENTRY = "pi.assistant";
 export const USER_ENTRY = "pi.user";
 
@@ -70,6 +72,21 @@ export const heldActionData = z.object({
   action: z.string(),
   timestamp: z.number().optional().catch(undefined),
 });
+
+export const CALL_DIRECTIONS = ["inbound", "outbound"] as const;
+
+/** `greeting`: what the bot said on a call it placed. `text`: an ended call's line. `callee`: whom an outside call reached. */
+export const callEventData = z.object({
+  callId: z.string(),
+  phase: z.enum(["started", "ended"]),
+  direction: z.enum(CALL_DIRECTIONS),
+  callee: z.string().exactOptional(),
+  greeting: z.string().exactOptional(),
+  text: z.string().exactOptional(),
+  timestamp: z.number(),
+});
+
+export type CallEventData = Omit<z.infer<typeof callEventData>, "timestamp">;
 
 export const botMessage = z.object({
   content: z.string(),

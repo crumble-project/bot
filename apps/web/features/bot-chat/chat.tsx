@@ -33,6 +33,8 @@ import {
 import type { ConversationTarget } from "@/features/chat/conversation-target";
 import { DetailsPanel, DetailsSheet } from "./details";
 import { JobPanel } from "@/features/jobs/jobs";
+import { CallPanel } from "@/features/call-requests/call-panel";
+import { CallNotice } from "@/features/call-requests/call-request-card";
 import type { JobRef } from "@/features/jobs/api";
 import { BotReasoning } from "@/features/bots/reasoning";
 import { BotMessage, ARRIVAL } from "@/features/chat/transcript";
@@ -54,8 +56,23 @@ function useDetails() {
     () => localStorage.getItem(DETAILS_KEY) !== "off",
   );
 
-  const [job, setJob] = useState<JobRef | null>(null);
+  const [job, openJob] = useState<JobRef | null>(null);
+  const [call, openCall] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
+
+  // One panel beside the chat: opening a job closes a call and the reverse,
+  // and selecting the open card again closes its panel.
+  const setJob = (next: JobRef | null) => {
+    openCall(null);
+    openJob((open) =>
+      next && open?.kind === next.kind && open.name === next.name ? null : next,
+    );
+  };
+
+  const setCall = (next: string | null) => {
+    openJob(null);
+    openCall((open) => (open === next ? null : next));
+  };
 
   const toggleDetails = () => {
     localStorage.setItem(DETAILS_KEY, details ? "off" : "on");
@@ -65,14 +82,24 @@ function useDetails() {
   const showDetails = () => {
     if (!matchMedia(WIDE).matches) return setSheet(true);
 
-    if (!job) return toggleDetails();
+    if (!job && !call) return toggleDetails();
 
     setJob(null);
 
     if (!details) toggleDetails();
   };
 
-  return { details, toggleDetails, showDetails, job, setJob, sheet, setSheet };
+  return {
+    details,
+    toggleDetails,
+    showDetails,
+    job,
+    setJob,
+    call,
+    setCall,
+    sheet,
+    setSheet,
+  };
 }
 
 const botConversation = (id: string): ConversationTarget<ChatSnapshot> => {
@@ -194,6 +221,7 @@ function ChatTranscript({
   error,
   jobStatus,
   onOpenJob,
+  onOpenCall,
 }: {
   bot: Bot;
   conversation: Conversation;
@@ -201,14 +229,17 @@ function ChatTranscript({
   error: ChatSnapshot["error"];
   jobStatus: ReturnType<typeof useChatJobs>;
   onOpenJob: (job: JobRef) => void;
+  onOpenCall: (requestId: string) => void;
 }) {
   const sources = sourcesOf(conversation.messages);
 
   const chat: CardChat = {
     botId: bot.id,
+    botName: bot.name,
     attachmentPath: conversation.attachmentPath,
     jobStatus,
     onOpenJob,
+    onOpenCall,
   };
 
   return (
@@ -222,6 +253,9 @@ function ChatTranscript({
             </ConversationEmpty>
           )
         }
+        renderNotice={(message, row) => (
+          <CallNotice message={message} chat={chat} fallback={row} />
+        )}
         renderMessage={(message) => (
           <ChatMessage
             message={message}
@@ -297,14 +331,64 @@ function ChatComposer({
   );
 }
 
+function SidePanel({
+  bot,
+  job,
+  call,
+  details,
+  onCloseJob,
+  onCloseCall,
+  onCloseDetails,
+}: {
+  bot: Bot;
+  job: JobRef | null;
+  call: string | null;
+  details: boolean;
+  onCloseJob: () => void;
+  onCloseCall: () => void;
+  onCloseDetails: () => void;
+}) {
+  if (job)
+    return (
+      <JobPanel
+        key={`${job.kind}:${job.name}`}
+        botId={bot.id}
+        job={job}
+        onClose={onCloseJob}
+      />
+    );
+
+  if (call)
+    return (
+      <CallPanel
+        key={call}
+        botId={bot.id}
+        botName={bot.name}
+        requestId={call}
+        onClose={onCloseCall}
+      />
+    );
+
+  return details ? <DetailsPanel bot={bot} onClose={onCloseDetails} /> : null;
+}
+
 export function Chat({ botId }: { botId: string }) {
   const target = useMemo(() => botConversation(botId), [botId]);
   const { snapshot, ...conversation } = useConversation(target);
   const bots = useQuery(botsQuery);
   const bot = bots.data?.find((each) => each.id === botId);
 
-  const { details, toggleDetails, showDetails, job, setJob, sheet, setSheet } =
-    useDetails();
+  const {
+    details,
+    toggleDetails,
+    showDetails,
+    job,
+    setJob,
+    call,
+    setCall,
+    sheet,
+    setSheet,
+  } = useDetails();
 
   const jobStatus = useChatJobs(botId, conversation.messages);
 
@@ -323,7 +407,7 @@ export function Chat({ botId }: { botId: string }) {
         <ChatHeader
           bot={bot}
           running={running}
-          details={details && !job}
+          details={details && !job && !call}
           onToggleDetails={showDetails}
         />
         <ChatTranscript
@@ -333,6 +417,7 @@ export function Chat({ botId }: { botId: string }) {
           error={error}
           jobStatus={jobStatus}
           onOpenJob={setJob}
+          onOpenCall={setCall}
         />
         <ChatComposer
           bot={bot}
@@ -343,16 +428,15 @@ export function Chat({ botId }: { botId: string }) {
           onStop={() => conversation.stop.mutate()}
         />
       </div>
-      {job ? (
-        <JobPanel
-          key={`${job.kind}:${job.name}`}
-          botId={botId}
-          job={job}
-          onClose={() => setJob(null)}
-        />
-      ) : (
-        details && <DetailsPanel bot={bot} onClose={toggleDetails} />
-      )}
+      <SidePanel
+        bot={bot}
+        job={job}
+        call={call}
+        details={details}
+        onCloseJob={() => setJob(null)}
+        onCloseCall={() => setCall(null)}
+        onCloseDetails={toggleDetails}
+      />
       <DetailsSheet bot={bot} open={sheet} onOpenChange={setSheet} />
     </div>
   );

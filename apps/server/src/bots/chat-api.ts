@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import type { z } from "zod";
 import { routes } from "../contract/api-contract";
 import type {
@@ -7,8 +8,13 @@ import type {
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { attachmentHeaders } from "../shared/attachments";
-import { snapshotSender, streamEvents } from "../shared/event-stream";
+import {
+  snapshotSender,
+  streamEvents,
+  type StreamCleanup,
+} from "../shared/event-stream";
 import type { BotsAccess } from "./bots";
+import type { SnapshotOptions } from "./runtime";
 
 type ChatRoutesOptions = {
   register: Register;
@@ -111,27 +117,57 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
+/**
+ * A bot chat's snapshot stream, or another of the bot's conversations' with `conversationId`. `opened` can refuse the
+ * stream before it sends anything, by returning null.
+ */
+export const chatEventStream = async (
+  c: Context,
+  service: BotsAccess,
+  options: {
+    agentId: string;
+    conversationId?: string | undefined;
+    snapshot: SnapshotOptions;
+    opened?: (close: () => void) => Promise<StreamCleanup | null>;
+  },
+) => {
+  const { snapshot, opened } = options;
+  const agent = service.agent(options.agentId);
+
+  const chat = options.conversationId
+    ? { id: options.conversationId }
+    : await service.chat(agent.id);
+
+  return streamEvents(c, async ({ stream, close, onClose }) => {
+    if (opened) {
+      const cleanup = await opened(close);
+
+      if (!cleanup) return close();
+      onClose(cleanup);
+    }
+
+    const sendSnapshot = snapshotSender(stream, () =>
+      service.snapshot(chat.id, snapshot),
+    );
+
+    onClose(
+      service.subscribe(chat.id, () => {
+        void sendSnapshot().catch(close);
+      }),
+    );
+    onClose(await service.watch(agent.id, chat.id, sendSnapshot, snapshot));
+  });
+};
+
 const registerChatEventRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
-  register(routes.chatEvents, async (c) => {
-    const snapshot = c.req.valid("query");
-    const agent = service.agent(c.req.param("id"));
-    const chat = await service.chat(agent.id);
-
-    return streamEvents(c, async ({ stream, close, onClose }) => {
-      const sendSnapshot = snapshotSender(stream, () =>
-        service.snapshot(chat.id, snapshot),
-      );
-
-      onClose(
-        service.subscribe(chat.id, () => {
-          void sendSnapshot().catch(close);
-        }),
-      );
-      onClose(await service.watch(agent.id, chat.id, sendSnapshot, snapshot));
-    });
-  });
+  register(routes.chatEvents, (c) =>
+    chatEventStream(c, service, {
+      agentId: c.req.param("id"),
+      snapshot: c.req.valid("query"),
+    }),
+  );
 };
 
 export function registerChatRoutes(options: ChatRoutesOptions) {

@@ -22,6 +22,12 @@ type AnnouncementDeps = {
 
 export type BotsAnnouncements = ReturnType<typeof botsAnnouncements>;
 
+// A reaction ends a turn quietly, and so does a call's wake-up turn that wrote nothing.
+const quiet = (
+  { reply, reaction }: ReturnType<typeof latestReply>,
+  origin: string,
+) => !reply && (Boolean(reaction) || origin === "call");
+
 export const botsAnnouncements = (
   context: BotsContext,
   deps: AnnouncementDeps,
@@ -65,9 +71,11 @@ export const botsAnnouncements = (
 
     yield* preview(owner, messages);
 
-    const { reply, reaction, waitingFor } = latestReply(messages);
+    const latest = latestReply(messages);
+    const { reply, waitingFor } = latest;
+    const origin = (yield* deps.origin(execution)).kind;
 
-    if (!reply && reaction) return;
+    if (quiet(latest, origin)) return;
 
     yield* emit({
       type: "reply",
@@ -75,7 +83,7 @@ export const botsAnnouncements = (
       agentId: owner.id,
       agentName: owner.name,
       entryId: reply?.entryId ?? null,
-      origin: (yield* deps.origin(execution)).kind,
+      origin,
       preview: reply?.content.trim().slice(0, MESSAGE_PREVIEW_CHARS) ?? "",
       createdAt: execution.createdAt,
       ...(waitingFor && { waitingFor }),

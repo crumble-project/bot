@@ -1,9 +1,10 @@
-import { GatewayIcon, gatewayLabel } from "@/components/gateway-brand";
+import { GatewayIcon, gatewayOrigin } from "@/components/gateway-brand";
 import { type ReactNode, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconChevronRight,
   IconFileText,
+  IconPhone,
   IconKey,
   IconArrowBackUp,
   IconUsersGroup,
@@ -11,7 +12,7 @@ import {
 import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Marker, MarkerContent } from "@/components/ui/marker";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   Message as MessageRow,
   MessageContent,
@@ -157,6 +158,33 @@ export function TimeMarker({ label }: { label: string }) {
   );
 }
 
+export function CallMarker({
+  title,
+  quote,
+  reactions,
+}: {
+  title: string;
+  quote?: string | undefined;
+  reactions?: string | undefined;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <Marker className="justify-center">
+        <MarkerIcon>
+          <IconPhone />
+        </MarkerIcon>
+        <MarkerContent>{title}</MarkerContent>
+        {reactions && <Badge variant="secondary">{reactions}</Badge>}
+      </Marker>
+      {quote && (
+        <blockquote className="max-w-md border-l-2 pl-2 text-sm whitespace-pre-wrap text-muted-foreground">
+          {quote}
+        </blockquote>
+      )}
+    </div>
+  );
+}
+
 export function EventRow({ message }: { message: Message }) {
   const communication = message.communication;
 
@@ -185,7 +213,21 @@ export function EventRow({ message }: { message: Message }) {
   );
 }
 
-export function NoticeRow({ message }: { message: Message }) {
+export function NoticeRow({
+  message,
+  reactions,
+}: {
+  message: Message;
+  reactions?: Reaction[] | undefined;
+}) {
+  if (message.origin?.kind === "call")
+    return (
+      <CallMarker
+        title={message.content}
+        reactions={reactions?.map(({ emoji }) => emoji).join("")}
+      />
+    );
+
   return (
     <CenteredDisclosure
       title={originLabel(message)}
@@ -306,6 +348,10 @@ function originLabel(message: Message) {
   if (!origin) return null;
 
   if (origin.kind === "bot_request") return "Bot request";
+
+  if (origin.kind === "call_request") return "Call request";
+
+  if (origin.kind === "call") return "Call";
 
   return originContent(origin);
 }
@@ -570,7 +616,7 @@ function OwnerDelivery({
       {message.origin?.via && (
         <span className="flex items-center gap-1 [&_svg]:size-3">
           <GatewayIcon id={message.origin.via} />
-          Sent from {gatewayLabel(message.origin.via)}
+          {gatewayOrigin(message.origin.via)}
         </span>
       )}
     </MessageFooter>

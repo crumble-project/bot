@@ -1,4 +1,10 @@
-import { BOT_MESSAGE_ENTRY, MESSAGE_ENTRY } from "../transcript/entries";
+import {
+  BOT_MESSAGE_ENTRY,
+  CALL_ENTRY,
+  contentText,
+  MESSAGE_ENTRY,
+  type CallEventData,
+} from "../transcript/entries";
 import type { InputOrigin } from "../transcript/origins";
 import {
   BACKGROUND_CONTEXT,
@@ -38,6 +44,7 @@ import {
   positiveId,
 } from "../shared/entry-ids";
 import { HarnessFiles } from "../shared/harness-files";
+import { isCallOnly } from "../shared/chat-only";
 import type { defineAnchorTask } from "../shared/anchor-task";
 import { ProviderModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
@@ -110,6 +117,16 @@ export type RuntimeSnapshot = {
   oldestEntryId: string | null;
   status: "idle" | "running";
   updatedAt: number;
+};
+
+/**
+ * Options for a chat snapshot. `partial` opts into the in-flight reply text, which snapshots hide by default. `own`
+ * reads the given conversation's transcript; without it a snapshot reads the bot chat's, whatever conversation it is.
+ */
+export type SnapshotOptions = {
+  limit?: number | undefined;
+  partial?: boolean | undefined;
+  own?: boolean | undefined;
 };
 
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
@@ -614,7 +631,7 @@ export class AgentRuntime {
         model: modelRef(model ?? agent),
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
         extensions: style.extensions?.(parts) ?? {
-          remove: [record.jobKnowledgeExtension],
+          remove: [record.jobKnowledgeExtension, ...offered.filter(isCallOnly)],
         },
         instructions: conversationInstructions(
           agent,
@@ -816,6 +833,31 @@ export class AgentRuntime {
     event: BotMessageEvent,
     requestId: string,
   ) {
+    await this.record(agent, conversationId, requestId, {
+      kind: BOT_MESSAGE_ENTRY,
+      data: { ...event, timestamp: Date.now() },
+    });
+  }
+
+  async recordCallEvent(
+    agent: Agent,
+    conversationId: string,
+    event: CallEventData,
+    requestId: string,
+  ) {
+    await this.record(agent, conversationId, requestId, {
+      kind: CALL_ENTRY,
+      data: { ...event, timestamp: Date.now() },
+    });
+  }
+
+  /** A data-only entry: the model never sees it, and it lands at once, even mid-turn. */
+  private async record(
+    agent: Agent,
+    conversationId: string,
+    requestId: string,
+    entry: { kind: string; data: JsonValue },
+  ) {
     const conversation = await (
       await this.open(agent)
     ).harness.conversation(
@@ -825,14 +867,7 @@ export class AgentRuntime {
 
     if (!conversation) throw new Error("Conversation not found");
     await conversation.submit(
-      {
-        type: "write",
-        requestId,
-        entry: {
-          kind: BOT_MESSAGE_ENTRY,
-          data: { ...event, timestamp: Date.now() },
-        },
-      },
+      { type: "write", requestId, entry },
       BACKGROUND_CONTEXT,
     );
   }
@@ -860,7 +895,7 @@ export class AgentRuntime {
   async snapshot(
     agent: Agent,
     conversationId: string,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ): Promise<RuntimeSnapshot> {
     const { harness } = await this.open(agent);
 
@@ -870,10 +905,19 @@ export class AgentRuntime {
     );
 
     if (!conversation) throw new Error("Conversation not found");
+
     // Read transcript before attaching the live view. A run may commit an
     // intermediate assistant entry while the view is being attached; the
     // active-run guard below then filters it from this snapshot.
-    const transcript = await readTranscript(harness, agent.id, options);
+    const transcript = options.own
+      ? await readConversationTranscript(
+          harness,
+          agent.id,
+          conversation.id,
+          options,
+        )
+      : await readTranscript(harness, agent.id, options);
+
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
 
     try {
@@ -891,7 +935,9 @@ export class AgentRuntime {
         ...transcript,
         messages,
         live: publicLive(live),
-        partial: "",
+        partial: options.partial
+          ? contentText(live?.generation?.message?.content)
+          : "",
         usage: view.value.docs["pi.usage"],
         status: live?.run ? "running" : "idle",
         updatedAt: Date.now(),
@@ -988,6 +1034,28 @@ export class AgentRuntime {
     );
   }
 
+  /** A conversation's own transcript, such as an outside call's, with unfinished assistant entries hidden. */
+  async conversationHistory(
+    agent: Agent,
+    conversationId: string,
+    options: HistoryOptions = {},
+  ) {
+    const { harness } = await this.open(agent);
+
+    return this.visible(
+      harness,
+      options,
+      () =>
+        readConversationTranscript(
+          harness,
+          agent.id,
+          localConversationId(agent.id, conversationId),
+          options,
+        ),
+      false,
+    );
+  }
+
   private async visible(
     harness: Harness,
     options: HistoryOptions,
@@ -1028,7 +1096,7 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
     callback: RuntimeWatch,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ): Promise<() => Promise<void>> {
     const stream = await watchEvents(
       (await this.open(agent)).harness,

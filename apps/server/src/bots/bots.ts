@@ -11,9 +11,15 @@ import type { AppError } from "../shared/errors";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { botsContext } from "./bots-context";
 import { botsService } from "./bots-service";
-import type { AgentRuntime, RuntimeSnapshot, RuntimeWatch } from "./runtime";
+import type {
+  AgentRuntime,
+  RuntimeSnapshot,
+  RuntimeWatch,
+  SnapshotOptions,
+} from "./runtime";
 import type { JobAnswerInput, SendOptions } from "./bots-submissions";
 import type { BotMessageEvent, PageOptions } from "../transcript/transcript";
+import type { CallEventData } from "../transcript/entries";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -80,13 +86,19 @@ export class Bots extends Context.Service<
     ) => Effect.Effect<void>;
     readonly snapshot: (
       conversationId: string,
-      options?: { limit?: number | undefined },
+      options?: SnapshotOptions,
     ) => Effect.Effect<ChatSnapshot, AppError>;
     /** The bot's one continuous chat, created on first use and stable across restarts. */
     readonly chat: (agentId: string) => Effect.Effect<Conversation, AppError>;
     readonly recordBotMessage: (
       agentId: string,
       event: BotMessageEvent,
+      requestId: string,
+    ) => Effect.Effect<void, AppError>;
+    /** Writes a call marker the model never sees into the bot's chat. */
+    readonly recordCallEvent: (
+      agentId: string,
+      event: CallEventData,
       requestId: string,
     ) => Effect.Effect<void, AppError>;
     readonly chatSnapshot: (
@@ -122,7 +134,7 @@ export class Bots extends Context.Service<
       agentId: string,
       conversationId: string,
       callback: RuntimeWatch,
-      options: { limit?: number | undefined },
+      options: SnapshotOptions,
     ) => Effect.Effect<() => Promise<void>, AppError>;
     readonly sendChat: (
       agentId: string,

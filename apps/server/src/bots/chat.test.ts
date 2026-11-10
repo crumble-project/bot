@@ -20,7 +20,7 @@ import { type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
-import { eventRequest } from "../shared/request-ids";
+import { eventRequest, voiceRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { scheduleInput } from "../contract/schedules";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
@@ -391,6 +391,35 @@ describe("message gateways", () => {
         (message) => message.role === "user",
       )?.origin,
     ).toEqual({ kind: "owner", via: "discord" });
+    await service.close();
+  });
+
+  test("a spoken message reaches the model with its note and shows only the owner's words", async () => {
+    const seen: unknown[] = [];
+
+    const record: FauxResponseStep = (context) => {
+      seen.push(context.messages.at(-1)?.content);
+
+      return fauxAssistantMessage("hi");
+    };
+
+    const { service, agent } = setup([record]);
+    const requestId = voiceRequest("c1", "1");
+
+    await settle(
+      service,
+      (await service.sendChat(agent.id, "hello", requestId)).id,
+    );
+    expect(seen[0]).toBe(
+      `[message ${requestId}]\n[Spoken on a phone call. Your reply is read aloud: answer briefly in plain sentences, without lists, tables, code, or links. Saying goodbye does not end the call: when the owner says goodbye or asks you to hang up, call hang_up.]\nhello`,
+    );
+
+    const shown = (await service.chatSnapshot(agent.id)).messages.find(
+      (message) => message.role === "user",
+    );
+
+    expect(shown?.content).toBe("hello");
+    expect(shown?.origin).toEqual({ kind: "owner", via: "voice" });
     await service.close();
   });
 });

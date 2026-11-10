@@ -19,9 +19,11 @@ const pending = new Promise<never>(() => {});
 
 const chat: CardChat = {
   botId: "bot",
+  botName: "Ada",
   attachmentPath: () => "/screen",
   jobStatus: () => undefined,
   onOpenJob: () => {},
+  onOpenCall: () => {},
 };
 
 test("attachment image URLs follow replacement and unmount", async () => {

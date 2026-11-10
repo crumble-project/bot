@@ -111,7 +111,7 @@ function GatewayStatus({ gateway }: { gateway: MessageGateway }) {
   );
 }
 
-function BotSelect({
+export function BotSelect({
   id,
   label,
   bots,
@@ -265,7 +265,7 @@ function ConnectionSection({
   );
 }
 
-function AddRowButton({
+export function AddRowButton({
   label,
   disabled,
   onClick,
@@ -288,7 +288,7 @@ function AddRowButton({
   );
 }
 
-function RemoveRowButton({
+export function RemoveRowButton({
   title,
   onClick,
 }: {
@@ -606,7 +606,7 @@ function saveStatus(dirty: boolean, save: SaveState) {
   return save.isSuccess ? "Saved" : "";
 }
 
-function SaveBar({
+export function SaveBar({
   dirty,
   save,
   onReset,
@@ -735,7 +735,7 @@ function GatewayRow({ gateway }: { gateway: MessageGateway }) {
   );
 }
 
-function QueryState({
+export function QueryState({
   pending,
   error,
 }: {

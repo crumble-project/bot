@@ -10,7 +10,7 @@ import {
   UNKNOWN_SCHEDULE_NAME,
   type InputOrigin,
 } from "../transcript/origins";
-import type { RuntimeWatch } from "./runtime";
+import type { RuntimeWatch, SnapshotOptions } from "./runtime";
 import {
   latestMessagePreview,
   type PageOptions,
@@ -38,6 +38,28 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     };
   });
 
+  const scheduleOrigin = (
+    source: Extract<
+      ReturnType<typeof turnSource>,
+      { kind: "task" } | { kind: "script" }
+    >,
+  ) =>
+    Effect.map(scheduleName(source.scheduleId), (name) => ({
+      kind: source.kind,
+      name:
+        name ??
+        (source.kind === "task"
+          ? UNKNOWN_SCHEDULE_NAME
+          : "Deleted script automation"),
+    }));
+
+  // An outside call's conversation is titled with the callee.
+  const calleeOrigin = (execution: Execution) =>
+    Effect.map(conversations.get(execution.conversationId), (found) => ({
+      kind: "callee" as const,
+      name: found?.title ?? "The callee",
+    }));
+
   const origin = (execution: Execution): Effect.Effect<InputOrigin> =>
     Effect.gen(function* () {
       const source = turnSource(execution);
@@ -48,14 +70,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
 
         case "task":
         case "script":
-          return {
-            kind: source.kind,
-            name:
-              (yield* scheduleName(source.scheduleId)) ??
-              (source.kind === "task"
-                ? UNKNOWN_SCHEDULE_NAME
-                : "Deleted script automation"),
-          };
+          return yield* scheduleOrigin(source);
         case "bot": {
           const bot = yield* agents.get(source.agentId);
 
@@ -66,6 +81,9 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
           };
         }
 
+        case "callee":
+          return yield* calleeOrigin(execution);
+
         default:
           return source;
       }
@@ -73,7 +91,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
 
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
-    options: { limit?: number | undefined } = {},
+    options: SnapshotOptions = {},
   ) {
     const { agent: owner, conversation: found } =
       yield* conversation(conversationId);
@@ -136,7 +154,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       agentId: string,
       conversationId: string,
       callback: RuntimeWatch,
-      options: { limit?: number | undefined },
+      options: SnapshotOptions,
     ) =>
       withAgent(agentId, (owner) =>
         runtime.watch(owner, conversationId, callback, options),

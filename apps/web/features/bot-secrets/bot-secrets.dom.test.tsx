@@ -247,9 +247,11 @@ const requestCard = async (
       <ToolResultRow
         chat={{
           botId: "bot",
+          botName: "Ada",
           attachmentPath: () => "",
           jobStatus: () => undefined,
           onOpenJob: () => {},
+          onOpenCall: () => {},
         }}
         message={{
           id: "m1",

@@ -4,7 +4,7 @@ import { Effect, Predicate, Result } from "effect";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import type { BotsAnnouncements } from "./bots-announcements";
-import { isGroupTurn, type BotsContext } from "./bots-context";
+import { isChatTurn, type BotsContext } from "./bots-context";
 import type { BotsNotifications } from "./bots-notifications";
 import type { AgentRuntime } from "./runtime";
 
@@ -41,7 +41,7 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
       error: outcomeError(result),
     });
 
-    if (recorded && result.status === "done" && !isGroupTurn(execution))
+    if (recorded && result.status === "done" && isChatTurn(execution))
       yield* announceReply(execution).pipe(
         logged("Reply announcement failed", execution.id),
         Effect.forkIn(scope),

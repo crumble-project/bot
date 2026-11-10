@@ -24,6 +24,21 @@ export const botRequestRequest = (botRequestId: string) =>
 export const gatewayRequest = (adapterId: string, id: string) =>
   `gateway:${adapterId}:${id}`;
 
+export const voiceRequest = (callId: string, id: string) =>
+  `voice:${callId}:${id}`;
+
+export const VOICE_VIA = "voice";
+
+export const voiceCallRequest = (callId: string, phase: "started" | "ended") =>
+  `voice-call:${callId}:${phase}`;
+
+/** What the callee said in an outside call: `id` is the voice gateway's ID for the message within the call. */
+export const outsideCallRequest = (callId: string, id: string) =>
+  `outside-call:${callId}:${id}`;
+
+export const callRequestRequest = (callRequestId: string) =>
+  `call-request:${callRequestId}`;
+
 export const botMessageRequest = (executionId: string, status: string) =>
   `bot-message:${executionId}:${status}`;
 
@@ -61,6 +76,10 @@ export type ParsedRequest =
   | { kind: "notice"; notice: NoticeKind; name: string; id: string }
   | { kind: "bot-request"; botRequestId: string }
   | { kind: "gateway"; adapterId: string; id: string }
+  | { kind: "voice"; callId: string; id: string }
+  | { kind: "voice-call"; callId: string }
+  | { kind: "outside-call"; callId: string; id: string }
+  | { kind: "call-request"; callRequestId: string }
   | { kind: "review"; executionId: string }
   | { kind: "group-turn" }
   /** A client's own ID. Job deliveries and reports land here too: they never become executions, so nothing decodes them. */
@@ -106,6 +125,14 @@ export function parseRequestId(requestId: string): ParsedRequest {
       return { kind: "bot-request", botRequestId: subject };
     case "gateway":
       return { kind: "gateway", adapterId: subject, id: detail };
+    case "voice":
+      return { kind: "voice", callId: subject, id: detail };
+    case "voice-call":
+      return { kind: "voice-call", callId: subject };
+    case "outside-call":
+      return { kind: "outside-call", callId: subject, id: detail };
+    case "call-request":
+      return { kind: "call-request", callRequestId: subject };
     case "review":
       return { kind: "review", executionId: subject };
     default:

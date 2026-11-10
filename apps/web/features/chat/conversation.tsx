@@ -250,6 +250,7 @@ function ConversationRows({
   onReply,
   attachmentPath,
   renderMessage,
+  renderNotice,
 }: {
   messages: Message[];
   arrival: (message: Message) => string | undefined;
@@ -258,6 +259,7 @@ function ConversationRows({
   onReply: (message: Message) => void;
   attachmentPath: (entryId: string, index: number) => string;
   renderMessage: (message: Message) => ReactNode;
+  renderNotice: (message: Message, row: ReactNode) => ReactNode;
 }) {
   return withTimeMarkers(messages).map((row) =>
     row.kind === "time" ? (
@@ -271,7 +273,13 @@ function ConversationRows({
         className={arrival(row.message)}
       >
         {isNotice(row.message) ? (
-          <NoticeRow message={row.message} />
+          renderNotice(
+            row.message,
+            <NoticeRow
+              message={row.message}
+              reactions={reactions.get(row.message.entryId)}
+            />,
+          )
         ) : row.message.role === "user" ? (
           <OwnerMessage
             message={row.message}
@@ -324,10 +332,13 @@ export function ConversationMessages({
   conversation,
   empty,
   renderMessage,
+  renderNotice = (_message, row) => row,
 }: {
   conversation: Conversation;
   empty: ReactNode;
   renderMessage: (message: Message) => ReactNode;
+  /** Replaces a notice's row; `row` is the default one. */
+  renderNotice?: (message: Message, row: ReactNode) => ReactNode;
 }) {
   const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;
 
@@ -348,6 +359,7 @@ export function ConversationMessages({
         onReply={conversation.sending.setReplyTo}
         attachmentPath={conversation.attachmentPath}
         renderMessage={renderMessage}
+        renderNotice={renderNotice}
       />
       {outgoing.map((message) => (
         <OutgoingRow

@@ -24,7 +24,7 @@ import {
   historyResponse,
   scriptRunResponse,
 } from "../contract/api-responses";
-import { startServer } from "./server";
+import { startServer, voiceGatewayResponse } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 import {
   DesktopNotConfigured,
@@ -757,6 +757,105 @@ test.serial(
       );
     } finally {
       await tenant?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("a closing server answers a voice gateway request with 503 and opens no account", async () => {
+  const forwarded: string[] = [];
+
+  const response = await voiceGatewayResponse(
+    new Request("http://localhost/v1/voice/events", {
+      headers: { authorization: `Bearer account.${"s".repeat(43)}` },
+    }),
+    {
+      closed: true,
+      hasUser: () => true,
+      forward: async (userId) => {
+        forwarded.push(userId);
+
+        return new Response();
+      },
+    },
+  );
+
+  expect(response?.status).toBe(503);
+  expect(response?.headers.get("cache-control")).toBe("no-store");
+  expect(forwarded).toEqual([]);
+});
+
+test.serial(
+  "a voice gateway token reaches only its own account's voice routes, and nothing else reaches them",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-voice-"));
+
+    try {
+      const running = await startServer({ dataDir, port: 0 });
+      const url = (path: string) => new URL(path, running.server.url);
+      const refusal = { error: "Voice gateway token required" };
+      const refusedHeaders = new Set<string>();
+
+      const issue = async (headers: Record<string, string>) =>
+        // SAFETY: the route returns the voice gateway token schema.
+        (
+          (await (
+            await fetch(url("/v1/voice-gateway/token"), {
+              method: "POST",
+              headers,
+            })
+          ).json()) as { token: string }
+        ).token;
+
+      const session = await signUp(running);
+      const token = await issue(session);
+      const [account, secret] = token.split(".");
+      const other = await issue(await signUp(running));
+      const voice = { authorization: `Bearer ${token}` };
+
+      const events = await fetch(url("/v1/voice/events"), { headers: voice });
+
+      expect(events.status).toBe(200);
+      expect(events.headers.get("cache-control")).toBe("no-store");
+      const reader = events.body!.getReader();
+
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+        "event: config",
+      );
+      await reader.cancel();
+
+      for (const path of ["/v1/agents", "/v1/voice-gateway"])
+        expect((await fetch(url(path), { headers: voice })).status).toBe(401);
+
+      for (const headers of [
+        session,
+        { ...session, "x-crumble-voice-gateway-token": token },
+        { "x-crumble-voice-gateway-token": token },
+        { authorization: `Bearer nobody.${secret}` },
+        { authorization: `Bearer ${account}.${"x".repeat(43)}` },
+        { authorization: `Bearer ${account}.${other.split(".")[1]}` },
+        {
+          authorization: `Bearer ${account}.${"x".repeat(43)}`,
+          "x-crumble-voice-gateway-token": token,
+        },
+      ]) {
+        const refused = await fetch(url("/v1/voice/events"), { headers });
+
+        expect(refused.status).toBe(401);
+        expect(refused.headers.get("cache-control")).toBe("no-store");
+        expect(await refused.json()).toEqual(refusal);
+        refusedHeaders.add(
+          JSON.stringify(
+            [...refused.headers].filter(([name]) => name !== "date"),
+          ),
+        );
+      }
+
+      expect(refusedHeaders.size).toBe(1);
+
+      expect(readdirSync(join(dataDir, "users"))).not.toContain("nobody");
+      await running.close();
+    } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
   },

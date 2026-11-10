@@ -16,7 +16,9 @@ type FakeEntry = {
   conversationId: number;
   kind: string;
   model?: { role: string; content: string }[];
-  data?: { content?: string; communication?: FakeCommunication };
+  data?:
+    | { content?: string; communication?: FakeCommunication }
+    | Record<string, string | number>;
 };
 
 type FakeQuery = {
@@ -181,5 +183,59 @@ describe("durable transcript helpers", () => {
         communication: event.data.communication,
       },
     ]);
+  });
+
+  test("normalizes call markers: a bot's greeting, Call started, and how a call ended", async () => {
+    const call = (id: number, data: Record<string, string | number>) => ({
+      id,
+      conversationId: 1,
+      kind: "crumble.voice-call",
+      data: { callId: `c${id}`, timestamp: 5, ...data },
+    });
+
+    const result = await readTranscript(
+      fakeHarness([
+        call(4, {
+          phase: "ended",
+          direction: "inbound",
+          text: "Call ended after 2 minutes.",
+        }),
+        call(3, { phase: "started", direction: "inbound" }),
+        call(2, {
+          phase: "started",
+          direction: "outbound",
+          greeting: "Dinner is ready.",
+        }),
+        call(1, { phase: "paused", direction: "inbound" }),
+      ]),
+      "a",
+    );
+
+    expect(
+      result.messages.map(({ kind, content, call }) => ({
+        kind,
+        content,
+        call,
+      })),
+    ).toEqual([
+      {
+        kind: "call-started",
+        content: "Dinner is ready.",
+        call: { callId: "c2", direction: "outbound" },
+      },
+      {
+        kind: "call-started",
+        content: "Call started",
+        call: { callId: "c3", direction: "inbound" },
+      },
+      {
+        kind: "call-ended",
+        content: "Call ended after 2 minutes.",
+        call: { callId: "c4", direction: "inbound" },
+      },
+    ]);
+    expect(result.messages.every((message) => message.role === "event")).toBe(
+      true,
+    );
   });
 });

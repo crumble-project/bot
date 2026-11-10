@@ -145,6 +145,29 @@
             ],
             "additionalProperties": true
           },
+          "call": {
+            "type": "object",
+            "properties": {
+              "callId": {
+                "type": "string"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "inbound",
+                  "outbound"
+                ]
+              },
+              "callee": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "callId",
+              "direction"
+            ],
+            "additionalProperties": true
+          },
           "attachments": {
             "type": "array",
             "items": {

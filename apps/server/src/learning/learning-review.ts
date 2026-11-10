@@ -6,6 +6,7 @@ import type { LearnedChange, Skill } from "../contract/skills";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotRuntime } from "../bots/runtime";
 import { Bots } from "../bots/bots";
+import { isCallTurn } from "../bots/bots-context";
 import { pluginJobKinds, Plugins } from "../plugins/plugins";
 import type { JobFinished } from "../jobs/jobs";
 import { logged, pi } from "../shared/app-errors";
@@ -217,6 +218,9 @@ export class LearningReview extends Context.Service<
           execution: Execution,
         ) {
           const { submissionId } = execution;
+
+          // A callee's words must never reach a conversation that writes memory or skills.
+          if (isCallTurn(execution)) return;
 
           if (execution.status === "done" && submissionId)
             yield* reviewOnce(execution, submissionId, execution.agentId);

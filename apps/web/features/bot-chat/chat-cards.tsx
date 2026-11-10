@@ -1,10 +1,12 @@
 import { botRequestResult } from "@/features/bot-requests/bot-request-card";
+import { callRequestResult } from "@/features/call-requests/call-request-card";
 import { desktopScreenshotResult } from "@/features/bot-desktop/desktop-screenshot";
 import { credentialRequestResult } from "@/features/credentials/credential-request";
 import { heldActionEvent } from "@/features/bot-desktop/held-action";
 import { jobFailureEvent, jobResult } from "@/features/jobs/job-card";
 import { jobQuestionEvent } from "@/features/jobs/job-question";
 import { loginRequestResult } from "@/features/logins/login-request";
+import { callEvent } from "@/features/voice-gateway/call-event";
 import { isJobKind } from "@crumble/server/contract/tools";
 import type { Message } from "@/features/chat/api";
 import { displayResult } from "@/features/chat/display";
@@ -17,6 +19,7 @@ const TOOL_RESULTS: MessageCard[] = [
   credentialRequestResult,
   loginRequestResult,
   botRequestResult,
+  callRequestResult,
   jobResult,
 ];
 
@@ -24,6 +27,7 @@ const EVENTS: MessageCard[] = [
   jobQuestionEvent,
   heldActionEvent,
   jobFailureEvent,
+  callEvent,
 ];
 
 function cardOf(message: Message, cards = TOOL_RESULTS) {
@@ -45,7 +49,8 @@ export function shownInChat(message: Message) {
     case "toolResult":
       return cardOf(message) !== null;
     case "event":
-      return message.content.trim() !== "";
+      // An outside call shows as one card where its end notice is.
+      return message.content.trim() !== "" && !message.call?.callee;
     default:
       return false;
   }

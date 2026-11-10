@@ -66,6 +66,7 @@ async function fixture(
   folder = directory(),
   responseText = "associated answer",
   fakeClock = false,
+  adapterId = "test-platform",
 ) {
   const sent: Parameters<GatewayConnection["send"]>[0][] = [];
   const attempts: Parameters<GatewayConnection["send"]>[0][] = [];
@@ -91,7 +92,7 @@ async function fixture(
   let onMessage: ((message: GatewayMessage) => Promise<void>) | undefined;
 
   const adapter: ChatAdapter = {
-    id: "test-platform",
+    id: adapterId,
     label: "Test platform",
     secretKey: "test-platform:token",
     maxMessageLength: 60,
@@ -135,7 +136,7 @@ async function fixture(
   };
 
   const dependencies = Layer.mergeAll(
-    Layer.succeed(Plugins, [{ id: "test-platform", chatAdapters: [adapter] }]),
+    Layer.succeed(Plugins, [{ id: adapterId, chatAdapters: [adapter] }]),
     // SAFETY: MessageGateway only invokes response on the runtime test double.
     Layer.succeed(BotRuntime, {
       async response(_agent, _conversationId, submissionId) {
@@ -193,6 +194,7 @@ async function fixture(
           snapshot: unexpected,
           chat: unexpected,
           recordBotMessage: unexpected,
+          recordCallEvent: unexpected,
           chatSnapshot: unexpected,
           history: unexpected,
           jobs: unexpected,
@@ -351,6 +353,12 @@ async function fixture(
     },
   };
 }
+
+test("an adapter cannot take the voice gateway's via", async () => {
+  await expect(fixture(undefined, undefined, false, "voice")).rejects.toThrow(
+    "Message gateway adapter ID voice is reserved for the voice gateway",
+  );
+});
 
 test("a connection resolving after its timeout is closed and cannot submit messages", async () => {
   const f = await fixture();
