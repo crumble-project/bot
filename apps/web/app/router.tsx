@@ -15,6 +15,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { connectPath, returnPath } from "@/lib/session";
 import { Connect } from "./connect";
 import { Home } from "./home";
 import { Shell } from "./shell";
@@ -62,10 +63,14 @@ const rootRoute = createRootRoute();
 const connectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connect",
-  beforeLoad: async () => {
+  validateSearch: z.object({
+    next: z.string().optional(),
+    invite: z.string().optional(),
+  }),
+  beforeLoad: async ({ search }) => {
     const session = await authClient.getSession();
 
-    if (session.data) throw redirect({ to: "/" });
+    if (session.data) throw redirect({ href: returnPath(search.next) });
   },
   component: Connect,
 });
@@ -73,10 +78,10 @@ const connectRoute = createRoute({
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const session = await authClient.getSession();
 
-    if (!session.data) throw redirect({ to: "/connect" });
+    if (!session.data) throw redirect({ href: connectPath(location.href) });
   },
   component: Shell,
 });

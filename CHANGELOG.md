@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Signing in to the web app returns to the page that asked for it, such as a settings page the native apps open, instead of the home page. Only paths on the same site are followed.
 - The server serves its OpenAPI document at `GET /openapi.json` without authentication.
 - Contributors no longer need oasdiff. The contract compatibility check, its CI workflow, and the automatic `openapi/` regeneration in `pre-commit` are gone; run `bun run openapi:generate` yourself.
 - GitHub owner sign-out removes local authorization before attempting remote revocation. Older refreshes and sign-in completions can no longer restore signed-out state or overwrite a newer sign-in.

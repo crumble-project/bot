@@ -9,7 +9,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { resetSession } from "@/lib/session";
+import { resetSession, returnPath } from "@/lib/session";
 import {
   authClient,
   INVITE_HEADER,
@@ -44,7 +44,9 @@ const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
   resetSession();
-  window.location.assign("/");
+  window.location.assign(
+    returnPath(new URLSearchParams(location.search).get("next")),
+  );
 }
 
 function usePasskeySignIn(mode: Mode) {
