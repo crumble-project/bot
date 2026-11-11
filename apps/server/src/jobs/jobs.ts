@@ -459,7 +459,7 @@ const jobReporterWait =
           if (state.holder && state.holder.name !== name) {
             waiting = true;
 
-            return undefined;
+            return;
           }
 
           state.holder = {
@@ -511,7 +511,7 @@ const admitDelivery = async (
     };
     admitted = true;
 
-    return undefined;
+    return;
   }, taskContext);
 
   return admitted;
@@ -645,7 +645,7 @@ const deliveryError = (
   name: string,
   settled: SettledSubmissionRecord,
 ) => {
-  if (settled.status !== "unanswered") return undefined;
+  if (settled.status !== "unanswered") return;
 
   return settled.reason === "aborted"
     ? stoppedError(kindState, name)

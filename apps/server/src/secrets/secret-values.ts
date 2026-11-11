@@ -1,3 +1,4 @@
+import type { Redacted } from "effect";
 import {
   Clock,
   Context,
@@ -7,7 +8,6 @@ import {
   Layer,
   Predicate,
   RcMap,
-  Redacted,
   Result,
   Schema,
   Scope,

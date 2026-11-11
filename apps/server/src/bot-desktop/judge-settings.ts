@@ -18,7 +18,7 @@ const JUDGE_MODEL = "desktop:judge-model";
 const stored = judgeModelInput.shape.judgeModel
   .unwrap()
   .optional()
-  .catch(undefined);
+  .catch(() => undefined);
 
 export const chosenJudge = SettingsRepository.use((r) =>
   r.get(JUDGE_MODEL),

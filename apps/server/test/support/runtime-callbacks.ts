@@ -41,7 +41,7 @@ export const runtimeCallbacks = (
 ): RuntimeCallbacks => ({
   models: hostModels(undefined, []),
   currentAgent: (agent) => agent,
-  ownerTimezone: () => undefined,
+  ownerTimezone: () => {},
   listMemory: () => [],
   createMemory: noMemoryStore,
   updateMemory: noMemoryStore,
@@ -55,7 +55,7 @@ export const runtimeCallbacks = (
   resolveFiles: (_agentId, ids) =>
     Effect.succeed(ids.map((id) => ({ file: { id, deleted: true as const } }))),
   existingFiles: () => Effect.succeed(new Set()),
-  visionModel: () => undefined,
+  visionModel: () => {},
   extensions: () => [],
   jobExtensions: () => [],
   conversationKinds: () => [
@@ -63,6 +63,6 @@ export const runtimeCallbacks = (
     reviewConversations(),
     callConversations(),
   ],
-  env: () => undefined,
+  env: () => {},
   ...overrides,
 });

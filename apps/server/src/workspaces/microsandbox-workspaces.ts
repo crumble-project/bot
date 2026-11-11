@@ -215,7 +215,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
       record.cpus !== size.cpus ||
       record.memoryMib !== size.memoryMib
     )
-      return undefined;
+      return;
 
     // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
     return yield* untilBooted(

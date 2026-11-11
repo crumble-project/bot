@@ -199,25 +199,27 @@ function stripNullable(schema: z.infer<typeof jsonSchema>) {
   return copy;
 }
 
+const imageBlock = (item: {
+  type: "image";
+  data: string;
+  mimeType: string;
+}): Block => ({
+  type: "image",
+  source: {
+    type: "base64",
+    media_type: item.mimeType,
+    data: item.data,
+  },
+});
+
 const contentBlocks = (
   content: (TextContent | { type: "image"; data: string; mimeType: string })[],
 ): Block[] =>
-  content.flatMap((item): Block[] =>
-    item.type === "text"
-      ? item.text.trim()
-        ? [{ type: "text", text: item.text }]
-        : []
-      : [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: item.mimeType,
-              data: item.data,
-            },
-          },
-        ],
-  );
+  content.flatMap((item): Block[] => {
+    if (item.type !== "text") return [imageBlock(item)];
+
+    return item.text.trim() ? [{ type: "text", text: item.text }] : [];
+  });
 
 const nativeStop = (reason: StopReason) =>
   Match.value(reason).pipe(
@@ -287,12 +289,13 @@ function historyContent(
   message: Exclude<Message, { role: "system" }>,
   names: Map<string, string>,
 ): Block[] {
-  if (message.role === "user")
-    return Array.isArray(message.content)
-      ? contentBlocks(message.content)
-      : message.content.trim()
-        ? [{ type: "text", text: message.content }]
-        : [];
+  if (message.role === "user") {
+    if (Array.isArray(message.content)) return contentBlocks(message.content);
+
+    return message.content.trim()
+      ? [{ type: "text", text: message.content }]
+      : [];
+  }
 
   if (message.role === "assistant")
     return message.content.flatMap((item) =>

@@ -139,8 +139,8 @@ type OpenClient = { client: MCPClient; transport: McpTransport };
 
 const closeConnection = (connection: OpenClient) =>
   Effect.promise(async () => {
-    await connection.client.close().catch(() => undefined);
-    await connection.transport.close().catch(() => undefined);
+    await connection.client.close().catch(() => {});
+    await connection.transport.close().catch(() => {});
   });
 
 const untilAborted = async <A>(

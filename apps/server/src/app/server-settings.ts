@@ -5,7 +5,8 @@ import type {
 } from "better-auth";
 import { Schema } from "effect";
 import type { z } from "@hono/zod-openapi";
-import { serverSettingsInput, serverSettingsSchema } from "../contract/admin";
+import type { serverSettingsInput } from "../contract/admin";
+import { serverSettingsSchema } from "../contract/admin";
 
 export type ServerSettings = z.infer<typeof serverSettingsSchema>;
 

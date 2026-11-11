@@ -173,9 +173,9 @@ const outdatedWorkspaces = async (tenants: Map<string, Promise<Tenant>>) =>
   (
     await Promise.all(
       [...tenants].map(async ([userId, pending]) =>
-        (
-          (await pending.catch(() => undefined))?.workspaces?.outdated() ?? []
-        ).map((agentId) => ({ userId, agentId })),
+        ((await pending.catch(() => {}))?.workspaces?.outdated() ?? []).map(
+          (agentId) => ({ userId, agentId }),
+        ),
       ),
     )
   ).flat();
@@ -221,7 +221,7 @@ function tenantPool(pool: {
           await context.removeWorkspaces();
           await context.close();
         })
-        .catch(() => undefined);
+        .catch(() => {});
       rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
     },
     restore: (accounts: Accounts) => restoreTenants(dataDir, accounts, tenant),

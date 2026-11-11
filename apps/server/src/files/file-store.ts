@@ -64,7 +64,7 @@ export class FileStore extends Context.Service<
                   let cancellation: Promise<void> | undefined;
 
                   const cancel = () => {
-                    cancellation ??= reader.cancel().catch(() => undefined);
+                    cancellation ??= reader.cancel().catch(() => {});
                   };
 
                   signal.addEventListener("abort", cancel, { once: true });

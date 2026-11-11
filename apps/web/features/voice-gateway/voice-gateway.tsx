@@ -836,6 +836,13 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
   const pending = issue.isPending || revoke.isPending;
   const error = issue.error ?? revoke.error;
 
+  const descriptionOf = () => {
+    if (error) return fieldError(error.message);
+    if (gateway.token)
+      return `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`;
+    return "Not issued. The voice gateway connects with this token.";
+  };
+
   return (
     <>
       <SettingRow
@@ -845,13 +852,7 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
           </RowTile>
         }
         title="Voice gateway token"
-        description={
-          error
-            ? fieldError(error.message)
-            : gateway.token
-              ? `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`
-              : "Not issued. The voice gateway connects with this token."
-        }
+        description={descriptionOf()}
       >
         {gateway.token ? (
           <>

@@ -19,10 +19,8 @@ import {
 } from "./computer-use-login";
 import { computerUseState } from "./computer-use-state";
 import { sh } from "./computer-use-driver";
-import {
-  DesktopFillRepository,
-  desktopFillsAccess,
-} from "./desktop-fill-repository";
+import type { DesktopFillRepository } from "./desktop-fill-repository";
+import { desktopFillsAccess } from "./desktop-fill-repository";
 import { runnerOf } from "../shared/runner";
 import { DESKTOP_SCREENSHOT_TOOL_NAME, usesDesktop } from "../contract/tools";
 

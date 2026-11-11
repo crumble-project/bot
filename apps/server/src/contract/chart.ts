@@ -68,7 +68,7 @@ const paint = {
   // Canvas-style joins have no SwiftUI or Android equivalent; they fall back to miter.
   lineJoin: z
     .string()
-    .transform((join) =>
+    .transform((join): "miter" | "round" | "bevel" =>
       join === "round" || join === "bevel" ? join : "miter",
     )
     .optional(),

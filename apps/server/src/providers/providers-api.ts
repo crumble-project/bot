@@ -6,7 +6,7 @@ import {
   type Model,
   type Models,
 } from "@earendil-works/pi-ai";
-import { reasoningPreviewInput } from "../contract/reasoning";
+import type { reasoningPreviewInput } from "../contract/reasoning";
 import { THINKING_LEVELS } from "../contract/agents";
 import { routes, providerLoginAnswerInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
@@ -78,9 +78,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
         models.getProviders().map(async (item) => ({
           provider: item.id,
           name: item.name,
-          configured: Boolean(
-            await models.checkAuth(item.id).catch(() => undefined),
-          ),
+          configured: Boolean(await models.checkAuth(item.id).catch(() => {})),
           authMethods: loginMethods(item),
           ...providerAuth.status(item.id),
           activeLoginId: providerAuth.activeLoginId(item.id),

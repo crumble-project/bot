@@ -17,6 +17,7 @@ import { accessOf, type Access, type Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
+import type { loginSaveInput } from "../contract/secrets";
 import {
   loginFieldInput,
   loginName,
@@ -24,7 +25,6 @@ import {
   type SecretInput,
   type SecretReference,
   credentialHosts,
-  loginSaveInput,
 } from "../contract/secrets";
 import type { BotSecretRequest } from "../bot-secrets/bot-secret-requests";
 import type { Login } from "./login-repository";
@@ -364,7 +364,7 @@ export const loginFill = (
 });
 
 export function jobLoginSection(logins: readonly Login[]) {
-  if (!logins.length) return undefined;
+  if (!logins.length) return;
 
   return [
     "Logins the owner gave this bot, with the hosts each works for:",
@@ -395,7 +395,7 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
           const granted = logins.list(agentId);
           const requests = logins.requests(agentId);
 
-          if (!granted.length && !requests.length) return undefined;
+          if (!granted.length && !requests.length) return;
 
           return [
             ...(granted.length

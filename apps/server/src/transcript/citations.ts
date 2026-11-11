@@ -6,11 +6,11 @@ function sourceKey(href: string) {
   try {
     const url = new URL(href);
 
-    if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+    if (url.protocol !== "https:" && url.protocol !== "http:") return;
 
     return `${url.host}${url.pathname.replace(/\/+$/, "")}${url.search}`;
   } catch {
-    return undefined;
+    return;
   }
 }
 

@@ -18,7 +18,7 @@ export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
 const ENDED_SESSION = /session has ended/i;
 
 export const loose = <T extends z.ZodType>(schema: T) =>
-  schema.optional().catch(undefined);
+  schema.optional().catch(() => undefined);
 
 const windowSchema = z.object({
   pid: z.number(),

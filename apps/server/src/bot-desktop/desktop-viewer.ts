@@ -24,7 +24,7 @@ function novncFile(requested: string) {
     !relative.endsWith(".js") ||
     !SERVED.some((prefix) => relative.startsWith(prefix))
   )
-    return undefined;
+    return;
 
   const file = path.resolve(NOVNC, relative);
 
@@ -34,9 +34,9 @@ function novncFile(requested: string) {
 export async function novncResponse(requestPath: string) {
   const prefix = `${VIEWER_PREFIX}/novnc/`;
 
-  if (!requestPath.startsWith(prefix)) return undefined;
+  if (!requestPath.startsWith(prefix)) return;
   const file = novncFile(requestPath.slice(prefix.length));
-  const content = file && (await readFile(file).catch(() => undefined));
+  const content = file && (await readFile(file).catch(() => {}));
 
   return content
     ? new Response(new Uint8Array(content), {
@@ -162,7 +162,7 @@ export function bridgeDesktop(options: {
   void (async () => {
     for await (const chunk of stream.output) options.send(chunk);
   })()
-    .catch(() => undefined)
+    .catch(() => {})
     .finally(() => void close());
 
   return {

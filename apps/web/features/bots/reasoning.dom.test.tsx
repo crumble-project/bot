@@ -18,9 +18,7 @@ const options = [
 ];
 
 test("initial preview tolerates missing draft fields without a previous query", () => {
-  expect(
-    matchingReasoningPreview(undefined, undefined, undefined, undefined),
-  ).toBeUndefined();
+  expect(matchingReasoningPreview()).toBeUndefined();
 });
 
 test("draft switches ignore late previews and retain a pending choice", async () => {

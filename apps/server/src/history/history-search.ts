@@ -167,7 +167,8 @@ type Window = {
 };
 
 function ordinal(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
 
 function entryNumber(chat: HistoryChat, entryId: string): number {

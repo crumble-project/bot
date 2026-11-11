@@ -118,14 +118,14 @@ export const groupChatsService = (
             ? yield* context.executions.get(latest.executionId)
             : null;
 
-          const status: GroupMemberActivity["status"] =
-            !(yield* context.enabled(agentId))
-              ? "disabled"
-              : (yield* context.groups.activeTurn(groupId, agentId))
-                ? "running"
-                : member?.pending
-                  ? "queued"
-                  : "idle";
+          const statusOf = Effect.fnUntraced(function* () {
+            if (!(yield* context.enabled(agentId))) return "disabled" as const;
+            if (yield* context.groups.activeTurn(groupId, agentId))
+              return "running" as const;
+            return member?.pending ? ("queued" as const) : ("idle" as const);
+          });
+
+          const status: GroupMemberActivity["status"] = yield* statusOf();
 
           return {
             agentId,

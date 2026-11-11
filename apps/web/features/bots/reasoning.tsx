@@ -23,10 +23,10 @@ export type ThinkingLevel = ResponseBody<"previewReasoning">["effectiveLevel"];
 type ReasoningOption = ResponseBody<"previewReasoning">["options"][number];
 
 export function matchingReasoningPreview(
-  provider: string | undefined,
-  model: string | undefined,
-  previous: ResponseBody<"previewReasoning"> | undefined,
-  query: { queryKey: readonly unknown[] } | undefined,
+  provider?: string,
+  model?: string,
+  previous?: ResponseBody<"previewReasoning">,
+  query?: { queryKey: readonly unknown[] },
 ) {
   return query !== undefined &&
     query.queryKey[1] === provider &&

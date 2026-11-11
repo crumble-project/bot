@@ -242,7 +242,7 @@ export const gatewayConnections = Effect.fnUntraced(function* (
           if (closed || state.generation !== generation) {
             await connection.close();
 
-            return undefined;
+            return;
           }
 
           return connection;

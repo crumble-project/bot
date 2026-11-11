@@ -3,9 +3,18 @@ import { jobDetails, reactionDetails } from "../contract/tool-details";
 import { REACTION_TOOL_NAME } from "../contract/tools";
 
 export const toolMetadata = z.object({
-  toolCallId: z.string().optional().catch(undefined),
-  toolName: z.string().optional().catch(undefined),
-  isError: z.boolean().optional().catch(undefined),
+  toolCallId: z
+    .string()
+    .optional()
+    .catch(() => undefined),
+  toolName: z
+    .string()
+    .optional()
+    .catch(() => undefined),
+  isError: z
+    .boolean()
+    .optional()
+    .catch(() => undefined),
   details: z.unknown().optional(),
 });
 

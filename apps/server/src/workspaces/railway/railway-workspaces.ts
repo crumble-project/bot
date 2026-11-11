@@ -197,7 +197,7 @@ export function railwayWorkspacesFromEnv(
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
 ) {
-  if (env["CRUMBLE_WORKSPACE_BACKEND"] !== "railway") return undefined;
+  if (env["CRUMBLE_WORKSPACE_BACKEND"] !== "railway") return;
 
   const region = env["CRUMBLE_RAILWAY_REGION"];
   // Railway builds its images from recipes, so the admin's image setting does not apply.
@@ -334,7 +334,7 @@ export class RailwayMachines implements WorkspaceMachines {
         bootStep("Creating the sandbox", () =>
           this.create(agentId, name, image, record),
         ),
-        (sandbox) => sandbox.destroy().catch(() => undefined),
+        (sandbox) => sandbox.destroy().catch(() => {}),
       ))
     );
   });
@@ -430,7 +430,7 @@ export class RailwayMachines implements WorkspaceMachines {
 
       await this.writeRecord(agentId, { image, sandboxId: sandbox.id });
     } catch (error) {
-      await sandbox.destroy().catch(() => undefined);
+      await sandbox.destroy().catch(() => {});
       throw error;
     }
 
@@ -466,7 +466,7 @@ export class RailwayMachines implements WorkspaceMachines {
         JSON.parse(await readFile(this.recordPath(agentId), "utf8")),
       ).data;
     } catch {
-      return undefined;
+      return;
     }
   }
 
@@ -654,7 +654,7 @@ class RailwayMachine implements WorkspaceMachine {
 
         if (await this.alive()) await this.checkpoint();
 
-        await this.sandbox.destroy().catch(() => undefined);
+        await this.sandbox.destroy().catch(() => {});
       },
       catch: (cause) =>
         new WorkspaceStopFailed({
@@ -667,7 +667,7 @@ class RailwayMachine implements WorkspaceMachine {
   /** One checkpoint at a time; a request during one takes another after it, so it covers every earlier write. */
   private checkpoint() {
     const next = this.checkpointing
-      .catch(() => undefined)
+      .catch(() => {})
       .then(() => checkpoint(this.sandbox, this.name));
 
     this.checkpointing = next;
@@ -723,7 +723,7 @@ async function connectRunning(id: string) {
 
     return sandbox.status === "RUNNING" ? sandbox : undefined;
   } catch (error) {
-    if (error instanceof SandboxNotFoundError) return undefined;
+    if (error instanceof SandboxNotFoundError) return;
 
     throw error;
   }
@@ -758,7 +758,7 @@ async function copyWorkspace(
       `rm -rf ${WORKSPACE_PATH} && tar -C / -xzf ${ARCHIVE} && rm ${ARCHIVE}`,
     );
   } finally {
-    await source.destroy().catch(() => undefined);
+    await source.destroy().catch(() => {});
   }
 }
 

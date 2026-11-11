@@ -799,7 +799,7 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!status?.entry || !conversation) return undefined;
+    if (!status?.entry || !conversation) return;
 
     return { conversation, entry: Number(status.entry) };
   }

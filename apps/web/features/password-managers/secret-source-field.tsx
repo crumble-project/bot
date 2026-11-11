@@ -44,6 +44,14 @@ export type SecretInput =
   | { value: string }
   | { reference: NonNullable<ReturnType<typeof referenceOf>> };
 
+const secretInputOf = (
+  reference: NonNullable<ReturnType<typeof referenceOf>> | null,
+  draft: SecretSourceDraft,
+): SecretInput | null => {
+  if (reference) return { reference };
+  return draft.kind === "value" && draft.value ? { value: draft.value } : null;
+};
+
 /**
  * A secret's draft for `SecretSourceField`, starting from its saved status. `input` is the body to send, null while the
  * draft is empty; `changed` is false for the saved reference, so saving other fields doesn't read it again.
@@ -63,11 +71,7 @@ export function useSecretDraft(saved?: SecretStatus) {
   const connected = useConnectedPasswordManagers();
   const reference = referenceOf(draft);
 
-  const input: SecretInput | null = reference
-    ? { reference }
-    : draft.kind === "value" && draft.value
-      ? { value: draft.value }
-      : null;
+  const input = secretInputOf(reference, draft);
 
   const changed =
     input !== null &&
@@ -190,11 +194,10 @@ function SourceDescription({
 
   return (
     <FieldDescription>
-      {value.kind === "reference" ? (
-        `Read from ${manager?.name ?? "the password manager"} when it's used. Crumble checks it can read it when you save.`
-      ) : connected.length > 0 ? (
-        valueDescription
-      ) : (
+      {value.kind === "reference" &&
+        `Read from ${manager?.name ?? "the password manager"} when it's used. Crumble checks it can read it when you save.`}
+      {value.kind !== "reference" && connected.length > 0 && valueDescription}
+      {value.kind !== "reference" && connected.length === 0 && (
         <>
           {valueDescription}{" "}
           <Link to="/settings/password-managers" className="underline">

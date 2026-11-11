@@ -68,7 +68,7 @@ const makeParallelSearch = () => {
 
       const initialized = yield* initializer.withPermit(
         Effect.gen(function* () {
-          if (sessions.has(bot)) return undefined;
+          if (sessions.has(bot)) return;
           const response = yield* parallelSearch(query);
 
           if (response.sessionId !== undefined)

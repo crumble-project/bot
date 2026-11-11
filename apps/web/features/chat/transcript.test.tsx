@@ -28,7 +28,7 @@ const chat: CardChat = {
   botId: "bot",
   botName: "Ada",
   attachmentPath: () => "/screen",
-  jobStatus: () => undefined,
+  jobStatus: () => {},
   onOpenJob: () => {},
   onOpenCall: () => {},
 };
@@ -106,8 +106,8 @@ test("attachment image URLs follow replacement and unmount", async () => {
   } finally {
     await act(async () => root.unmount());
     client.clear();
-    Object.defineProperty(URL, "createObjectURL", urlMethods.createObjectURL!);
-    Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL!);
+    Object.defineProperty(URL, "createObjectURL", urlMethods.createObjectURL);
+    Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL);
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
       if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
@@ -268,8 +268,8 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
   } finally {
     await act(async () => root.unmount());
     client.clear();
-    Object.defineProperty(URL, "createObjectURL", urlMethods.createObjectURL!);
-    Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL!);
+    Object.defineProperty(URL, "createObjectURL", urlMethods.createObjectURL);
+    Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL);
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
       if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);

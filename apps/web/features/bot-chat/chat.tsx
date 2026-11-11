@@ -44,6 +44,11 @@ import { Composer } from "@/features/chat/composer";
 import { MobileSidebarTrigger } from "@/components/page";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 
+const replyToOf = (replyTo: Message | null, botName: string) => {
+  if (!replyTo) return;
+  return replyTo.role === "user" ? "You" : botName;
+};
+
 const DETAILS_KEY = "crumble.details";
 
 /** Tailwind's lg breakpoint, where the details panel fits beside the chat. */
@@ -312,9 +317,7 @@ function ChatComposer({
         }
         disabled={!bot.enabled}
         running={running}
-        replyingTo={
-          replyTo ? (replyTo.role === "user" ? "You" : bot.name) : undefined
-        }
+        replyingTo={replyToOf(replyTo, bot.name)}
         onCancelReply={() => setReplyTo(null)}
         mentionable={mentionableBots(bot, bots)}
         actions={<BotReasoning bot={bot} />}

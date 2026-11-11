@@ -53,7 +53,7 @@ const microsandbox: WorkspaceBackend = {
         "running",
     };
   },
-  cleanup: async () => undefined,
+  cleanup: async () => {},
 };
 
 const railwayDataDir = mkdtempSync(path.join(tmpdir(), "crumble-railway-"));
@@ -78,7 +78,7 @@ const destroyRecordedSandboxes = async () => {
     if (id)
       await RailwaySandbox.connect(id)
         .then((sandbox) => sandbox.destroy())
-        .catch(() => undefined);
+        .catch(() => {});
   }
 };
 

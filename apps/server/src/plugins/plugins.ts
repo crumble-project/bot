@@ -95,7 +95,7 @@ export function pluginWorkspaces(
     if (workspaces) return workspaces;
   }
 
-  return undefined;
+  return;
 }
 
 /** A value the owner sets for a plugin, such as an API key. See docs/adr/0009-plugin-settings.md. */

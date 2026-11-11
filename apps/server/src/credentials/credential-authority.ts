@@ -238,7 +238,7 @@ export class CredentialAuthorities extends Context.Service<
 
       const context = async (agentId: string, host: string) => {
         const key = `${agentId}\n${host}`;
-        const cached = await hosts.get(key)?.catch(() => undefined);
+        const cached = await hosts.get(key)?.catch(() => {});
 
         if (cached && cached.expires - Date.now() > RENEW_MS)
           return cached.context;

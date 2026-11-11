@@ -427,6 +427,14 @@ export function UsesDialog<U extends SecretUse>({
 
   const rows = uses.data?.pages.flat() ?? [];
 
+  const contentOf = () => {
+    if (uses.isPending) return <Skeleton className="h-32" />;
+    if (uses.isError) return <ErrorAlert>{uses.error.message}</ErrorAlert>;
+    if (rows.length === 0)
+      return <p className="text-sm text-muted-foreground">{empty}</p>;
+    return <UseRows rows={rows}>{children}</UseRows>;
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
@@ -434,15 +442,7 @@ export function UsesDialog<U extends SecretUse>({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {uses.isPending ? (
-          <Skeleton className="h-32" />
-        ) : uses.isError ? (
-          <ErrorAlert>{uses.error.message}</ErrorAlert>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          <UseRows rows={rows}>{children}</UseRows>
-        )}
+        {contentOf()}
         {uses.hasNextPage && (
           <Button
             variant="outline"

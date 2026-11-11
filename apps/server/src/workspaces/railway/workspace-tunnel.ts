@@ -1,4 +1,4 @@
-import net from "node:net";
+import type net from "node:net";
 import path from "node:path";
 import type { MachineStream } from "../machine-workspaces";
 
@@ -51,7 +51,7 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   let writes = Promise.resolve();
 
   const write = (data: Buffer) => {
-    writes = writes.then(() => stream.write(data)).catch(() => undefined);
+    writes = writes.then(() => stream.write(data)).catch(() => {});
   };
 
   const open = (connection: number) => {
@@ -84,7 +84,7 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   };
 
   const done = readFrames(stream.output, receive)
-    .catch(() => undefined)
+    .catch(() => {})
     .finally(() => {
       for (const socket of sockets.values()) socket.destroy();
     });

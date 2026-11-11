@@ -112,7 +112,7 @@ const autolinks: MarkdownExtension = {
   inlineParser: {
     markers: "h<",
     parse: ({ source, index, inLink }) => {
-      if (inLink) return undefined;
+      if (inLink) return;
 
       const rest = source.slice(index);
       const angle = ANGLE_URL.exec(rest);
@@ -127,8 +127,7 @@ const autolinks: MarkdownExtension = {
           length: angle[0].length,
         };
 
-      if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!))
-        return undefined;
+      if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!)) return;
 
       const bare = BARE_URL.exec(rest);
       const url = bare ? trimUrl(bare[0]) : "";

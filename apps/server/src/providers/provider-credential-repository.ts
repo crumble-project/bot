@@ -51,7 +51,7 @@ export class ProviderCredentialRepository extends Context.Service<
           .from(providerCredentials)
           .where(eq(providerCredentials.provider, providerId));
 
-        if (!row) return undefined;
+        if (!row) return;
 
         return row.value === null
           ? { type: "api_key" as const }

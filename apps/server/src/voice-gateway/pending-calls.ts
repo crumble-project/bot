@@ -34,20 +34,19 @@ const UNREPORTED = {
 };
 
 function missOf(result: SettledCall): OutsideCallMiss {
-  switch (result.outcome) {
-    case "unanswered":
-    case "busy":
-      return { outcome: result.outcome };
-    case "failed":
-      return { outcome: "failed", error: result.error };
-    case "answered":
-      return {
-        outcome: "failed",
-        error: "the call was answered but did not start",
-      };
-    default:
-      return { outcome: "failed", error: UNREPORTED[result.outcome] };
-  }
+  if (result.outcome === "unanswered" || result.outcome === "busy")
+    return { outcome: result.outcome };
+
+  if (result.outcome === "failed")
+    return { outcome: "failed", error: result.error };
+
+  if (result.outcome === "answered")
+    return {
+      outcome: "failed",
+      error: "the call was answered but did not start",
+    };
+
+  return { outcome: "failed", error: UNREPORTED[result.outcome] };
 }
 
 /** `started`: its start report made it the line's active call. */

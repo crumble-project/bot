@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod";
 import type { Message } from "./api";
 
 export const blocksOf = (message: Message) => message.blocks ?? [];

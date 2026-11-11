@@ -29,7 +29,7 @@ function readOwner(dataDir: string) {
       ? { pid, host: host?.trim() }
       : undefined;
   } catch {
-    return undefined;
+    return;
   }
 }
 

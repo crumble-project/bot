@@ -86,7 +86,7 @@ export const workspaceNotesSection = (
   key: WORKSPACE_NOTES_SECTION,
   render: async (input, context) => {
     if (!input.env || !(await isJob(input.read, input.conversationId, context)))
-      return undefined;
+      return;
 
     const notes = await readWorkspaceNotes(input.env, context);
 

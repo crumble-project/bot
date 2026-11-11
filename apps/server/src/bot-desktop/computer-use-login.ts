@@ -188,7 +188,7 @@ const UNKNOWN_CHROMIUM = "unknown";
 async function chromiumInstance(state: ComputerUseState, context: Context) {
   const browser = (await listWindows(state, context)).find(isChromium);
 
-  if (!browser) return undefined;
+  if (!browser) return;
 
   const started = (
     await sh(state.shell, `ps -o lstart= -p ${browser.pid}`, context)

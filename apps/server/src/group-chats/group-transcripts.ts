@@ -144,8 +144,7 @@ export class GroupTranscripts {
       BACKGROUND_CONTEXT,
     );
 
-    if (submission?.type !== "write" || submission.status !== "done")
-      return undefined;
+    if (submission?.type !== "write" || submission.status !== "done") return;
 
     return this.message(
       groupId,
@@ -156,7 +155,7 @@ export class GroupTranscripts {
   async message(groupId: string, entryId: string) {
     const entry = parseEntryId(entryId, groupId);
 
-    if (entry === "foreign" || entry === "malformed") return undefined;
+    if (entry === "foreign" || entry === "malformed") return;
 
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 

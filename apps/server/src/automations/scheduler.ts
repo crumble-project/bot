@@ -1,4 +1,4 @@
-import { Cause, Clock, Context, Deferred, Effect, Layer } from "effect";
+import { Cause, Clock, Context, Deferred, Effect, Exit, Layer } from "effect";
 import type { z } from "zod";
 import {
   hasBareWeekdayStep,
@@ -321,7 +321,7 @@ export class Scheduler extends Context.Service<
           Effect.ensuring(
             Effect.gen(function* () {
               current = undefined;
-              yield* Deferred.succeed(done, undefined);
+              yield* Deferred.done(done, Exit.void);
             }),
           ),
         );

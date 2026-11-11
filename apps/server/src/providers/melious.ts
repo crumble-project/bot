@@ -13,8 +13,14 @@ const modelCatalog = z.object({
   data: z
     .array(
       z.object({
-        id: z.string().optional().catch(undefined),
-        name: z.string().optional().catch(undefined),
+        id: z
+          .string()
+          .optional()
+          .catch(() => undefined),
+        name: z
+          .string()
+          .optional()
+          .catch(() => undefined),
       }),
     )
     .nullish(),

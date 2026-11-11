@@ -39,7 +39,7 @@ export const VISION_MODEL = "vision-model";
 const stored = z
   .object({ provider: z.string(), model: z.string() })
   .optional()
-  .catch(undefined);
+  .catch(() => undefined);
 
 export const parseVisionModel = (
   value: JsonValue | undefined,
@@ -358,10 +358,9 @@ function describeHook(options: VisionOptions) {
       const chosen = options.visionModel();
 
       if (!chosen || !messages.some((message) => imagesOf(message).length))
-        return undefined;
+        return;
 
-      if (!describesImages(chosen, await requestModel(api, context)))
-        return undefined;
+      if (!describesImages(chosen, await requestModel(api, context))) return;
 
       const hashes = new Map(
         messages
@@ -393,7 +392,7 @@ async function findImage(
   const conversation = await harness.conversation(conversationId, context);
   let cursor: Parameters<NonNullable<typeof conversation>["entries"]>[2];
 
-  if (!conversation) return undefined;
+  if (!conversation) return;
 
   do {
     const page = await conversation.entries(
@@ -411,7 +410,7 @@ async function findImage(
     cursor = page.next;
   } while (cursor !== undefined);
 
-  return undefined;
+  return;
 }
 
 async function askTarget(

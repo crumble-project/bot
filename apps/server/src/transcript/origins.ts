@@ -99,26 +99,21 @@ export function turnSource({
 
   if (asking) return { kind: "bot", agentId: asking };
 
-  switch (request.kind) {
-    case "script":
-      return { kind: "script", scheduleId: request.scheduleId };
-    case "notice":
-      return request.notice === "files"
-        ? { kind: "files" }
-        : { kind: "credential", name: request.name };
-    case "bot-request":
-      return { kind: "bot_request" };
-    case "gateway":
-      return { kind: "owner", via: request.adapterId };
-    case "voice":
-      return { kind: "owner", via: VOICE_VIA };
-    case "voice-call":
-      return { kind: "call" };
-    case "outside-call":
-      return { kind: "callee" };
-    case "call-request":
-      return { kind: "call_request" };
-    default:
-      return { kind: "owner" };
-  }
+  if (request.kind === "script")
+    return { kind: "script", scheduleId: request.scheduleId };
+
+  if (request.kind === "notice")
+    return request.notice === "files"
+      ? { kind: "files" }
+      : { kind: "credential", name: request.name };
+
+  if (request.kind === "bot-request") return { kind: "bot_request" };
+  if (request.kind === "gateway")
+    return { kind: "owner", via: request.adapterId };
+  if (request.kind === "voice") return { kind: "owner", via: VOICE_VIA };
+  if (request.kind === "voice-call") return { kind: "call" };
+  if (request.kind === "outside-call") return { kind: "callee" };
+  if (request.kind === "call-request") return { kind: "call_request" };
+
+  return { kind: "owner" };
 }

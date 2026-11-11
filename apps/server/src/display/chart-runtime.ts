@@ -100,12 +100,12 @@ const compositeOpacity = (
 const dashOf = (
   strokeDasharray: SceneStyle["strokeDasharray"],
   parent: Paint["dash"],
-): Paint["dash"] =>
-  strokeDasharray === undefined
-    ? parent
-    : strokeDasharray === "none"
-      ? undefined
-      : strokeDasharray.split(/[\s,]+/).map(Number);
+): Paint["dash"] => {
+  if (strokeDasharray === undefined) return parent;
+  if (strokeDasharray === "none") return undefined;
+
+  return strokeDasharray.split(/[\s,]+/).map(Number);
+};
 
 function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
   if (!style) return parent;
@@ -133,6 +133,7 @@ function pathCommands(d: string, dx: number, dy: number): Command[] {
     .unarc()
     .translate(dx, dy)
     .iterate((segment, _index, x, y) => {
+      // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- abs(), unshort(), and unarc() leave only the cases below.
       switch (segment[0]) {
         case "M":
         case "L":

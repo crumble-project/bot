@@ -183,7 +183,7 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
         try {
           return JSON.parse(jsonIn(text));
         } catch {
-          return undefined;
+          return;
         }
       })(),
     );

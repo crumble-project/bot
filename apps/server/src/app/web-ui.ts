@@ -11,7 +11,7 @@ const PELE = path.join(
 function peleFile(requested: string) {
   const relative = path.posix.normalize(decodeURIComponent(requested));
 
-  if (!relative.endsWith(".js")) return undefined;
+  if (!relative.endsWith(".js")) return;
 
   const file = path.resolve(PELE, relative);
 

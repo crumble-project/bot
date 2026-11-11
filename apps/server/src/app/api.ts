@@ -23,7 +23,7 @@ import { BotRequests } from "../bot-requests/bot-requests";
 import { registerGroupChatRoutes } from "../group-chats/group-chats-api";
 import { GroupChats, groupChatsAccess } from "../group-chats/group-chats";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
-import { McpServers } from "../integrations/mcp-servers";
+import type { McpServers } from "../integrations/mcp-servers";
 import { registerMemoryRoutes } from "../memory/memory-api";
 import { registerPasswordManagerRoutes } from "../secrets/password-managers-api";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
@@ -59,7 +59,7 @@ import { registerCallRequestRoutes } from "../voice-gateway/call-requests-api";
 import { CallRequests } from "../voice-gateway/call-requests";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
-import { Library } from "../files/library";
+import type { Library } from "../files/library";
 import { registerFileRoutes } from "../files/files-api";
 
 export type ApiServices =

@@ -18,7 +18,7 @@ const chat: CardChat = {
   botId: "bot",
   botName: "Ada",
   attachmentPath: () => "",
-  jobStatus: () => undefined,
+  jobStatus: () => {},
   onOpenJob: () => {},
   onOpenCall: () => {},
 };

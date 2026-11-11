@@ -189,15 +189,21 @@ export function CallMarker({
   );
 }
 
+const titleOf = (message: Message) => {
+  const communication = message.communication;
+
+  if (message.kind === "bot-message" && communication)
+    return `Bot communication: ${communication.fromName} → ${communication.toName}`;
+
+  return message.kind === "reset"
+    ? "Context reset"
+    : "Earlier messages summarized";
+};
+
 export function EventRow({ message }: { message: Message }) {
   const communication = message.communication;
 
-  const title =
-    message.kind === "bot-message" && communication
-      ? `Bot communication: ${communication.fromName} → ${communication.toName}`
-      : message.kind === "reset"
-        ? "Context reset"
-        : "Earlier messages summarized";
+  const title = titleOf(message);
 
   const status =
     communication &&

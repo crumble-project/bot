@@ -175,7 +175,7 @@ export const outsideCalls = Layer.effectDiscard(
       Effect.gen(function* () {
         const request = yield* requests.byCall(callId);
 
-        if (request?.agentId !== agentId) return undefined;
+        if (request?.agentId !== agentId) return;
         const about = { callee: request.callee, goal: request.goal };
 
         if (request.outcome !== "answered")

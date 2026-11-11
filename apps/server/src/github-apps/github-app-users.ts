@@ -137,7 +137,7 @@ export class GitHubAppUsers extends Context.Service<
       const readAuthorization = Effect.fnUntraced(function* (appId: string) {
         const found = yield* app(appId);
 
-        if (!found) return undefined;
+        if (!found) return;
 
         const signedIn = yield* row(appId);
         const raw = yield* serverSecrets.get(authorizationKey(appId));
@@ -332,14 +332,12 @@ export class GitHubAppUsers extends Context.Service<
 
         const secret =
           signedIn &&
-          (yield* clientSecretOf(appId).pipe(
-            Effect.orElseSucceed(() => undefined),
-          ));
+          (yield* clientSecretOf(appId).pipe(Effect.orElseSucceed(() => {})));
 
         const captured = yield* Effect.gen(function* () {
           const current = yield* readAuthorization(appId);
 
-          if (!current) return undefined;
+          if (!current) return;
 
           yield* serverSecrets.set(
             authorizationKey(appId),

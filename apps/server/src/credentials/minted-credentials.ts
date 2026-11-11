@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Redacted, Schema } from "effect";
+import type { Redacted } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
 import type { CredentialTarget } from "../shared/domain";

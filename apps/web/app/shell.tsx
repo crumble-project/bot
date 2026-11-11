@@ -117,11 +117,11 @@ function useDocumentTitle(
   const bot = matchRoute({ to: "/bots/$botId" });
   const group = matchRoute({ to: "/groups/$groupId" });
 
-  const chat = bot
-    ? bots?.find(({ id }) => id === bot.botId)?.name
-    : group
-      ? groups?.find(({ id }) => id === group.groupId)?.name
-      : undefined;
+  const groupName = group
+    ? groups?.find(({ id }) => id === group.groupId)?.name
+    : undefined;
+
+  const chat = bot ? bots?.find(({ id }) => id === bot.botId)?.name : groupName;
 
   useEffect(() => {
     const title = chat ? `${chat} | Crumble` : "Crumble";

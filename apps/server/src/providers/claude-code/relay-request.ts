@@ -126,7 +126,7 @@ function frameFirst(messages: Message[], queried: readonly Block[]) {
 const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
 
 function singleBlock(content: Message["content"] | undefined) {
-  if (content === undefined) return undefined;
+  if (content === undefined) return;
 
   if (Array.isArray(content))
     return content.length === 1 ? content[0] : undefined;
@@ -263,7 +263,7 @@ const opensTurn = (item: Message) =>
 function turnFrameIndex(messages: Message[], last: number) {
   const opening = messages.slice(0, last).findLastIndex(opensTurn);
 
-  if (opening < 0) return undefined;
+  if (opening < 0) return;
 
   const offset = messages
     .slice(opening + 1, last + 1)
@@ -273,7 +273,7 @@ function turnFrameIndex(messages: Message[], last: number) {
         listContent(item)?.some((entry) => UNCACHEABLE.has(entry.type)),
     );
 
-  if (offset < 0) return undefined;
+  if (offset < 0) return;
   const thought = opening + 1 + offset;
 
   const user = messages
@@ -479,7 +479,7 @@ const bareText = (entry: Block) =>
   Object.keys(entry).length === 2;
 
 const joinedText = (value: Block["content"]) => {
-  if (value === undefined) return undefined;
+  if (value === undefined) return;
 
   if (!Array.isArray(value)) return value;
 

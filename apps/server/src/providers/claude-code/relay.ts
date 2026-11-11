@@ -321,7 +321,7 @@ export class Admission {
     } catch (error) {
       this.failure = error instanceof Error ? error.name : "Error";
       this.controller.abort();
-      await writer.abort(error).catch(() => undefined);
+      await writer.abort(error).catch(() => {});
     }
   }
 }

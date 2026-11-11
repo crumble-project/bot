@@ -30,7 +30,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
   const eventInput = Effect.fnUntraced(function* (execution: Execution) {
     const request = parseRequestId(execution.requestId);
 
-    if (request.kind !== "event") return undefined;
+    if (request.kind !== "event") return;
 
     return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });

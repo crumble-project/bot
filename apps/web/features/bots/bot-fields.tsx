@@ -68,6 +68,13 @@ const DEFAULT_TOOLS: string[] = [
 
 const DEFAULT_INSTRUCTIONS = agentInput.shape.instructions.parse(undefined);
 
+const modelsHint = (configured: boolean, modelCount: number) => {
+  if (!configured)
+    return "Add an API key or sign in for this provider in Settings to load its models.";
+
+  return modelCount ? `${modelCount} models available.` : "Type a model ID.";
+};
+
 const webProviderItems = [
   { label: "Account default", value: "default" },
   ...webSearchProviders.map(({ id, name }) => ({ label: name, value: id })),
@@ -135,11 +142,7 @@ function ModelField({
     enabled: provider !== "",
   });
 
-  const hint = !configured
-    ? "Add an API key or sign in for this provider in Settings to load its models."
-    : models.data?.length
-      ? `${models.data.length} models available.`
-      : "Type a model ID.";
+  const hint = modelsHint(configured, models.data?.length ?? 0);
 
   return (
     <>

@@ -504,7 +504,7 @@ class Workspace {
         output: stream.output,
         close: async () => {
           release();
-          await stream.end().catch(() => undefined);
+          await stream.end().catch(() => {});
         },
       } satisfies DesktopStream;
     },

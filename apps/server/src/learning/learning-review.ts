@@ -1,8 +1,8 @@
 import { jobTurnId, reviewRequest } from "../shared/request-ids";
 import { Context, Effect, FiberSet, Layer } from "effect";
 import type { Agent } from "../contract/agents";
-import type { Execution, Memory } from "../shared/domain";
-import type { LearnedChange, Skill } from "../contract/skills";
+import type { Execution } from "../shared/domain";
+import type { LearnedChange } from "../contract/skills";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotRuntime } from "../bots/runtime";
 import { Bots } from "../bots/bots";
@@ -27,8 +27,7 @@ const DEFAULTS = {
 };
 
 const nameOf = (change: LearnedChange) => {
-  // SAFETY: a change's states have the shape of its target, written by the store that recorded them.
-  const state = (change.after ?? change.before) as Skill | Memory | null;
+  const state = change.after ?? change.before;
 
   if (!state) return change.targetId;
 

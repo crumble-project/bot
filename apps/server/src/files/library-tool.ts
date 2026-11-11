@@ -73,7 +73,10 @@ async function list(
     .flatMap((page) =>
       page.files.map((file) => ({ ...file, library: page.library })),
     )
-    .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    .sort((a, b) => {
+      if (a.id < b.id) return 1;
+      return a.id > b.id ? -1 : 0;
+    });
 
   const files: typeof all = [];
 

@@ -163,11 +163,9 @@ function conversationPreview(message: TranscriptMessage): string {
     return text.slice(0, MESSAGE_PREVIEW_CHARS);
   const file = message.files?.[0];
 
-  return file
-    ? "deleted" in file
-      ? "File deleted"
-      : `File: ${file.name}`
-    : "";
+  if (!file) return "";
+
+  return "deleted" in file ? "File deleted" : `File: ${file.name}`;
 }
 
 function previewOf(message: TranscriptMessage): string {

@@ -10,12 +10,15 @@ export const callEvent = messageCard(
           content,
         }
       : null,
-  ({ result, chat }) =>
-    result.ended ? (
-      <CallMarker title={result.content} />
-    ) : result.outbound ? (
-      <CallMarker title={`${chat.botName} called you`} quote={result.content} />
-    ) : (
-      <CallMarker title="Call started" />
-    ),
+  ({ result, chat }) => {
+    if (result.ended) return <CallMarker title={result.content} />;
+    if (result.outbound)
+      return (
+        <CallMarker
+          title={`${chat.botName} called you`}
+          quote={result.content}
+        />
+      );
+    return <CallMarker title="Call started" />;
+  },
 );

@@ -1,5 +1,6 @@
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { Context, Effect, Layer, type Scope } from "effect";
+import type { Effect } from "effect";
+import { Context, Layer, type Scope } from "effect";
 import type {
   DesktopOpenError,
   WorkspaceRemoveFailed,

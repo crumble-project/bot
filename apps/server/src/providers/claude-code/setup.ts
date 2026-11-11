@@ -198,7 +198,7 @@ const jsonLine = (line: string) => {
   try {
     return JSON.parse(line);
   } catch {
-    return undefined;
+    return;
   }
 };
 
@@ -337,7 +337,7 @@ async function readPicker(command: string, options: ClaudeCodeOptions) {
     env["ANTHROPIC_BASE_URL"] = gate.url;
     content = pickerContent(await pickerHandshake(command, env, cwd));
   } catch {
-    return undefined;
+    return;
   } finally {
     await gate.close();
     rmSync(cwd, { recursive: true, force: true });
@@ -490,7 +490,7 @@ function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
   const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
   const routes = mergePickerRows(rows, announced, creditBilled);
 
-  if (routes.size === 0) return undefined;
+  if (routes.size === 0) return;
   addPinnedRoutes(routes, creditBilled);
 
   return [...routes.values()];

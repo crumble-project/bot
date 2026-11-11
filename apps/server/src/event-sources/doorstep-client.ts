@@ -47,7 +47,7 @@ export const createSource = Effect.fnUntraced(function* (access: RelayAccess) {
   if (response.status !== 201) return yield* unexpected(response);
 
   const body = createdSource.safeParse(
-    yield* Effect.promise(() => response.json().catch(() => undefined)),
+    yield* Effect.promise(() => response.json().catch(() => {})),
   );
 
   if (!body.success)

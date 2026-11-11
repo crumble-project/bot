@@ -95,14 +95,14 @@ const kindFields = (
 ) => {
   const kind = draft.kind ?? existing.kind;
 
+  const commandOf = () => {
+    if (draft.command !== undefined) return draft.command;
+    return kind === "script" ? existing.command : null;
+  };
+
   return {
     kind,
-    command:
-      draft.command !== undefined
-        ? draft.command
-        : kind === "script"
-          ? existing.command
-          : null,
+    command: commandOf(),
     timeoutSeconds: draft.timeoutSeconds ?? existing.timeoutSeconds,
     notify: draft.notify ?? existing.notify,
   };

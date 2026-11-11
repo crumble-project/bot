@@ -262,6 +262,30 @@ function ConversationRows({
   renderMessage: (message: Message) => ReactNode;
   renderNotice: (message: Message, row: ReactNode) => ReactNode;
 }) {
+  const contentOf = (message: Message) => {
+    if (isNotice(message))
+      return renderNotice(
+        message,
+        <NoticeRow
+          message={message}
+          reactions={reactions.get(message.entryId)}
+        />,
+      );
+
+    if (message.role === "user")
+      return (
+        <OwnerMessage
+          message={message}
+          quote={quoteOf(message, byEntry)}
+          reactions={reactions.get(message.entryId)}
+          onReply={onReply}
+          filePath={filePath}
+        />
+      );
+
+    return renderMessage(message);
+  };
+
   return withTimeMarkers(messages).map((row) =>
     row.kind === "time" ? (
       <MessageScrollerItem key={row.key} messageId={row.key}>
@@ -273,25 +297,7 @@ function ConversationRows({
         messageId={row.message.id}
         className={arrival(row.message)}
       >
-        {isNotice(row.message) ? (
-          renderNotice(
-            row.message,
-            <NoticeRow
-              message={row.message}
-              reactions={reactions.get(row.message.entryId)}
-            />,
-          )
-        ) : row.message.role === "user" ? (
-          <OwnerMessage
-            message={row.message}
-            quote={quoteOf(row.message, byEntry)}
-            reactions={reactions.get(row.message.entryId)}
-            onReply={onReply}
-            filePath={filePath}
-          />
-        ) : (
-          renderMessage(row.message)
-        )}
+        {contentOf(row.message)}
       </MessageScrollerItem>
     ),
   );

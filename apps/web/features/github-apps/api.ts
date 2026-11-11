@@ -40,4 +40,4 @@ export const invalidateGithub = () =>
     queryClient.invalidateQueries({ queryKey: githubAccountsQuery.queryKey }),
     invalidateAllCredentials(),
     invalidateSecrets(),
-  ]).then(() => undefined);
+  ]).then(() => {});

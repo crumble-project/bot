@@ -66,7 +66,7 @@ function senderBot(message: Message, byId: Map<string, Bot>) {
 }
 
 function replyLabel(replyTo: Message | null) {
-  if (!replyTo) return undefined;
+  if (!replyTo) return;
 
   return replyTo.role === "user" ? "You" : (replyTo.origin?.name ?? "a bot");
 }

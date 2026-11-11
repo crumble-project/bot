@@ -42,8 +42,14 @@ const bindReply = z.object({
 const refSchema = z.object({
   ref: z.string(),
   role: loose(z.string()),
-  name: z.string().nullish().catch(undefined),
-  value: z.string().nullish().catch(undefined),
+  name: z
+    .string()
+    .nullish()
+    .catch(() => undefined),
+  value: z
+    .string()
+    .nullish()
+    .catch(() => undefined),
   frame: loose(z.string()),
   states: loose(z.record(z.string(), z.unknown())),
 });
@@ -55,7 +61,12 @@ const semanticSnapshot = z.object({
   outline: loose(z.string()),
   refs: z.array(refSchema).catch([]),
   snapshot: loose(
-    z.object({ continuation: z.string().nullish().catch(undefined) }),
+    z.object({
+      continuation: z
+        .string()
+        .nullish()
+        .catch(() => undefined),
+    }),
   ),
 });
 
@@ -346,16 +357,11 @@ const SELECTS = new Set(["combobox", "listbox"]);
 const scrollDelta = (args: ComputerUseArgs) => {
   const pixels = (args.amount ?? SCROLL_DEFAULTS.amount) * 100;
 
-  switch (args.direction) {
-    case "up":
-      return { delta_y: -pixels };
-    case "left":
-      return { delta_x: -pixels };
-    case "right":
-      return { delta_x: pixels };
-    default:
-      return { delta_y: pixels };
-  }
+  if (args.direction === "up") return { delta_y: -pixels };
+  if (args.direction === "left") return { delta_x: -pixels };
+  if (args.direction === "right") return { delta_x: pixels };
+
+  return { delta_y: pixels };
 };
 
 type RefCall = { tool: string; args: DriverArgs } | Invalid;

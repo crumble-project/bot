@@ -18,14 +18,12 @@ type MonitorDeps = {
   announcements: BotsAnnouncements;
 };
 
-const outcomeError = (result: SubmissionOutcome) =>
-  result.status === "done"
-    ? null
-    : "detail" in result
-      ? Predicate.isString(result.detail)
-        ? result.detail
-        : result.reason
-      : "The agent could not answer this input";
+const outcomeError = (result: SubmissionOutcome) => {
+  if (result.status === "done") return null;
+  if (!("detail" in result)) return "The agent could not answer this input";
+
+  return Predicate.isString(result.detail) ? result.detail : result.reason;
+};
 
 export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
   const { runtime, scope, notices } = context;

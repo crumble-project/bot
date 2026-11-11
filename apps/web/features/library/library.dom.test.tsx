@@ -186,8 +186,8 @@ async function withLibrary(
     await act(async () => root.unmount());
     queryClient.clear();
     fetchMock.mockRestore();
-    Object.defineProperty(URL, "createObjectURL", urlOriginal.createObjectURL!);
-    Object.defineProperty(URL, "revokeObjectURL", urlOriginal.revokeObjectURL!);
+    Object.defineProperty(URL, "createObjectURL", urlOriginal.createObjectURL);
+    Object.defineProperty(URL, "revokeObjectURL", urlOriginal.revokeObjectURL);
 
     for (const key of Object.keys(values)) {
       if (original[key]) Object.defineProperty(globalThis, key, original[key]);
@@ -236,8 +236,8 @@ test("library lists files, downloads safely and confirms deletion", async () => 
     await waitFor(
       () => container.textContent?.includes("archive.zip") === true,
     );
-    expect(container.textContent!.indexOf("page.html")).toBeLessThan(
-      container.textContent!.indexOf("archive.zip"),
+    expect(container.textContent.indexOf("page.html")).toBeLessThan(
+      container.textContent.indexOf("archive.zip"),
     );
 
     const download = [...container.querySelectorAll("button")].find(

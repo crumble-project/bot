@@ -4,7 +4,7 @@ import type { ChangeBy } from "../shared/domain";
 import type { Skill, SkillInput } from "../contract/skills";
 import { atomic, ProductDatabase } from "../shared/product-database";
 import { changeByOf } from "../learned-changes/change-source";
-import { ExecutionRepository } from "../bot-store/execution-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import { DefaultSkills } from "./default-skills";
 import {
   SkillToolError,

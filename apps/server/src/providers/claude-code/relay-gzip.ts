@@ -106,7 +106,7 @@ function bodyRejection(text: string) {
 }
 
 export function rejectionKind(status: number, headers: Headers, text: string) {
-  if (![400, 403, 415].includes(status)) return undefined;
+  if (![400, 403, 415].includes(status)) return;
 
   return (
     headerRejection(status, headers) ??

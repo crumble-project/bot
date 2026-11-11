@@ -47,7 +47,7 @@ const bytesOf = async (data: WSMessageReceive) => {
 
   if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
 
-  return undefined;
+  return;
 };
 
 type DesktopRouteOptions = {
