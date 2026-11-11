@@ -17948,32 +17948,11 @@
                     "minLength": 1,
                     "maxLength": 200
                   },
-                  "attachments": {
+                  "files": {
                     "type": "array",
                     "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 200
-                        },
-                        "mimeType": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "data": {
-                          "type": "string",
-                          "minLength": 1,
-                          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "mimeType",
-                        "data"
-                      ]
+                      "type": "string",
+                      "format": "uuid"
                     },
                     "maxItems": 8,
                     "default": []
@@ -17982,7 +17961,8 @@
                 "required": [
                   "content",
                   "requestId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17994,151 +17974,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GroupMessageReceipt"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/group-chats/{id}/attachments/{entryId}/{index}": {
-      "get": {
-        "operationId": "getGroupAttachment",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "entryId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "minimum": 0,
-              "maximum": 7
-            },
-            "required": true,
-            "name": "index",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Attachment bytes; Content-Type identifies the image or text format",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "private, max-age=31536000, immutable"
-              }
-            },
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
                 }
               }
             }

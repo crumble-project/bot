@@ -1,10 +1,6 @@
 import { Effect } from "effect";
-import {
-  attachmentDigest,
-  fileIdDigest,
-  validAttachments,
-} from "../shared/attachments";
-import type { AttachmentInput } from "../shared/attachment-rules";
+import { fileIdDigest } from "../shared/attachments";
+import { groupTurnScope } from "../shared/request-ids";
 import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
 import { Conflict, REQUEST_ID_REUSED, type AppError } from "../shared/errors";
@@ -19,7 +15,6 @@ export type SendOptions = {
   scheduleId?: string;
   replyTo?: string | undefined;
   files?: string[] | undefined;
-  attachments?: AttachmentInput[] | undefined;
 };
 
 export type JobAnswerInput = {
@@ -68,20 +63,14 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
       return yield* conflict("Enable this agent before starting work");
     const replyTo = options.replyTo ?? null;
     const files = options.files ?? [];
-    const attachments = options.attachments ?? [];
-
-    if (attachments.length) yield* validAttachments(attachments);
-
-    const attachmentsDigest = attachments.length
-      ? attachmentDigest(attachments)
-      : fileIdDigest(files);
+    const attachmentsDigest = fileIdDigest(files);
 
     const existing = yield* executions.getByRequest(conversationId, requestId);
 
     if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
       return yield* conflict(REQUEST_ID_REUSED);
 
-    if (!existing && files.length)
+    if (!existing && files.length && !groupTurnScope(requestId, owner.id))
       yield* runtime.validateFiles(owner.id, files);
 
     const execution =
@@ -93,7 +82,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
         requestId,
         prompt: content,
         replyTo,
-        attachments: attachments.length ? attachments : files,
+        attachments: files,
         attachmentsDigest,
         submissionId: null,
         status: "pending",

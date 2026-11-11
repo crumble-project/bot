@@ -20,7 +20,7 @@ import {
   schedulePreviewResponse,
 } from "./schedule-preview";
 import { skillInput, skillLifecycleInput } from "./skills";
-import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
+import { MAX_ATTACHMENTS } from "../shared/attachment-rules";
 import {
   MAX_MEMORY_CHARS,
   MAX_MESSAGE_CHARS,
@@ -155,21 +155,11 @@ const messageFields = z.object({
   content: z.string().trim().max(MAX_MESSAGE_CHARS),
   requestId: z.uuid(),
   replyTo: z.string().min(1).max(200).optional(),
-  attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+  files: z.array(z.uuid()).max(MAX_ATTACHMENTS).default([]),
 });
 
-const hasContent = <T extends z.infer<typeof messageFields>>(
-  schema: z.ZodType<T>,
-) =>
-  schema.refine((value) => value.content || value.attachments.length, {
-    message: "Write a message or attach a file",
-    path: ["content"],
-  });
-
 export const messageInput = messageFields
-  .omit({ attachments: true })
   .extend({
-    files: z.array(z.uuid()).max(MAX_ATTACHMENTS).default([]),
     timezone: z.string().min(1).max(100).optional(),
   })
   .strict()
@@ -179,7 +169,12 @@ export const messageInput = messageFields
   });
 
 /** `replyTo` names a message in the same group; replying to a bot's message also wakes that bot. */
-export const groupMessageInput = hasContent(messageFields);
+export const groupMessageInput = messageFields
+  .strict()
+  .refine((value) => value.content || value.files.length, {
+    message: "Write a message or attach a file",
+    path: ["content"],
+  });
 
 export const credentialUsesInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -1054,34 +1049,6 @@ export const routes = {
     operationId: "sendGroupMessage",
     request: { params: id, body: body(groupMessageInput) },
     responses: { 201: json(response.groupMessageReceiptResponse) },
-  }),
-  groupAttachment: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/attachments/{entryId}/{index}",
-    operationId: "getGroupAttachment",
-    request: {
-      params: id.extend({
-        entryId: z.string(),
-        index: attachmentIndex.openapi({
-          param: { name: "index", in: "path", required: true },
-        }),
-      }),
-    },
-    responses: {
-      200: {
-        description:
-          "Attachment bytes; Content-Type identifies the image or text format",
-        content: {
-          "*/*": { schema: z.string().openapi({ format: "binary" }) },
-        },
-        headers: {
-          "Cache-Control": {
-            schema: { type: "string" },
-            description: "private, max-age=31536000, immutable",
-          },
-        },
-      },
-    },
   }),
   stopGroupChat: define({
     method: "post",

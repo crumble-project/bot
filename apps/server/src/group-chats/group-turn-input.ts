@@ -2,8 +2,8 @@ import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import {
   MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
   attachmentKind,
-  type AttachmentInput,
 } from "../shared/attachment-rules";
 import type { Agent } from "../contract/agents";
 import type { GroupChat } from "./group-chat-repository";
@@ -81,22 +81,39 @@ export const groupTurnInput = (context: GroupChatContext) => {
   });
 
   const turnAttachments = Effect.fnUntraced(function* (
+    groupId: string,
     agent: Agent,
     unseen: GroupEntry[],
   ) {
     const images = yield* pi(() => context.runtime.acceptsImages(agent));
-    const attachments: AttachmentInput[] = [];
+
+    const ids = unseen.flatMap((entry) =>
+      (entry.files ?? []).map((file) => file.id),
+    );
+
+    const entries = yield* context.library.entries(
+      { kind: "group", groupId },
+      ids,
+    );
+
+    const files: string[] = [];
     const omitted: string[] = [];
 
     for (const entry of unseen.toReversed())
-      for (const item of (entry.attachments ?? []).toReversed()) {
-        if (!images && attachmentKind(item.mimeType) === "image")
-          omitted.unshift(item.name);
-        else if (attachments.length < MAX_ATTACHMENTS)
-          attachments.unshift(item);
+      for (const item of (entry.files ?? []).toReversed()) {
+        const file = entries.get(item.id);
+
+        if (
+          !images &&
+          file &&
+          attachmentKind(file.mimeType) === "image" &&
+          file.size <= MAX_IMAGE_BYTES
+        )
+          omitted.unshift(file.name);
+        else if (files.length < MAX_ATTACHMENTS) files.unshift(item.id);
       }
 
-    return { attachments, omitted };
+    return { files, omitted };
   });
 
   const turnInput = Effect.fnUntraced(function* (
@@ -117,7 +134,7 @@ export const groupTurnInput = (context: GroupChatContext) => {
           : ` (replying to "${entry.replyPreview.slice(0, 120)}")`;
 
       const files = entry.files?.length
-        ? ` [attached: ${entry.files.map((file) => file.name).join(", ")}]`
+        ? ` [attached: ${entry.files.map((file) => ("deleted" in file ? "File deleted" : file.name)).join(", ")}]`
         : "";
 
       return `${senderLabel(entry.sender)}${reply}: ${entry.text}${files}`;

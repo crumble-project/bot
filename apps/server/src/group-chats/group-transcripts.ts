@@ -6,7 +6,7 @@ import {
   type EntryId,
 } from "@earendil-works/pi-durable";
 import { mkdirSync } from "node:fs";
-import { attachmentDigest } from "../shared/attachments";
+import { fileIdDigest } from "../shared/attachments";
 import {
   GROUP_MESSAGE_ENTRY,
   groupMessageData,
@@ -20,7 +20,7 @@ import {
   type TranscriptPage,
 } from "../transcript/transcript";
 import { formatEntryId, parseEntryId } from "../shared/entry-ids";
-import { NotFound, Conflict, REQUEST_ID_REUSED } from "../shared/errors";
+import { Conflict, REQUEST_ID_REUSED } from "../shared/errors";
 import { HarnessFiles } from "../shared/harness-files";
 
 export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
@@ -38,8 +38,8 @@ function samePost(written: GroupMessageData, message: GroupPost): boolean {
     written.sender.agentId === message.sender.agentId &&
     written.replyTo === message.replyTo &&
     written.reaction === message.reaction &&
-    attachmentDigest(written.attachments ?? []) ===
-      attachmentDigest(message.attachments ?? [])
+    fileIdDigest((written.files ?? []).map((file) => file.id)) ===
+      fileIdDigest((message.files ?? []).map((file) => file.id))
   );
 }
 
@@ -135,6 +135,24 @@ export class GroupTranscripts {
     return found;
   }
 
+  async byRequest(groupId: string, requestId: string) {
+    const harness = await this.open(groupId);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    const submission = await harness.commit(
+      (tx) => tx.submissionByRequest(root.id, requestId),
+      BACKGROUND_CONTEXT,
+    );
+
+    if (submission?.type !== "write" || submission.status !== "done")
+      return undefined;
+
+    return this.message(
+      groupId,
+      formatEntryId(groupId, Number(submission.entry)),
+    );
+  }
+
   async message(groupId: string, entryId: string) {
     const entry = parseEntryId(entryId, groupId);
 
@@ -148,14 +166,6 @@ export class GroupTranscripts {
     return item?.kind === GROUP_MESSAGE_ENTRY && parsed.success
       ? { ...parsed.data, entry, entryId }
       : undefined;
-  }
-
-  async attachment(groupId: string, entryId: string, index: number) {
-    const item = (await this.message(groupId, entryId))?.attachments?.[index];
-
-    if (!item) throw new NotFound({ message: "Attachment not found" });
-
-    return { mimeType: item.mimeType, data: Buffer.from(item.data, "base64") };
   }
 
   async latest(groupId: string) {

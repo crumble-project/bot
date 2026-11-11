@@ -94,6 +94,16 @@ export const botMessage = z.object({
   communication: botCommunication,
 });
 
+export const messageFile = z.union([
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    mimeType: z.string(),
+    size: z.number(),
+  }),
+  z.object({ id: z.string(), deleted: z.literal(true) }),
+]);
+
 export const groupMessageData = z.object({
   text: z.string(),
   sender: messageOrigin,
@@ -103,7 +113,7 @@ export const groupMessageData = z.object({
   replyPreview: z.string().exactOptional(),
   reaction: z.string().exactOptional(),
   attachments: z.array(attachmentInput).exactOptional(),
-  files: z.array(attachmentInfo).exactOptional(),
+  files: z.array(messageFile).catch([]).exactOptional(),
   sources: z.array(webSource).exactOptional(),
 });
 

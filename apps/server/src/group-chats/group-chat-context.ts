@@ -13,6 +13,7 @@ import type { GroupChat } from "./group-chat-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
+import type { Library } from "../files/library";
 
 export type GroupChatServices = {
   readonly groups: GroupChatRepository["Service"];
@@ -22,6 +23,7 @@ export type GroupChatServices = {
   readonly transcripts: GroupTranscripts;
   readonly bots: Bots["Service"];
   readonly runtime: BotRuntime["Service"];
+  readonly library: Library["Service"];
 };
 
 export type GroupChatFork = <A, E>(

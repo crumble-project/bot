@@ -67,8 +67,7 @@ import {
 import { SkillReads, skillTool } from "../skills/skill-library";
 import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
-import type { AttachmentInput } from "../shared/attachment-rules";
-import { prepareAttachments } from "../shared/attachments";
+import type { LibraryRef } from "../files/library-repository";
 import { FileStore } from "../files/file-store";
 import { Library } from "../files/library";
 import {
@@ -112,6 +111,7 @@ export type RuntimeCallbacks = MemoryStore & {
   resolveFiles: (
     agentId: string,
     ids: readonly string[],
+    library?: LibraryRef,
   ) => Effect.Effect<ResolvedFile[]>;
   existingFiles: (
     agentId: string,
@@ -201,14 +201,12 @@ function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
 type EntryMetadata = {
   requestId?: string;
   origin?: InputOrigin;
-  attachments?: Array<{ kind: string; [key: string]: JsonValue }>;
   files?: MessageFile[];
 };
 
 function entryMetadata(
   requestId: string | undefined,
   origin: InputOrigin | undefined,
-  attachments: Array<{ kind: string; [key: string]: JsonValue }>,
   files: MessageFile[],
 ) {
   const metadata: EntryMetadata = {};
@@ -216,8 +214,6 @@ function entryMetadata(
   if (requestId) metadata.requestId = requestId;
 
   if (origin) metadata.origin = origin;
-
-  if (attachments.length) metadata.attachments = attachments;
 
   if (files.length) metadata.files = files;
 
@@ -316,14 +312,14 @@ async function ensureModel(
     await models.refresh({ providers: [choice.provider] });
 }
 
-type PreparedAttachments = ReturnType<typeof prepareAttachments>;
+type ModelBlocks = ReturnType<typeof modelBlocks>;
 
 // Catalogs that list no modalities are trusted; the provider reports anything it refuses. With a vision model set,
 // the vision extension describes images for a model that can't read them.
 function assertImageSupport(
   agent: Agent,
   model: { input?: readonly string[] } | undefined,
-  blocks: PreparedAttachments["blocks"],
+  blocks: ModelBlocks,
   vision: VisionModelRef | undefined,
 ) {
   if (
@@ -336,7 +332,7 @@ function assertImageSupport(
     });
 }
 
-function inputContent(text: string, blocks: PreparedAttachments["blocks"]) {
+function inputContent(text: string, blocks: ModelBlocks) {
   if (!blocks.length) return text;
 
   return [...(text.trim() ? [{ type: "text" as const, text }] : []), ...blocks];
@@ -394,8 +390,8 @@ export class AgentRuntime {
     return this.callbacks.validateFiles(agentId, ids);
   }
 
-  resolveFiles(agentId: string, ids: readonly string[]) {
-    return this.callbacks.resolveFiles(agentId, ids);
+  resolveFiles(agentId: string, ids: readonly string[], library?: LibraryRef) {
+    return this.callbacks.resolveFiles(agentId, ids, library);
   }
 
   private async currentFiles(agentId: string, messages: TranscriptMessage[]) {
@@ -851,14 +847,12 @@ export class AgentRuntime {
     options: {
       input?: PreparedInput | undefined;
       origin?: InputOrigin;
-      attachments?: AttachmentInput[] | undefined;
       files?: ResolvedFile[] | undefined;
     } = {},
   ): Promise<string> {
     const record = await this.open(agent);
-    const attached = prepareAttachments(options.attachments ?? []);
     const files = options.files ?? [];
-    const blocks = [...attached.blocks, ...modelBlocks(files)];
+    const blocks = modelBlocks(files);
     const prepared = options.input ?? { modelContent: text, data: { text } };
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
@@ -875,7 +869,6 @@ export class AgentRuntime {
           ...entryMetadata(
             requestId,
             options.origin,
-            attached.info,
             files.map((item) => item.file),
           ),
         },
@@ -1251,11 +1244,11 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
                 skillLibrary,
                 validateFiles: (agentId, ids) =>
                   library.validate({ kind: "bot", agentId }, ids),
-                resolveFiles: (agentId, ids) =>
+                resolveFiles: (agentId, ids, ref) =>
                   resolveMessageFiles(
                     library,
                     fileStore,
-                    { kind: "bot", agentId },
+                    ref ?? { kind: "bot", agentId },
                     ids,
                   ),
                 existingFiles: (agentId, ids) =>

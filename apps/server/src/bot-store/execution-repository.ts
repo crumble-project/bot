@@ -13,7 +13,7 @@ import { executions } from "./schema.executions";
 export type NewExecution = Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
   prompt?: string;
   replyTo?: string | null;
-  attachments?: string[] | AttachmentInput[];
+  attachments?: string[];
 };
 
 const executionOf = (row: typeof executions.$inferSelect): Execution => ({

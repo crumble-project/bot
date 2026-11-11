@@ -515,7 +515,12 @@ function normalizeGroupMessage(
 }
 
 function addGroupExtras(message: TranscriptMessage, data: GroupMessageData) {
-  if (data.files?.length) message.attachments = data.files;
+  if (data.files?.length) message.files = data.files;
+  else if (data.attachments?.length)
+    message.files = data.attachments.map((_, index) => ({
+      id: `legacy:${message.entryId}:${index}`,
+      deleted: true,
+    }));
 
   if (data.sources?.length) message.sources = data.sources;
 }

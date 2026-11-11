@@ -4,6 +4,7 @@ import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bot-store/conversation-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
+import type { Library } from "../files/library";
 import { layerOfRunner, type Runner } from "../shared/runner";
 import type { GroupChatRepository } from "./group-chat-repository";
 import {
@@ -23,7 +24,7 @@ export function standaloneGroupChats(
       | ExecutionRepository
       | ConversationRepository
     >;
-    store: { runtime: Runner<GroupChatRepository> };
+    store: { runtime: Runner<GroupChatRepository | Library> };
   },
   transcripts: GroupTranscripts,
 ): GroupChatsAccess & {

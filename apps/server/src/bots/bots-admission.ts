@@ -3,10 +3,10 @@ import { Cause, Effect, FiberMap } from "effect";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import { errorText } from "../shared/errors";
-import { parseRequestId } from "../shared/request-ids";
+import { groupTurnScope, parseRequestId } from "../shared/request-ids";
 import type { InputOrigin } from "../transcript/origins";
 import { frameInput } from "./input-framing";
-import { isChatTurn, isGroupTurn, type BotsContext } from "./bots-context";
+import { isChatTurn, type BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 
@@ -58,7 +58,11 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
 
     const files =
       attachments.kind === "files" && attachments.ids.length
-        ? yield* runtime.resolveFiles(owner.id, attachments.ids)
+        ? yield* runtime.resolveFiles(
+            owner.id,
+            attachments.ids,
+            groupTurnScope(execution.requestId, owner.id),
+          )
         : [];
 
     const event = yield* eventInput(execution);
@@ -104,10 +108,6 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
             : { ...prepared, modelContent },
           origin,
           files,
-          attachments:
-            attachments.kind === "legacy" && isGroupTurn(execution)
-              ? attachments.attachments
-              : [],
         },
       ),
     );

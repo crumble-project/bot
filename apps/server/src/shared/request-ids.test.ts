@@ -6,6 +6,7 @@ import {
   gatewayRequest,
   groupPostRequest,
   groupTurnRequest,
+  groupTurnScope,
   jobDeliveryRequest,
   jobQuestionRequest,
   jobReportRequest,
@@ -43,6 +44,19 @@ describe("request IDs", () => {
     [jobReportRequest("desktop", 42), "desktop-report:42"],
   ])("%s keeps its format", (built, stored) => {
     expect(built).toBe(stored);
+  });
+
+  test("group turn scope accepts only canonical member turn IDs", () => {
+    expect(groupTurnScope(groupTurnRequest("g1", "a1", 7), "a1")).toEqual({
+      kind: "group",
+      groupId: "g1",
+    });
+    expect(
+      groupTurnScope(groupTurnRequest("g1", "a1", 7), "a2"),
+    ).toBeUndefined();
+    expect(groupTurnScope(groupPostRequest("x1"), "a1")).toBeUndefined();
+    expect(groupTurnScope("group-turn:g1:a1:7:extra", "a1")).toBeUndefined();
+    expect(groupTurnScope("group-turn:g1:a1:-1", "a1")).toBeUndefined();
   });
 
   test.each([

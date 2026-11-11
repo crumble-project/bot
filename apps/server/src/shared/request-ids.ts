@@ -53,6 +53,23 @@ export const groupTurnRequest = (
 export const groupPostRequest = (executionId: string) =>
   `group-turn:${executionId}`;
 
+export function groupTurnScope(requestId: string, agentId: string) {
+  const [prefix, groupId, memberId, through, ...extra] = requestId.split(":");
+
+  if (
+    prefix !== "group-turn" ||
+    !groupId ||
+    memberId !== agentId ||
+    !through ||
+    !/^(0|[1-9]\d*)$/.test(through) ||
+    !Number.isSafeInteger(Number(through)) ||
+    extra.length > 0
+  )
+    return undefined;
+
+  return { kind: "group" as const, groupId };
+}
+
 /** The ID a job's turn is reviewed under: it has no execution, so nothing resolves this as one. */
 export const jobTurnId = (
   jobKind: string,

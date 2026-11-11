@@ -376,7 +376,17 @@ describe("legacy execution recovery", () => {
           },
         },
         origin: { kind: "owner" },
-        attachments: legacy,
+        files: [
+          {
+            file: {
+              id: uuid(99),
+              name: "dot.png",
+              mimeType: "image/png",
+              size: 70,
+            },
+            content: { kind: "image", data: png },
+          },
+        ],
       },
     );
     await service.runtime.wait(original, agent);
