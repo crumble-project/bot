@@ -23,6 +23,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { Message } from "./api";
 import { apiBlob } from "@/lib/api";
+import {
+  useFileDownload,
+  isPreviewable,
+  safeBlob,
+} from "@/features/library/api";
 import { botStyle } from "@/components/bot-avatar";
 import type { Upload } from "./composer";
 import type { Outgoing } from "./delivery";
@@ -50,7 +55,7 @@ export function hasText(message: Message) {
 }
 
 export const hasContent = (message: Message) =>
-  message.content.trim() !== "" || Boolean(message.attachments?.length);
+  message.content.trim() !== "" || Boolean(message.files?.length);
 
 export type Reaction = { emoji: string; from?: string | undefined };
 
@@ -277,14 +282,20 @@ export function AttachmentImage({
   path,
   name,
   className,
+  mimeType,
 }: {
   path: string;
   name: string;
   className?: string;
+  mimeType?: string;
 }) {
   const image = useQuery({
     queryKey: ["attachment", path],
-    queryFn: ({ signal }) => apiBlob(path, signal),
+    queryFn: async ({ signal }) => {
+      const blob = await apiBlob(path, signal);
+
+      return mimeType ? safeBlob(blob, mimeType) : blob;
+    },
     staleTime: Infinity,
     gcTime: 10 * 60_000,
   });
@@ -316,27 +327,57 @@ export function AttachmentImage({
 
 export function Attachments({
   message,
-  attachmentPath,
+  filePath,
 }: {
   message: Message;
-  attachmentPath: (entryId: string, index: number) => string;
+  filePath: (id: string) => string;
 }) {
-  if (!message.attachments?.length) return null;
+  const download = useFileDownload();
+
+  if (!message.files?.length) return null;
 
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {message.attachments.map((attachment, index) => {
-        const path = attachmentPath(message.entryId, index);
+      {message.files?.map((file) => {
+        if ("deleted" in file)
+          return (
+            <Badge key={file.id} variant="outline">
+              File deleted
+            </Badge>
+          );
 
-        return attachment.kind === "image" ? (
-          <AttachmentImage key={path} name={attachment.name} path={path} />
-        ) : (
-          <Badge key={path} variant="outline">
-            <IconFileText data-icon="inline-start" />
-            {attachment.name}
-          </Badge>
+        const path = filePath(file.id);
+
+        return (
+          <button
+            type="button"
+            key={file.id}
+            disabled={download.isPending}
+            onClick={() =>
+              download.mutate({
+                path,
+                name: file.name,
+                mimeType: file.mimeType,
+              })
+            }
+            title={`Download ${file.name}`}
+          >
+            {isPreviewable(file.mimeType) ? (
+              <AttachmentImage
+                path={path}
+                name={file.name}
+                mimeType={file.mimeType}
+              />
+            ) : (
+              <Badge variant="outline">
+                <IconFileText data-icon="inline-start" />
+                {file.name}
+              </Badge>
+            )}
+          </button>
         );
       })}
+      {download.error && <p role="alert">{download.error.message}</p>}
     </div>
   );
 }
@@ -452,7 +493,7 @@ export function OwnerMessage({
   delivery,
   onRetry,
   onReply,
-  attachmentPath,
+  filePath,
 }: {
   message: Message;
   uploads?: Upload[];
@@ -461,7 +502,7 @@ export function OwnerMessage({
   delivery?: Delivery;
   onRetry?: () => void;
   onReply?: ((message: Message) => void) | undefined;
-  attachmentPath: (entryId: string, index: number) => string;
+  filePath: (id: string) => string;
 }) {
   return (
     <MessageRow align="end">
@@ -474,7 +515,7 @@ export function OwnerMessage({
           delivery={delivery}
           onRetry={onRetry}
           onReply={onReply}
-          attachmentPath={attachmentPath}
+          filePath={filePath}
         />
       </MessageContent>
     </MessageRow>
@@ -489,7 +530,7 @@ function OwnerMessageBody({
   delivery,
   onRetry,
   onReply,
-  attachmentPath,
+  filePath,
 }: {
   message: Message;
   uploads?: Upload[] | undefined;
@@ -498,7 +539,7 @@ function OwnerMessageBody({
   delivery?: Delivery | undefined;
   onRetry?: (() => void) | undefined;
   onReply?: ((message: Message) => void) | undefined;
-  attachmentPath: (entryId: string, index: number) => string;
+  filePath: (id: string) => string;
 }) {
   return (
     <>
@@ -507,7 +548,7 @@ function OwnerMessageBody({
           {quote}
         </div>
       )}
-      <Attachments message={message} attachmentPath={attachmentPath} />
+      <Attachments message={message} filePath={filePath} />
       <OwnerUploads uploads={uploads} />
       <OwnerContent
         message={message}

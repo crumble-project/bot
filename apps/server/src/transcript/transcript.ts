@@ -115,7 +115,6 @@ export type TranscriptMessage = {
     direction: CallEventData["direction"];
     callee?: string;
   };
-  attachments?: AttachmentInfo[];
   files?: MessageFile[];
   toolCallId?: string;
   toolName?: string | undefined;
@@ -164,10 +163,11 @@ function conversationPreview(message: TranscriptMessage): string {
     return text.slice(0, MESSAGE_PREVIEW_CHARS);
   const file = message.files?.[0];
 
-  if (file) return "deleted" in file ? "File deleted" : `File: ${file.name}`;
-  const attachment = message.attachments?.[0];
-
-  return attachment ? `Attachment: ${attachment.name}` : "";
+  return file
+    ? "deleted" in file
+      ? "File deleted"
+      : `File: ${file.name}`
+    : "";
 }
 
 function previewOf(message: TranscriptMessage): string {

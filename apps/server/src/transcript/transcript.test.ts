@@ -87,7 +87,6 @@ describe("durable transcript helpers", () => {
     expect(page.messages[0]?.files).toEqual([
       { id: "legacy:a:1:0", deleted: true },
     ]);
-    expect(page.messages[0]?.attachments).toBeUndefined();
   });
 
   test("normalizes provider blocks and removes private fields", async () => {
@@ -159,17 +158,17 @@ describe("durable transcript helpers", () => {
           entryId: "a:4",
           role: "user",
           content: "",
-          attachments: [
+          files: [
             {
+              id: "file-id",
               name: "brief.pdf",
               mimeType: "application/pdf",
               size: 12,
-              kind: "text",
             },
           ],
         },
       ]),
-    ).toBe("Attachment: brief.pdf");
+    ).toBe("File: brief.pdf");
     expect(
       latestMessagePreview([
         {

@@ -24,6 +24,32 @@ async function withComposer(
     localStorage: { configurable: true, value: window.localStorage },
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   });
+
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const name = decodeURIComponent(
+          new Headers(init?.headers).get("X-File-Name") ?? "file",
+        );
+
+        return Response.json(
+          {
+            file: {
+              id: name,
+              name,
+              mimeType: "text/plain",
+              size: 1,
+              createdAt: new Date().toISOString(),
+            },
+            existed: false,
+          },
+          { status: 201 },
+        );
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+
   const { createRoot } = await import("react-dom/client");
   const container = document.createElement("div");
   let root = createRoot(container);
@@ -33,6 +59,7 @@ async function withComposer(
       root.render(
         <Composer
           draftKey="bot:test"
+          uploadPath="/v1/agents/test/files"
           placeholder="Message"
           running={false}
           onSend={onSend}
@@ -52,6 +79,7 @@ async function withComposer(
     await run(container, window, remount);
   } finally {
     await act(async () => root.unmount());
+    fetchMock.mockRestore();
 
     for (const key of [
       "window",
@@ -154,7 +182,7 @@ test("failed send preserves pending and new text and attachments, and blocks ove
 
 test("attachment processing finishing after recovery preserves the new file", async () => {
   let finishSend!: (value: boolean) => void;
-  let finishFile!: (value: ArrayBuffer) => void;
+  let finishFile!: (value: Response) => void;
 
   const pending = new Promise<boolean>((resolve) => {
     finishSend = resolve;
@@ -174,10 +202,17 @@ test("attachment processing finishing after recovery preserves the new file", as
         container.querySelector("form")!.dispatchEvent(event("submit")),
       );
       const file = new File(["new"], "new.txt", { type: "text/plain" });
-      file.arrayBuffer = () =>
-        new Promise((resolve) => {
-          finishFile = resolve;
-        });
+
+      const pendingFetch = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          () =>
+            new Promise<Response>((resolve) => {
+              finishFile = resolve;
+            }),
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+
       const picker = container.querySelector('input[type="file"]')!;
       await act(async () => {
         Object.defineProperty(picker, "files", {
@@ -187,7 +222,21 @@ test("attachment processing finishing after recovery preserves the new file", as
         picker.dispatchEvent(event("change"));
       });
       await act(async () => finishSend(false));
-      await act(async () => finishFile(new TextEncoder().encode("new").buffer));
+      await act(async () =>
+        finishFile(
+          Response.json({
+            file: {
+              id: "new",
+              name: "new.txt",
+              mimeType: "text/plain",
+              size: 3,
+              createdAt: "2026-01-01",
+            },
+            existed: false,
+          }),
+        ),
+      );
+      pendingFetch.mockRestore();
       await waitFor(shows(container, "new.txt"));
       expect(container.textContent).toContain("old0.txt");
       expect(container.textContent).toContain("Remove 1 to send");
@@ -223,11 +272,7 @@ test("concurrent attachment additions retain both files", async () => {
       const picker = container.querySelector('input[type="file"]')!;
       const first = new File(["one"], "one.txt", { type: "text/plain" });
       const second = new File(["two"], "two.txt", { type: "text/plain" });
-      let finish!: (value: ArrayBuffer) => void;
-      first.arrayBuffer = () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        });
+
       await act(async () => {
         Object.defineProperty(picker, "files", {
           configurable: true,
@@ -240,7 +285,6 @@ test("concurrent attachment additions retain both files", async () => {
         });
         picker.dispatchEvent(event("change"));
       });
-      await act(async () => finish(new TextEncoder().encode("one").buffer));
       await waitFor(shows(container, "one.txt"));
       await waitFor(shows(container, "two.txt"));
     },
@@ -318,6 +362,245 @@ test("typing keeps working when the draft can't be saved", async () => {
       }
 
       expect(container.querySelector("textarea")!.value).toBe("still here");
+    },
+  );
+});
+
+test("pending uploads block sending, removal never deletes, and duplicates are reported", async () => {
+  let finish!: (response: Response) => void;
+  const calls: RequestInit[] = [];
+  let sent = 0;
+
+  await withComposer(
+    async () => {
+      sent++;
+
+      return true;
+    },
+    async (container) => {
+      const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          (_input: RequestInfo | URL, init?: RequestInit) => {
+            calls.push(init ?? {});
+
+            return new Promise<Response>((resolve) => {
+              finish = resolve;
+            });
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+
+      const picker = container.querySelector('input[type="file"]')!;
+
+      const file = new File(["zip"], "archive ü.zip", {
+        type: "application/zip",
+      });
+
+      await act(async () => {
+        Object.defineProperty(picker, "files", {
+          configurable: true,
+          value: [file],
+        });
+        picker.dispatchEvent(event("change"));
+      });
+      expect(container.textContent).toContain("Uploading");
+      expect(
+        container.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled,
+      ).toBe(true);
+      expect(new Headers(calls[0]?.headers).get("X-File-Name")).toBe(
+        encodeURIComponent(file.name),
+      );
+      expect(new Headers(calls[0]?.headers).get("Content-Type")).toBe(
+        "application/zip",
+      );
+      expect(calls[0]?.body).toBe(file);
+      await act(async () =>
+        container.querySelector("form")!.dispatchEvent(event("submit")),
+      );
+      expect(sent).toBe(0);
+      await act(async () =>
+        finish(
+          Response.json({
+            file: {
+              id: "file-id",
+              name: file.name,
+              mimeType: file.type,
+              size: file.size,
+              createdAt: "2026-01-01",
+            },
+            existed: true,
+          }),
+        ),
+      );
+      await waitFor(shows(container, "Already in the library"));
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(`[title="Remove ${file.name}"]`)!
+          .click(),
+      );
+      expect(calls.map((call) => call.method)).toEqual(["POST"]);
+      fetchMock.mockRestore();
+    },
+  );
+});
+
+test("pdf and zip uploads keep their raw bytes and enable sending after completion", async () => {
+  const uploaded: File[] = [];
+
+  await withComposer(
+    async () => true,
+    async (container) => {
+      const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async (_input: RequestInfo | URL, init?: RequestInit) => {
+            if (!(init?.body instanceof File))
+              throw new Error("expected a file");
+            const file = init.body;
+
+            uploaded.push(file);
+
+            return Response.json({
+              file: {
+                id: file.name,
+                name: file.name,
+                mimeType: file.type,
+                size: file.size,
+                createdAt: "2026-01-01",
+              },
+              existed: false,
+            });
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+
+      const picker = container.querySelector('input[type="file"]')!;
+
+      const files = [
+        new File(["pdf"], "doc.pdf", { type: "application/pdf" }),
+        new File(["zip"], "data.zip", { type: "application/zip" }),
+      ];
+
+      await act(async () => {
+        Object.defineProperty(picker, "files", {
+          configurable: true,
+          value: files,
+        });
+        picker.dispatchEvent(event("change"));
+      });
+      await waitFor(
+        () =>
+          container.querySelector<HTMLButtonElement>('[title="Send"]')
+            ?.disabled === false,
+      );
+      expect(uploaded).toEqual(files);
+      expect(container.textContent).toContain("doc.pdf");
+      expect(container.textContent).toContain("data.zip");
+      fetchMock.mockRestore();
+    },
+  );
+});
+
+test("files above 100 MB are rejected before upload", async () => {
+  await withComposer(
+    async () => true,
+    async (container) => {
+      const fetchMock = spyOn(globalThis, "fetch");
+      const picker = container.querySelector('input[type="file"]')!;
+      const file = new File(["small"], "large.bin");
+
+      Object.defineProperty(file, "size", { value: 100 * 1024 * 1024 + 1 });
+      await act(async () => {
+        Object.defineProperty(picker, "files", {
+          configurable: true,
+          value: [file],
+        });
+        picker.dispatchEvent(event("change"));
+      });
+      expect(container.textContent).toContain("Larger than 100 MB");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(
+        container.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled,
+      ).toBe(true);
+      fetchMock.mockRestore();
+    },
+  );
+});
+
+test("failed uploads prevent sending until removed", async () => {
+  await withComposer(
+    async () => true,
+    async (container, window) => {
+      const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async () => new Response("Upload failed", { status: 500 }),
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+
+      await act(async () => typeMessage(container, window, "hello"));
+      await act(async () => attach(container, ["failed.pdf"]));
+      await waitFor(shows(container, "Upload failed"));
+      expect(
+        container.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled,
+      ).toBe(true);
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[title="Remove failed.pdf"]')!
+          .click(),
+      );
+      expect(
+        container.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled,
+      ).toBe(false);
+      fetchMock.mockRestore();
+    },
+  );
+});
+
+test("removing a pending upload does not delete its completed library entry", async () => {
+  let finish!: (response: Response) => void;
+  const methods: string[] = [];
+
+  await withComposer(
+    async () => true,
+    async (container) => {
+      const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          (_input: RequestInfo | URL, init?: RequestInit) => {
+            methods.push(init?.method ?? "GET");
+
+            return new Promise<Response>((resolve) => {
+              finish = resolve;
+            });
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+
+      await act(async () => attach(container, ["pending.pdf"]));
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[title="Remove pending.pdf"]')!
+          .click(),
+      );
+      await act(async () =>
+        finish(
+          Response.json({
+            file: {
+              id: "id",
+              name: "pending.pdf",
+              mimeType: "application/pdf",
+              size: 1,
+              createdAt: "2026-01-01",
+            },
+            existed: false,
+          }),
+        ),
+      );
+      expect(container.textContent).not.toContain("pending.pdf");
+      expect(methods).toEqual(["POST"]);
+      fetchMock.mockRestore();
     },
   );
 });

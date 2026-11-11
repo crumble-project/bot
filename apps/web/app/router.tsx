@@ -57,6 +57,7 @@ import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/automations/automations";
 import { SoundsPage } from "@/features/sounds/sounds";
 import { AvatarsPage } from "@/features/avatars/avatars";
+import { Library } from "@/features/library/library";
 
 const rootRoute = createRootRoute();
 
@@ -133,6 +134,26 @@ const desktopRoute = createRoute({
     const { botId } = desktopRoute.useParams();
 
     return <BotDesktop key={botId} botId={botId} />;
+  },
+});
+
+const botLibraryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/bots/$botId/library",
+  component: function BotLibraryPage() {
+    const { botId } = botLibraryRoute.useParams();
+
+    return <Library kind="bot" id={botId} />;
+  },
+});
+
+const groupLibraryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/groups/$groupId/library",
+  component: function GroupLibraryPage() {
+    const { groupId } = groupLibraryRoute.useParams();
+
+    return <Library kind="group" id={groupId} />;
   },
 });
 
@@ -364,6 +385,8 @@ export const router = createRouter({
       botRoute,
       editBotRoute,
       desktopRoute,
+      botLibraryRoute,
+      groupLibraryRoute,
       newGroupRoute,
       groupRoute,
       editGroupRoute,

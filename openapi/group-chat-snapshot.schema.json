@@ -173,37 +173,6 @@
             ],
             "additionalProperties": true
           },
-          "attachments": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "mimeType": {
-                  "type": "string"
-                },
-                "size": {
-                  "type": "number"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "image",
-                    "text"
-                  ]
-                }
-              },
-              "required": [
-                "name",
-                "mimeType",
-                "size",
-                "kind"
-              ],
-              "additionalProperties": true
-            }
-          },
           "files": {
             "type": "array",
             "items": {

@@ -79,7 +79,8 @@ async function errorMessage(response: Response) {
 async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
 
-  if (init.body) headers.set("Content-Type", "application/json");
+  if (init.body && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
 
   const response = await fetch(path, {
     ...init,
@@ -123,6 +124,10 @@ export async function send<N extends RouteName>(
   ...[body]: BodyArgument<N>
 ) {
   await request(path, withBody(method, body));
+}
+
+export async function apiRaw(path: string, init?: RequestInit) {
+  return request(path, init);
 }
 
 export async function apiBlob(path: string, signal?: AbortSignal) {

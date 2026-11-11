@@ -11,7 +11,7 @@ import {
 } from "./library-repository";
 import { extractPdfText } from "./pdf-text";
 
-export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+export { MAX_FILE_BYTES } from "../shared/attachment-rules";
 
 export type LibraryFile = {
   id: string;

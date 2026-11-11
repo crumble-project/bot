@@ -157,6 +157,7 @@ export function useConversation<S extends HistoryPage>(
     byEntry: new Map(messages.map((message) => [message.entryId, message])),
     attachmentPath: (entryId: string, index: number) =>
       `${target.path}/attachments/${encodeURIComponent(entryId)}/${index}`,
+    filePath: (id: string) => `${target.path}/files/${encodeURIComponent(id)}`,
   };
 }
 
@@ -248,7 +249,7 @@ function ConversationRows({
   byEntry,
   reactions,
   onReply,
-  attachmentPath,
+  filePath,
   renderMessage,
   renderNotice,
 }: {
@@ -257,7 +258,7 @@ function ConversationRows({
   byEntry: Map<string, Message>;
   reactions: Map<string, Reaction[]>;
   onReply: (message: Message) => void;
-  attachmentPath: (entryId: string, index: number) => string;
+  filePath: (id: string) => string;
   renderMessage: (message: Message) => ReactNode;
   renderNotice: (message: Message, row: ReactNode) => ReactNode;
 }) {
@@ -286,7 +287,7 @@ function ConversationRows({
             quote={quoteOf(row.message, byEntry)}
             reactions={reactions.get(row.message.entryId)}
             onReply={onReply}
-            attachmentPath={attachmentPath}
+            filePath={filePath}
           />
         ) : (
           renderMessage(row.message)
@@ -303,7 +304,7 @@ function OutgoingRow({
   message: Outgoing;
   conversation: Conversation;
 }) {
-  const { byEntry, attachmentPath, sending } = conversation;
+  const { byEntry, filePath, sending } = conversation;
 
   return (
     <MessageScrollerItem messageId={message.requestId} className={ARRIVAL}>
@@ -322,7 +323,7 @@ function OutgoingRow({
             message.replyTo,
           )
         }
-        attachmentPath={attachmentPath}
+        filePath={filePath}
       />
     </MessageScrollerItem>
   );
@@ -357,7 +358,7 @@ export function ConversationMessages({
         byEntry={conversation.byEntry}
         reactions={conversation.reactions}
         onReply={conversation.sending.setReplyTo}
-        attachmentPath={conversation.attachmentPath}
+        filePath={conversation.filePath}
         renderMessage={renderMessage}
         renderNotice={renderNotice}
       />

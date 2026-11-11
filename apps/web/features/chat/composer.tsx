@@ -32,128 +32,34 @@ import { readDraft, saveDraft } from "./drafts";
 import { cn, randomId } from "@/lib/utils";
 import type { Bot } from "@/features/bots/api";
 import {
-  attachmentKind,
   MAX_ATTACHMENTS,
-  MAX_IMAGE_BYTES,
-  MAX_TEXT_BYTES,
+  MAX_FILE_BYTES,
 } from "@crumble/server/contract/limits";
+import { uploadFile } from "@/features/library/api";
 
 export type Upload = {
   name: string;
   mimeType: string;
-  data: string;
+  id?: string;
+  status: "pending" | "ready" | "error";
+  existed?: boolean;
+  error?: string;
   preview?: string;
 };
 
 const uploadKeys = new WeakMap<Upload, string>();
 
-function base64(bytes: ArrayBuffer) {
-  let binary = "";
-  const view = new Uint8Array(bytes);
-
-  for (let index = 0; index < view.length; index += 0x8000)
-    binary += String.fromCharCode(...view.subarray(index, index + 0x8000));
-
-  return btoa(binary);
-}
-
-/** Re-encodes other or oversized images as JPEG within 2048 pixels, like the native apps. */
-async function reencode(file: File) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
-
-  const canvas = new OffscreenCanvas(
-    Math.round(bitmap.width * scale),
-    Math.round(bitmap.height * scale),
-  );
-
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-  return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
-}
-
-type UploadResult = { upload: Upload } | { error: string };
-
-async function imageUpload(file: File): Promise<UploadResult> {
-  const direct =
-    attachmentKind(file.type) === "image" && file.size <= MAX_IMAGE_BYTES;
-
-  const blob = direct ? file : await reencode(file);
-
-  if (blob.size > MAX_IMAGE_BYTES)
-    return {
-      error: `${file.name} is larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB.`,
-    };
-
-  const data = base64(await blob.arrayBuffer());
-
-  return {
-    upload: {
-      name: direct ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg",
-      mimeType: blob.type,
-      data,
-      preview: `data:${blob.type};base64,${data}`,
-    },
-  };
-}
-
-async function textUpload(file: File): Promise<UploadResult> {
-  const bytes = await file.arrayBuffer();
-
-  if (bytes.byteLength > MAX_TEXT_BYTES)
-    return {
-      error: `${file.name} is larger than ${MAX_TEXT_BYTES / 1024} KB.`,
-    };
-
-  new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-
-  return {
-    upload: {
-      name: file.name,
-      mimeType:
-        file.type.startsWith("text/") || file.type === "application/json"
-          ? file.type
-          : "text/plain",
-      data: base64(bytes),
-    },
-  };
-}
-
-export async function toUploads(files: File[]) {
-  const uploads: Upload[] = [];
-  const errors: string[] = [];
-
-  const results = await Promise.all(
-    files.map((file) =>
-      (file.type.startsWith("image/")
-        ? imageUpload(file)
-        : textUpload(file)
-      ).catch(() => ({
-        error: `${file.name} can't be attached. Attach images or text files.`,
-      })),
-    ),
-  );
-
-  for (const result of results) {
-    if ("error" in result) errors.push(result.error);
-    else {
-      uploadKeys.set(result.upload, randomId());
-      uploads.push(result.upload);
-    }
-  }
-
-  return { uploads, errors };
-}
-
 export type Mentionable = Pick<Bot, "id" | "name">;
 
-function useAttachments() {
+function useAttachments(path: string) {
   const [state, setState] = useState<{ uploads: Upload[]; errors: string[] }>({
     uploads: [],
     errors: [],
   });
 
-  const recovery = useRef(0);
+  const uploadsRef = useRef(state.uploads);
+
+  uploadsRef.current = state.uploads;
 
   const setUploads = (update: (uploads: Upload[]) => Upload[]) =>
     setState((current) => ({ ...current, uploads: update(current.uploads) }));
@@ -162,33 +68,63 @@ function useAttachments() {
     setState((current) => ({ ...current, errors }));
 
   const restore = (pending: Upload[]) => {
-    recovery.current++;
     setUploads((current) => [...pending, ...current]);
   };
 
-  const add = async (files: File[]) => {
-    const started = recovery.current;
+  const add = (files: File[]) => {
+    {
+      const room = Math.max(0, MAX_ATTACHMENTS - uploadsRef.current.length);
+      const selected = files.slice(0, room);
 
-    const { uploads: added, errors: failed } = await toUploads(
-      files.slice(0, MAX_ATTACHMENTS),
-    );
+      const added: Upload[] = selected.map((file) => {
+        const upload: Upload = {
+          name: file.name,
+          mimeType: file.type,
+          status: file.size > MAX_FILE_BYTES ? "error" : "pending",
+          ...(file.size > MAX_FILE_BYTES && { error: "Larger than 100 MB" }),
+        };
 
-    setState((current) => {
-      const room =
-        started === recovery.current
-          ? Math.max(0, MAX_ATTACHMENTS - current.uploads.length)
-          : MAX_ATTACHMENTS;
+        uploadKeys.set(upload, randomId());
 
-      return {
-        uploads: [...current.uploads, ...added.slice(0, room)],
-        errors: [
-          ...failed,
-          ...(files.length > room
+        return upload;
+      });
+
+      for (const [index, file] of selected.entries()) {
+        const upload = added[index]!;
+        const key = uploadKeys.get(upload)!;
+
+        const finish = (update: Partial<Upload>) =>
+          setState((state) => ({
+            ...state,
+            uploads: state.uploads.map((item) => {
+              if (uploadKeys.get(item) !== key) return item;
+
+              const next = { ...item, ...update };
+
+              uploadKeys.set(next, key);
+
+              return next;
+            }),
+          }));
+
+        if (file.size <= 100 * 1024 * 1024) {
+          void uploadFile(path, file).then(
+            ({ file: entry, existed }) =>
+              finish({ ...entry, status: "ready", existed }),
+            () => finish({ status: "error", error: "Upload failed" }),
+          );
+        }
+      }
+
+      uploadsRef.current = [...uploadsRef.current, ...added];
+      setState((current) => ({
+        uploads: [...current.uploads, ...added],
+        errors:
+          files.length > room
             ? [`Attach at most ${MAX_ATTACHMENTS} files.`]
-            : []),
-        ],
-      };
-    });
+            : [],
+      }));
+    }
   };
 
   return { ...state, setUploads, setErrors, add, restore };
@@ -336,6 +272,11 @@ export function UploadChips({
             <IconFileText data-icon="inline-start" />
           )}
           <span className="max-w-40 truncate">{upload.name}</span>
+          {upload.status === "pending" && <span>Uploading…</span>}
+          {upload.status === "error" && (
+            <span>{upload.error ?? "Upload failed"}</span>
+          )}
+          {upload.existed && <span>Already in the library</span>}
           <Button
             type="button"
             variant="ghost"
@@ -399,7 +340,6 @@ function AttachControl({
         type="file"
         multiple
         hidden
-        accept="image/*,text/*,.json,.xml,.md,.csv,.ts,.tsx,.js,.py,.swift,.go,.rs,.java,.kt,.rb,.sh,.yaml,.yml,.toml"
         onChange={(event) => {
           onFiles([...(event.target.files ?? [])]);
           event.target.value = "";
@@ -497,6 +437,7 @@ function canSendDraft(
     !disabled &&
     !sending &&
     uploads.length <= MAX_ATTACHMENTS &&
+    uploads.every((upload) => upload.status === "ready" && upload.id) &&
     (draft.trim() !== "" || uploads.length > 0)
   );
 }
@@ -633,6 +574,7 @@ function useMessageField(draftKey: string) {
 
 type ComposerProps = {
   draftKey: string;
+  uploadPath: string;
   placeholder: string;
   disabled?: boolean;
   running: boolean;
@@ -646,6 +588,7 @@ type ComposerProps = {
 
 function useComposer(
   draftKey: string,
+  uploadPath: string,
   disabled: boolean | undefined,
   mentionable: Mentionable[],
   onSend: ComposerProps["onSend"],
@@ -654,11 +597,11 @@ function useComposer(
     useMessageField(draftKey);
 
   const { uploads, setUploads, errors, setErrors, add, restore } =
-    useAttachments();
+    useAttachments(uploadPath);
 
   const [sending, setSending] = useState(false);
   const mentions = useMentions(draft, setDraft, mentionable);
-  const drop = useDropTarget(disabled, (files) => void add(files));
+  const drop = useDropTarget(disabled, (files) => add(files));
 
   const canSend = canSendDraft(disabled, sending, draft, uploads);
 
@@ -738,14 +681,14 @@ function ComposerCard({
             state.measure(event.target);
             mentions.reset();
           }}
-          onPaste={(event) => pasteFiles(event, (files) => void add(files))}
+          onPaste={(event) => pasteFiles(event, (files) => add(files))}
           onKeyDown={submitOnEnter(mentions.navigate, submit)}
         />
         <div className="[grid-area:attach]">
           <AttachControl
             disabled={disabled}
             full={uploads.length >= MAX_ATTACHMENTS}
-            onFiles={(files) => void add(files)}
+            onFiles={(files) => add(files)}
           />
         </div>
         <div className="flex items-center gap-1.5 [grid-area:send]">
@@ -763,6 +706,7 @@ function ComposerCard({
 
 export function Composer({
   draftKey,
+  uploadPath,
   placeholder,
   disabled,
   running,
@@ -773,7 +717,14 @@ export function Composer({
   onSend,
   onStop,
 }: ComposerProps) {
-  const state = useComposer(draftKey, disabled, mentionable, onSend);
+  const state = useComposer(
+    draftKey,
+    uploadPath,
+    disabled,
+    mentionable,
+    onSend,
+  );
+
   const { uploads, errors, mentions, drop, submit } = state;
 
   return (

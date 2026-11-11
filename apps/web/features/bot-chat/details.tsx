@@ -97,6 +97,14 @@ function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <ProfileSummary bot={bot} onClose={onClose} />
+      <Button
+        variant="outline"
+        render={<Link to="/bots/$botId/library" params={{ botId: bot.id }} />}
+        nativeButton={false}
+        onClick={onClose}
+      >
+        Library
+      </Button>
       {bot.tools.includes(BOT_TOOL.desktop) && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>

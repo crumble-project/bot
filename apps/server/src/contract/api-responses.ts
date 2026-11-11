@@ -3,7 +3,6 @@ import {
   PASSWORD_MANAGER_IDS,
   WEB_SEARCH_PROVIDER_IDS,
 } from "../shared/vendors";
-import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
 import {
   ACTIVITY_KINDS,
   CHANGE_ACTIONS,
@@ -198,15 +197,6 @@ export const botCommunication = z
 
 export type BotCommunication = z.infer<typeof botCommunication>;
 
-const attachment = z
-  .object({
-    name: z.string(),
-    mimeType: z.string(),
-    size: z.number(),
-    kind: z.enum(ATTACHMENT_KINDS),
-  })
-  .openapi("AttachmentInfo");
-
 export const transcriptBlock = z
   .discriminatedUnion("type", [
     z
@@ -302,7 +292,6 @@ const message = z
       .openapi({
         description: "On a `call-started` or `call-ended` event: the call.",
       }),
-    attachments: z.array(attachment).optional(),
     files: z
       .array(
         z.union([

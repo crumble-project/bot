@@ -1460,12 +1460,6 @@
             ],
             "description": "On a `call-started` or `call-ended` event: the call."
           },
-          "attachments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachmentInfo"
-            }
-          },
           "files": {
             "type": "array",
             "items": {
@@ -1726,33 +1720,6 @@
           "toAgentId",
           "toName",
           "status"
-        ]
-      },
-      "AttachmentInfo": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "mimeType": {
-            "type": "string"
-          },
-          "size": {
-            "type": "number"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "image",
-              "text"
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "mimeType",
-          "size",
-          "kind"
         ]
       },
       "MessagePresentation": {

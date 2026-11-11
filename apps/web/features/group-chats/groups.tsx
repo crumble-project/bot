@@ -137,9 +137,16 @@ function GroupHeader({
       </div>
       <Button
         variant="ghost"
+        className="ml-auto"
+        render={<Link to="/groups/$groupId/library" params={{ groupId }} />}
+        nativeButton={false}
+      >
+        Library
+      </Button>
+      <Button
+        variant="ghost"
         size="icon-sm"
         title="Edit group chat"
-        className="ml-auto"
         render={<Link to="/groups/$groupId/edit" params={{ groupId }} />}
         nativeButton={false}
       >
@@ -298,6 +305,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       <Composer
         key={groupId}
         draftKey={target.key}
+        uploadPath={`${target.path}/files`}
         placeholder={`Message ${groupChat.name}`}
         running={isRunning(activity)}
         replyingTo={replyLabel(replyTo)}

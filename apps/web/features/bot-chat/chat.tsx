@@ -304,6 +304,7 @@ function ChatComposer({
       <Composer
         key={bot.id}
         draftKey={draftKey}
+        uploadPath={`/v1/agents/${encodeURIComponent(bot.id)}/files`}
         placeholder={
           bot.enabled
             ? `Message ${bot.name}`

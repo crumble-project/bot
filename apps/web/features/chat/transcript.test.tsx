@@ -3,8 +3,15 @@ import { Window } from "happy-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, act, startTransition } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { Message } from "./api";
-import { ARRIVAL, Attachments, mergeMessages, useArrivals } from "./transcript";
+import {
+  ARRIVAL,
+  AttachmentImage,
+  Attachments,
+  mergeMessages,
+  useArrivals,
+} from "./transcript";
 import type { CardChat } from "./message-card";
 import { shownInChat, ToolResultRow } from "@/features/bot-chat/chat-cards";
 
@@ -25,6 +32,22 @@ const chat: CardChat = {
   onOpenJob: () => {},
   onOpenCall: () => {},
 };
+
+test("deleted files remain visible in the transcript", () => {
+  const owner: Message = {
+    ...message("owner"),
+    role: "user",
+    files: [{ id: "deleted", deleted: true }],
+  };
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <Attachments message={owner} filePath={() => ""} />
+    </QueryClientProvider>,
+  );
+
+  expect(html).toContain("File deleted");
+});
 
 test("attachment image URLs follow replacement and unmount", async () => {
   const window = new Window();
@@ -54,17 +77,9 @@ test("attachment image URLs follow replacement and unmount", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);
 
-  const attachmentMessage: Message = {
-    ...message("owner"),
-    role: "user",
-    attachments: [
-      { name: "image.png", mimeType: "image/png", size: 1, kind: "image" },
-    ],
-  };
-
   const render = (path: string) => (
     <QueryClientProvider client={client}>
-      <Attachments message={attachmentMessage} attachmentPath={() => path} />
+      <AttachmentImage path={path} name="image.png" />
     </QueryClientProvider>
   );
 
