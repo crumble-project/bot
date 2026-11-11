@@ -574,7 +574,7 @@ test("a bot without the coding tool is offered none", async () => {
     ),
   );
 
-  expect(offered.get("bot")).toEqual(["skill_manage"]);
+  expect(offered.get("bot")).toEqual(["skill_manage", "library"]);
   expect(workspaces.envs).toBe(0);
   expect(existsSync(join(dir, "workspace"))).toBe(false);
 });
@@ -652,6 +652,7 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   expect(workspaces.synced).toEqual([agent.id]);
   expect(offered.at(-1)).toEqual([
     "skill_manage",
+    "library",
     "read",
     "write",
     "edit",
@@ -668,6 +669,7 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   expect(workspaces.synced).toEqual([agent.id, agent.id]);
   expect(offered.at(-1)).toEqual([
     "skill_manage",
+    "library",
     "read",
     "write",
     "edit",

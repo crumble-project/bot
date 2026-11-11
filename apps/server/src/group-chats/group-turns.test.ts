@@ -141,12 +141,19 @@ test("a group conversation offers pass and react but no delegation", async () =>
   const group = await openGroupConversation(runtime, agent, "group-1");
 
   await turn(runtime, group, "hello");
-  expect(offered.at(-1)).toEqual(["memory", "skill_manage", "react", "pass"]);
+  expect(offered.at(-1)).toEqual([
+    "memory",
+    "skill_manage",
+    "library",
+    "react",
+    "pass",
+  ]);
 
   await turn(runtime, chat, "hi");
   expect(offered.at(-1)).toEqual([
     "memory",
     "skill_manage",
+    "library",
     "delegate",
     "react",
   ]);
@@ -251,6 +258,7 @@ test("web tools are offered in bot chat and group turns", async () => {
         expect(offered.at(-1)).toEqual([
           "memory",
           "skill_manage",
+          "library",
           "web_search",
           "web_extract",
         ]);
@@ -268,6 +276,7 @@ test("web tools are offered in bot chat and group turns", async () => {
         expect(offered.at(-1)).toEqual([
           "memory",
           "skill_manage",
+          "library",
           "web_search",
           "web_extract",
           "pass",
