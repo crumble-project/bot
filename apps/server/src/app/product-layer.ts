@@ -1,4 +1,7 @@
 import { Layer } from "effect";
+import { LibraryRepository } from "../files/library-repository";
+import { FileStore } from "../files/file-store";
+import { Library, MAX_FILE_BYTES } from "../files/library";
 import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
 import { DesktopFillRepository } from "../bot-desktop/desktop-fill-repository";
 import { desktopFills } from "../bot-desktop/schema";
@@ -66,6 +69,7 @@ export const productLayer = (dataDir: string) => {
     ConversationRepository.layer,
     ExecutionRepository.layer,
     GroupChatRepository.layer,
+    LibraryRepository.layer,
   ).pipe(Layer.provideMerge(database));
 
   const onChanges = Layer.mergeAll(
@@ -78,12 +82,18 @@ export const productLayer = (dataDir: string) => {
     MemoryRepository.layer,
   ).pipe(Layer.provideMerge(independent));
 
-  return Layer.mergeAll(
+  const repositories = Layer.mergeAll(
     ProviderCredentialRepository.layer,
     ChangeReverter.layer,
     SkillInstaller.layer.pipe(Layer.provide(GitHubSkillReader.layer)),
     AgentRepository.layer.pipe(Layer.provide(agentSkillsLayer)),
   ).pipe(Layer.provideMerge(onChanges));
+
+  return Library.layer({ maxFileBytes: MAX_FILE_BYTES }).pipe(
+    Layer.provideMerge(
+      FileStore.layer(dataDir).pipe(Layer.provideMerge(repositories)),
+    ),
+  );
 };
 
 export type ProductServices = Layer.Success<ReturnType<typeof productLayer>>;

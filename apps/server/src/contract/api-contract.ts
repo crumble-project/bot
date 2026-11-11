@@ -89,6 +89,34 @@ export const memoryInput = z.object({
   content: z.string().trim().min(1).max(MAX_MEMORY_CHARS),
 });
 
+const filePageInput = z.object({
+  before: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+const fileHeaders = z.object({
+  "x-file-name": z.string().min(1),
+  "content-type": z.string().min(1),
+});
+
+const rawFileBody = {
+  required: true,
+  content: {
+    "*/*": {
+      schema: z.string().openapi({ format: "binary" }),
+    },
+  },
+};
+
+const fileBytes = {
+  description: "File bytes with safe download headers",
+  content: {
+    "application/octet-stream": {
+      schema: z.string().openapi({ format: "binary" }),
+    },
+  },
+};
+
 export const snapshotInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -826,6 +854,62 @@ export const routes = {
     operationId: "sendMessage",
     request: { params: id, body: body(messageInput) },
     responses: { 202: json(response.executionResponse) },
+  }),
+  uploadFile: define({
+    method: "post",
+    path: "/v1/agents/{id}/files",
+    operationId: "uploadFile",
+    request: { params: id, headers: fileHeaders, body: rawFileBody },
+    responses: { 201: json(response.uploadFileResponse) },
+  }),
+  listFiles: define({
+    method: "get",
+    path: "/v1/agents/{id}/files",
+    operationId: "listFiles",
+    request: { params: id, query: filePageInput },
+    responses: { 200: json(z.array(response.libraryFileResponse)) },
+  }),
+  getFile: define({
+    method: "get",
+    path: "/v1/agents/{id}/files/{fileId}",
+    operationId: "getFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 200: fileBytes },
+  }),
+  deleteFile: define({
+    method: "delete",
+    path: "/v1/agents/{id}/files/{fileId}",
+    operationId: "deleteFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 204: empty },
+  }),
+  uploadGroupFile: define({
+    method: "post",
+    path: "/v1/group-chats/{id}/files",
+    operationId: "uploadGroupFile",
+    request: { params: id, headers: fileHeaders, body: rawFileBody },
+    responses: { 201: json(response.uploadFileResponse) },
+  }),
+  listGroupFiles: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/files",
+    operationId: "listGroupFiles",
+    request: { params: id, query: filePageInput },
+    responses: { 200: json(z.array(response.libraryFileResponse)) },
+  }),
+  getGroupFile: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/files/{fileId}",
+    operationId: "getGroupFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 200: fileBytes },
+  }),
+  deleteGroupFile: define({
+    method: "delete",
+    path: "/v1/group-chats/{id}/files/{fileId}",
+    operationId: "deleteGroupFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 204: empty },
   }),
   attachment: define({
     method: "get",

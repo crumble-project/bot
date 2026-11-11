@@ -59,9 +59,12 @@ import { registerCallRequestRoutes } from "../voice-gateway/call-requests-api";
 import { CallRequests } from "../voice-gateway/call-requests";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
+import { Library } from "../files/library";
+import { registerFileRoutes } from "../files/files-api";
 
 export type ApiServices =
   | CoreServices
+  | Library
   | BotRequests
   | CallRequests
   | BotWorkspaces
@@ -157,6 +160,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerChatRoutes,
   registerBotActivityRoutes,
   registerGroupChatRoutes,
+  registerFileRoutes,
   registerCredentialRoutes,
   registerGitHubAppRoutes,
   registerLoginRoutes,

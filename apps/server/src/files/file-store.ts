@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import fs, { mkdir, open, readdir, rename, rm } from "node:fs/promises";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import fs, { open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Context, Data, Effect, Layer, Semaphore } from "effect";
 import { NotFound } from "../shared/errors";
@@ -16,9 +17,13 @@ export class FileStore extends Context.Service<
       source: ReadableStream<Uint8Array>,
       limit: number,
     ): Effect.Effect<{ hash: string; size: number }, FileTooLarge>;
-    putText(hash: string, text: string): Effect.Effect<void>;
+    putText(
+      hash: string,
+      text: string,
+      format?: "plain" | "pdf",
+    ): Effect.Effect<void>;
     bytes(hash: string): Effect.Effect<ReadableStream<Uint8Array>, NotFound>;
-    text(hash: string): Effect.Effect<string | null>;
+    text(hash: string, format?: "plain" | "pdf"): Effect.Effect<string | null>;
     withLock<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R>;
     removeUnreferenced(hash: string): Effect.Effect<void>;
   }
@@ -30,11 +35,11 @@ export class FileStore extends Context.Service<
         const repository = yield* LibraryRepository;
         const directory = join(accountDirectory, "files");
         const temporary = join(directory, ".tmp");
-        yield* Effect.promise(async () => {
-          await mkdir(temporary, { recursive: true });
+        yield* Effect.sync(() => {
+          mkdirSync(temporary, { recursive: true });
 
-          for (const name of await readdir(temporary)) {
-            await rm(join(temporary, name), { force: true });
+          for (const name of readdirSync(temporary)) {
+            rmSync(join(temporary, name), { force: true });
           }
         });
         const lock = Semaphore.makeUnsafe(1);
@@ -102,13 +107,20 @@ export class FileStore extends Context.Service<
             },
           });
 
-        const putText = (hash: string, text: string) =>
+        const textPathOf = (hash: string, format: "plain" | "pdf") =>
+          `${pathOf(hash)}${format === "pdf" ? ".pdf" : ""}.txt`;
+
+        const putText = (
+          hash: string,
+          text: string,
+          format: "plain" | "pdf" = "plain",
+        ) =>
           Effect.promise(async () => {
             const path = join(temporary, crypto.randomUUID());
 
             try {
               await Bun.write(path, text);
-              await rename(path, `${pathOf(hash)}.txt`);
+              await rename(path, textPathOf(hash, format));
             } finally {
               await rm(path, { force: true });
             }
@@ -123,9 +135,9 @@ export class FileStore extends Context.Service<
           return file.stream();
         });
 
-        const text = (hash: string) =>
+        const text = (hash: string, format: "plain" | "pdf" = "plain") =>
           Effect.promise(async () => {
-            const file = Bun.file(`${pathOf(hash)}.txt`);
+            const file = Bun.file(textPathOf(hash, format));
 
             return (await file.exists()) ? file.text() : null;
           });
@@ -136,7 +148,8 @@ export class FileStore extends Context.Service<
             yield* Effect.promise(() =>
               Promise.all([
                 fs.rm(pathOf(hash), { force: true }),
-                fs.rm(`${pathOf(hash)}.txt`, { force: true }),
+                fs.rm(textPathOf(hash, "plain"), { force: true }),
+                fs.rm(textPathOf(hash, "pdf"), { force: true }),
               ]),
             );
           },

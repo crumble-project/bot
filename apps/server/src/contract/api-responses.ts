@@ -56,6 +56,20 @@ const inference = z.object({
   maxOutputTokens: z.number().optional(),
 });
 
+export const libraryFileResponse = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    mimeType: z.string(),
+    size: z.number().int(),
+    createdAt: z.string(),
+  })
+  .openapi("LibraryFile");
+
+export const uploadFileResponse = z
+  .object({ file: libraryFileResponse, existed: z.boolean() })
+  .openapi("UploadFile");
+
 export const healthResponse = z
   .object({ status: z.literal("ok"), apiVersion: z.literal(1) })
   .openapi("Health");
