@@ -18,6 +18,7 @@ export const schedulePath = (id: string) =>
 
 export const schedulesQuery = queryOptions({
   queryKey: ["schedules"],
+  refetchInterval: 60_000,
   queryFn: ({ signal }) => api<"schedules">("/v1/schedules", { signal }),
 });
 
@@ -38,6 +39,7 @@ export const toggleScheduleOptions = (id: string) =>
             ? {
                 ...each,
                 enabled,
+                nextRunLabel: "—",
                 timing: `${enabled ? "" : "Paused · "}${each.description}`,
               }
             : each,

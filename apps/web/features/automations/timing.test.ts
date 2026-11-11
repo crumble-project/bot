@@ -17,6 +17,7 @@ const eventAutomation: Schedule = {
   eventSourceId: "source-1",
   enabled: true,
   nextRunAt: null,
+  nextRunLabel: "—",
   description: "On event · GitHub",
   timing: "On event · GitHub",
   createdAt: "2026-11-01T00:00:00.000Z",

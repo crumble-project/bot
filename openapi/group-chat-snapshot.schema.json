@@ -214,6 +214,9 @@
             "type": "boolean"
           },
           "toolDetails": {},
+          "presentation": {
+            "$ref": "#/$defs/MessagePresentation"
+          },
           "sources": {
             "type": "array",
             "items": {
@@ -439,6 +442,45 @@
         "id",
         "name",
         "arguments"
+      ],
+      "additionalProperties": true
+    },
+    "MessagePresentation": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Citation"
+          }
+        }
+      },
+      "required": [
+        "text",
+        "citations"
+      ],
+      "additionalProperties": true
+    },
+    "Citation": {
+      "type": "object",
+      "properties": {
+        "href": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "site": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "href",
+        "title",
+        "site"
       ],
       "additionalProperties": true
     }

@@ -60,13 +60,7 @@ import {
 import { AutomationDialog, type Editing } from "./editor";
 import { RunsBody } from "./runs";
 import { Heading, TableFrame } from "@/components/table-frame";
-import {
-  type Status,
-  finished,
-  listed,
-  nextRunLabel,
-  statusOf,
-} from "./timing";
+import { type Status, finished, listed, statusOf } from "./timing";
 
 const STATUS = {
   active: {
@@ -129,8 +123,6 @@ function AutomationTable({
   byId: Map<string, Bot>;
   onEdit: (schedule: Schedule) => void;
 }) {
-  const now = new Date();
-
   return (
     <TableFrame>
       <TableHeader>
@@ -157,7 +149,6 @@ function AutomationTable({
                   ? byId.get(schedule.createdByAgentId)
                   : undefined
               }
-              now={now}
               onEdit={() => onEdit(schedule)}
             />
           ) : null;
@@ -443,13 +434,11 @@ function AutomationRow({
   schedule,
   bot,
   creator,
-  now,
   onEdit,
 }: {
   schedule: Schedule;
   bot: Bot;
   creator?: Bot | undefined;
-  now: Date;
   onEdit: () => void;
 }) {
   const actions = useAutomationActions(schedule);
@@ -470,7 +459,7 @@ function AutomationRow({
         {schedule.description}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
-        {nextRunLabel(schedule, now)}
+        {schedule.nextRunLabel}
       </TableCell>
       <TableCell>
         <StatusLabel status={statusOf(schedule)} />

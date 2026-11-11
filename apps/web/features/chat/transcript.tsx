@@ -31,7 +31,6 @@ import { Reply } from "@/components/markdown";
 import { reactionDetails } from "@crumble/server/contract/tool-details";
 import { REACTION_TOOL_NAME } from "@crumble/server/contract/tools";
 import { blocksOf, toolDetailsOf } from "./tool-details";
-import type { Sources } from "@/lib/sources";
 
 /** Merges older pages into the live page, dropping IDs they share. Every page is in transcript order, oldest first. */
 export function mergeMessages(older: Message[], live: Message[]) {
@@ -628,14 +627,12 @@ export function BotMessage({
   sender,
   color,
   reactions,
-  sources,
   onReply,
 }: {
   message: Message;
   sender?: ReactNode;
   color?: string | undefined;
   reactions?: Reaction[] | undefined;
-  sources?: Sources | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
   return (
@@ -649,7 +646,10 @@ export function BotMessage({
             style={color ? botStyle(color) : undefined}
           >
             <BubbleContent>
-              <Reply source={message.content} sources={sources} />
+              <Reply
+                source={message.presentation?.text ?? message.content}
+                citations={message.presentation?.citations}
+              />
             </BubbleContent>
             <MessageReactions reactions={reactions} align="start" />
           </Bubble>

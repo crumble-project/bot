@@ -12,8 +12,13 @@ import {
   passwordManagerIdInput,
   secretInput,
 } from "./secrets";
+import { reasoningPreviewInput, reasoningPreviewResponse } from "./reasoning";
 import { groupChatInput } from "./group-chats";
 import { scheduleInput } from "./schedules";
+import {
+  schedulePreviewInput,
+  schedulePreviewResponse,
+} from "./schedule-preview";
 import { skillInput, skillLifecycleInput } from "./skills";
 import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
 import {
@@ -1435,6 +1440,13 @@ export const routes = {
     request: { query: z.object({ agentId: z.string().optional() }) },
     responses: { 200: json(z.array(response.scheduleResponse)) },
   }),
+  previewSchedule: define({
+    method: "post",
+    path: "/v1/schedules/preview",
+    operationId: "previewSchedule",
+    request: { body: body(schedulePreviewInput) },
+    responses: { 200: json(schedulePreviewResponse) },
+  }),
   createSchedule: define({
     method: "post",
     path: "/v1/schedules",
@@ -1508,6 +1520,13 @@ export const routes = {
     path: "/v1/providers",
     operationId: "listProviders",
     responses: { 200: json(z.array(response.providerResponse)) },
+  }),
+  previewReasoning: define({
+    method: "post",
+    path: "/v1/reasoning/preview",
+    operationId: "previewReasoning",
+    request: { body: body(reasoningPreviewInput) },
+    responses: { 200: json(reasoningPreviewResponse) },
   }),
   models: define({
     method: "get",

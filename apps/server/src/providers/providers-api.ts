@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  type Api,
+  type Model,
+  type Models,
+} from "@earendil-works/pi-ai";
+import { reasoningPreviewInput } from "../contract/reasoning";
+import { THINKING_LEVELS } from "../contract/agents";
 import { routes, providerLoginAnswerInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { ExternalAuth } from "../plugins/plugins";
@@ -10,6 +18,28 @@ import {
   Unavailable,
 } from "../shared/errors";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
+
+export function previewReasoning(
+  model: Model<Api> | undefined,
+  level: z.output<typeof reasoningPreviewInput>["thinkingLevel"],
+) {
+  const levels = model ? getSupportedThinkingLevels(model) : THINKING_LEVELS;
+
+  const labels = {
+    off: "Off",
+    minimal: "Minimal",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra high",
+    max: "Maximum",
+  };
+
+  return {
+    options: levels.map((value) => ({ value, label: labels[value] })),
+    effectiveLevel: model ? clampThinkingLevel(model, level) : level,
+  };
+}
 
 type ProviderRoutesOptions = {
   register: Register;
@@ -60,6 +90,12 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
       200,
     ),
   );
+  register(routes.previewReasoning, (c) => {
+    const input = c.req.valid("json");
+    const model = models.getModel(input.provider, input.model);
+
+    return c.json(previewReasoning(model, input.thinkingLevel), 200);
+  });
   register(routes.models, async (c) => {
     const name = c.req.query("provider");
 

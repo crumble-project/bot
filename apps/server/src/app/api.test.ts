@@ -1685,6 +1685,17 @@ describe("HTTP API for script tasks and schedules", () => {
       body: JSON.stringify(agentInput("Scheduled")),
     }).then((r: Response) => r.json());
 
+    const preview = await req(app, "/v1/schedules/preview", {
+      method: "POST",
+      body: JSON.stringify({ cron: "0 9 * * *", timezone: "UTC" }),
+    });
+
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({
+      description: "At 09:00 (UTC)",
+      isProblem: false,
+    });
+
     const schedule = await req(app, "/v1/schedules", {
       method: "POST",
       body: JSON.stringify({

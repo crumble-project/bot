@@ -224,6 +224,16 @@ export const transcriptBlock = z
   .openapi("TranscriptBlock")
   .register(z.globalRegistry, { id: "TranscriptBlock" });
 
+export const citation = z
+  .object({ href: z.string(), title: z.string(), site: z.string() })
+  .openapi("Citation")
+  .register(z.globalRegistry, { id: "Citation" });
+
+export const messagePresentation = z
+  .object({ text: z.string(), citations: z.array(citation) })
+  .openapi("MessagePresentation")
+  .register(z.globalRegistry, { id: "MessagePresentation" });
+
 const message = z
   .object({
     id: z.string(),
@@ -286,6 +296,7 @@ const message = z
       description:
         "Provider-specific tool details, including nested code-mode calls. A successful `desktop_screenshot` result has `{ mimeType, size }`; read its image from `GET /v1/agents/{id}/attachments/{entryId}/0`.",
     }),
+    presentation: messagePresentation.optional(),
     sources: z
       .array(z.object({ url: z.string(), title: z.string() }))
       .optional()
@@ -920,6 +931,7 @@ export const scheduleResponse = z
     }),
     enabled: z.boolean(),
     nextRunAt: z.string().nullable(),
+    nextRunLabel: z.string(),
     description: z.string(),
     timing: z.string(),
     createdAt: z.string(),

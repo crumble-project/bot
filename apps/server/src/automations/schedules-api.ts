@@ -1,5 +1,5 @@
 import { EventRepository } from "../event-sources/event-repository";
-import { scheduleDescription } from "./schedule-description";
+import { scheduleDescription, previewSchedule } from "./schedule-description";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { Schedule } from "../contract/schedules";
@@ -56,6 +56,17 @@ const registerScheduleEditRoutes = ({
       ),
       200,
     );
+  });
+  register(routes.previewSchedule, async (c) => {
+    const input = c.req.valid("json");
+
+    const source = input.eventSourceId
+      ? await run.runPromise(
+          EventRepository.use((r) => r.getSource(input.eventSourceId!)),
+        )
+      : null;
+
+    return c.json(previewSchedule(input, source?.name), 200);
   });
   register(routes.createSchedule, async (c) => {
     const schedule = await run.runPromise(

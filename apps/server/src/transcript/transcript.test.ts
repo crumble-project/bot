@@ -16,7 +16,12 @@ type FakeEntry = {
   id: number;
   conversationId: number;
   kind: string;
-  model?: { role: string; content: string | Record<string, JsonValue>[] }[];
+  model?: {
+    role: string;
+    content: string | Record<string, JsonValue>[];
+    toolName?: string;
+    details?: JsonValue;
+  }[];
   data?:
     | { content?: string; communication?: FakeCommunication }
     | Record<string, string | number>;
@@ -188,6 +193,49 @@ describe("durable transcript helpers", () => {
     });
 
     expect(older.messages.map((m) => m.content)).toEqual(["one"]);
+  });
+
+  test("projects citations from earlier entries without expanding the page", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          id: 3,
+          conversationId: 1,
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: "Answer [source](https://example.com)",
+            },
+          ],
+        },
+        {
+          id: 2,
+          conversationId: 1,
+          kind: "pi.toolResult",
+          model: [
+            {
+              role: "toolResult",
+              content: "result",
+              toolName: "web_search",
+              details: [{ url: "https://example.com", title: "Example" }],
+            },
+          ],
+        },
+        user(1, "search"),
+      ]),
+      "a",
+      { limit: 1 },
+    );
+
+    expect(page.messages).toHaveLength(1);
+    expect(page.messages[0]?.presentation).toEqual({
+      text: "Answer",
+      citations: [
+        { href: "https://example.com", title: "Example", site: "example.com" },
+      ],
+    });
+    expect(page.hasMore).toBe(true);
   });
 
   test("normalizes bot communication cards and ignores malformed or model-less entries", async () => {

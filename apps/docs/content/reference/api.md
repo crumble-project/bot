@@ -80,6 +80,11 @@ variants. Event schemas reference the same block definitions through `$defs`.
 Client generators reuse these names across HTTP and event responses. Use the
 generated types directly, adding presentation helpers and local UI state where needed.
 
+Assistant messages can include `presentation`, containing display text and
+`citations` with `href`, `title`, and `site`. Render these fields directly.
+The server associates sources with each reply and extracts citation chips outside
+code. The original `content` remains available for transcript exports.
+
 Coding and desktop job history responses include `items`, ordered for display.
 Each item's `kind` identifies a task, reply, or tool step. Steps include a display
 label, an icon identifier, an optional subject, and their result when available.
@@ -92,6 +97,17 @@ Schedule responses include `description` for their timing and `timing` for the
 same text with a `Paused · ` prefix when disabled. These fields include event
 source names and use the schedule's time zone. Render them directly for saved
 automations; keep editable recurrence inputs separate.
+`nextRunLabel` supplies the saved schedule's next-run display text. Refresh
+schedule responses while displaying relative labels to keep them current.
+
+`POST /v1/schedules/preview` returns a draft schedule's description, preview
+text, problem status, and next run. Editors use this response for cron wording,
+validation feedback, and next-run calculations. The request does not save a schedule.
+
+`POST /v1/reasoning/preview` accepts a provider, model, and requested thinking
+level. It returns labeled options and the effective level. Editors and composers
+use these fields without duplicating model support or clamping rules. The request
+does not change a bot.
 
 ## Event Streams
 

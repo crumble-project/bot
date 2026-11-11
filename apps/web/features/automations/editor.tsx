@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -14,6 +14,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -29,8 +30,8 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { EditorSection, EditorSheet } from "@/components/form-fields";
 import { type Bot, capabilitiesQuery } from "@/features/bots/api";
 import { eventSourcesQuery } from "@/features/event-sources/api";
-import { send, type RequestBody } from "@/lib/api";
-import { nextOccurrence, validTimezone } from "@crumble/server/contract/cron";
+import { call, send, type RequestBody, type ResponseBody } from "@/lib/api";
+import { validTimezone } from "@crumble/server/contract/cron";
 import {
   DEFAULT_SCHEDULE_TIMEOUT_SECONDS,
   MAX_CRON_CHARS,
@@ -51,14 +52,7 @@ import {
   recurrenceOf,
   switchedTo,
 } from "./recurrence";
-import {
-  LOCAL_ZONE,
-  describeCron,
-  fromWallClock,
-  humanRun,
-  inOneHour,
-  wallClock,
-} from "./timing";
+import { LOCAL_ZONE, fromWallClock, inOneHour, wallClock } from "./timing";
 
 export type Editing = { schedule: Schedule | null; agentId: string };
 
@@ -127,18 +121,6 @@ function initialDraft(editing: Editing) {
   return editing.schedule
     ? draftOf(editing.agentId, editing.schedule)
     : blankDraft(editing.agentId);
-}
-
-function runTimeError(draft: AutomationDraft) {
-  if (draft.onEvent)
-    return draft.eventSourceId ? null : "Choose an event source.";
-
-  if (draft.repeat ? !draft.cron.trim() : !draft.runAt)
-    return "Choose either a recurring cron or a one-time run time.";
-
-  if (!validTimezone(draft.timezone.trim())) return "Choose a valid time zone.";
-
-  return null;
 }
 
 function kindFields(
@@ -212,10 +194,6 @@ function automationBody(
 
   if ("error" in content) return content;
 
-  const error = runTimeError(draft);
-
-  if (error) return { error };
-
   const timezone = draft.timezone.trim();
   const when = triggerFields(draft, timezone);
 
@@ -261,12 +239,21 @@ export function AutomationDialog({
   const [draft, setDraft] = useState(() => initialDraft(editing));
   const [error, setError] = useState<string | null>(null);
   const save = useSaveAutomation(initial, onClose);
+  const preview = useSchedulePreview(draft);
 
   const patch = (change: Partial<AutomationDraft>) =>
     setDraft((current) => ({ ...current, ...change }));
 
   const submit = () => {
     setError(null);
+
+    if (
+      preview.pending ||
+      preview.error ||
+      !preview.data ||
+      preview.data.isProblem
+    )
+      return;
 
     const result = automationBody(draft);
 
@@ -283,7 +270,13 @@ export function AutomationDialog({
       description="The bot gets this at the time you choose and answers in its chat."
       error={failure}
       submitLabel={initial ? "Save" : "Create"}
-      submitDisabled={save.isPending}
+      submitDisabled={
+        save.isPending ||
+        preview.pending ||
+        preview.error ||
+        !preview.data ||
+        preview.data.isProblem
+      }
       onSubmit={submit}
       onClose={onClose}
     >
@@ -292,6 +285,7 @@ export function AutomationDialog({
         draft={draft}
         patch={patch}
         editingScript={initial?.kind === "script"}
+        preview={preview}
       />
     </EditorSheet>
   );
@@ -349,43 +343,49 @@ function ScriptFields({
   );
 }
 
-function nextRun(draft: AutomationDraft) {
+export function useSchedulePreview(draft: AutomationDraft) {
   const zone = draft.timezone.trim();
 
-  if (!validTimezone(zone)) return null;
+  const instant =
+    !draft.repeat && !draft.onEvent && validTimezone(zone)
+      ? fromWallClock(draft.runAt, zone)
+      : null;
 
-  if (!draft.repeat) return fromWallClock(draft.runAt, zone);
+  const input = {
+    cron: draft.repeat && !draft.onEvent ? draft.cron.trim() : null,
+    runAt: instant?.toISOString() ?? null,
+    eventSourceId: draft.onEvent ? draft.eventSourceId : null,
+    timezone: zone,
+  };
 
-  try {
-    return nextOccurrence(draft.cron, zone, new Date());
-  } catch {
-    return null;
-  }
-}
+  const key = JSON.stringify(input);
+  const [debounced, setDebounced] = useState(key);
 
-function NextRun({ draft }: { draft: AutomationDraft }) {
-  const run = nextRun(draft);
-  const zone = draft.timezone.trim();
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(key), 250);
 
-  const now = new Date();
+    return () => clearTimeout(timer);
+  }, [key]);
 
-  if (!run)
-    return (
-      <p className="text-sm text-destructive">This schedule never runs.</p>
-    );
+  const preview = useQuery({
+    queryKey: ["schedule-preview", debounced],
+    queryFn: () =>
+      call<"previewSchedule">(
+        "/v1/schedules/preview",
+        "POST",
+        JSON.parse(debounced),
+      ),
+    enabled: debounced === key,
+  });
 
-  if (run < now)
-    return <p className="text-sm text-destructive">This time has passed.</p>;
+  const current = debounced === key;
 
-  return (
-    <p className="text-sm text-muted-foreground">
-      {draft.repeat ? "Next run" : "Runs"}{" "}
-      <span className="font-medium text-foreground">
-        {humanRun(run, zone, now)}
-      </span>{" "}
-      ({zone})
-    </p>
-  );
+  return {
+    data: current ? preview.data : undefined,
+    error: current && preview.isError,
+    pending: !current || preview.isPending || preview.isFetching,
+    retry: () => (current ? preview.refetch() : Promise.resolve()),
+  };
 }
 
 function BotPicker({
@@ -543,9 +543,11 @@ function EventSourcePicker({
 function CronField({
   draft,
   patch,
+  description,
 }: {
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
+  description?: string | undefined;
 }) {
   return (
     <Field>
@@ -557,9 +559,7 @@ function CronField({
         value={draft.cron}
         onChange={(event) => patch({ cron: event.target.value })}
       />
-      <FieldDescription>
-        {describeCron(draft.cron, draft.timezone.trim())}
-      </FieldDescription>
+      <FieldDescription>{description}</FieldDescription>
     </Field>
   );
 }
@@ -567,9 +567,11 @@ function CronField({
 function TimeFields({
   draft,
   patch,
+  preview,
 }: {
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
+  preview: ResponseBody<"previewSchedule"> | undefined;
 }) {
   const recurrence = recurrenceOf(draft.cron);
   const [custom, setCustom] = useState(draft.repeat && recurrence === null);
@@ -594,8 +596,24 @@ function TimeFields({
           patch={patch}
         />
       </div>
-      {when === "custom" && <CronField draft={draft} patch={patch} />}
-      <NextRun draft={draft} />
+      {when === "custom" && (
+        <CronField
+          draft={draft}
+          patch={patch}
+          description={preview?.description}
+        />
+      )}
+      {preview && (
+        <p
+          className={
+            preview.isProblem
+              ? "text-sm text-destructive"
+              : "text-sm text-muted-foreground"
+          }
+        >
+          {preview.text}
+        </p>
+      )}
     </>
   );
 }
@@ -621,9 +639,11 @@ function EventFields({
 function ScheduleFields({
   draft,
   patch,
+  preview,
 }: {
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
+  preview: ResponseBody<"previewSchedule"> | undefined;
 }) {
   return (
     <>
@@ -643,9 +663,14 @@ function ScheduleFields({
         </TabsList>
       </Tabs>
       {draft.onEvent ? (
-        <EventFields draft={draft} patch={patch} />
+        <>
+          <EventFields draft={draft} patch={patch} />
+          {preview?.isProblem && (
+            <p className="text-sm text-destructive">{preview.text}</p>
+          )}
+        </>
       ) : (
-        <TimeFields draft={draft} patch={patch} />
+        <TimeFields draft={draft} patch={patch} preview={preview} />
       )}
     </>
   );
@@ -726,16 +751,46 @@ function EnabledSection({
   );
 }
 
+export function PreviewStatus({
+  preview,
+}: {
+  preview: ReturnType<typeof useSchedulePreview>;
+}) {
+  if (preview.error)
+    return (
+      <div className="flex items-center gap-2 text-sm text-destructive">
+        Could not load schedule preview.{" "}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void preview.retry()}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+
+  if (preview.pending)
+    return (
+      <p className="text-sm text-muted-foreground">Loading schedule preview…</p>
+    );
+
+  return null;
+}
+
 function AutomationFields({
   bots,
   draft,
   patch,
   editingScript,
+  preview,
 }: {
   bots: Bot[];
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
   editingScript: boolean;
+  preview: ReturnType<typeof useSchedulePreview>;
 }) {
   const capabilities = useQuery(capabilitiesQuery).data;
 
@@ -773,7 +828,8 @@ function AutomationFields({
         )}
       </EditorSection>
       <EditorSection title="When">
-        <ScheduleFields draft={draft} patch={patch} />
+        <ScheduleFields draft={draft} patch={patch} preview={preview.data} />
+        <PreviewStatus preview={preview} />
       </EditorSection>
       <EnabledSection draft={draft} patch={patch} />
     </>

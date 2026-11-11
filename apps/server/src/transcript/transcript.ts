@@ -1,3 +1,4 @@
+import { projectCitations } from "./citations";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
@@ -119,6 +120,10 @@ export type TranscriptMessage = {
   isError?: boolean | undefined;
   toolDetails?: unknown;
   sources?: WebSource[];
+  presentation?: {
+    text: string;
+    citations: { href: string; title: string; site: string }[];
+  };
 };
 
 export type TranscriptPage = {
@@ -676,6 +681,42 @@ async function collectEntries(
   return { entries: page.items, truncated: page.next !== undefined };
 }
 
+async function earlierCitationContext(
+  agentId: string,
+  conversation: Conversation | undefined,
+  oldest: number | null,
+  messages: TranscriptMessage[],
+): Promise<TranscriptMessage[]> {
+  const context: TranscriptMessage[] = [];
+  let cursor = oldest;
+  const firstUser = messages.findIndex((message) => message.role === "user");
+
+  const needsContext = messages
+    .slice(0, firstUser < 0 ? undefined : firstUser)
+    .some((message) => message.role === "assistant" && !message.sources);
+
+  while (
+    conversation &&
+    cursor !== null &&
+    needsContext &&
+    !context.some((message) => message.role === "user")
+  ) {
+    const previous = await collectEntries(conversation, 100, cursor);
+
+    if (!previous.entries.length) break;
+
+    for (const entry of previous.entries) {
+      const normalized = normalize(agentId, entry);
+      context.unshift(...normalized);
+      cursor = Number(entry.id);
+
+      if (normalized.some((message) => message.role === "user")) break;
+    }
+  }
+
+  return context;
+}
+
 /** Newest-first page over one conversation. */
 async function readPage(
   agentId: string,
@@ -706,6 +747,15 @@ async function readPage(
   }
 
   const oldest = consumed ? Number(entries[consumed - 1]!.id) : null;
+
+  const context = await earlierCitationContext(
+    agentId,
+    conversation,
+    oldest,
+    messages,
+  );
+
+  projectCitations(messages, context);
 
   return {
     messages,
