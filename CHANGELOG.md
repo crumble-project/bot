@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Send any file up to 100 MB in the web client. Each bot chat and group chat has a library for browsing, downloading, and deleting uploaded files. Bots and their jobs can list, read, and search library text, and copy files into a workspace when available.
+- Breaking: message routes accept uploaded `files` IDs instead of base64 `attachments`. File sending from older iOS, macOS, and Android clients fails until they update; text messages still work. Older transcript attachments show **File deleted** and are no longer downloadable. Pending messages recover under their original request ID, without a second turn; when their files did not arrive, a notice asks the owner to send them again.
+
 - Schedule editors and reasoning controls use server previews. The server also prepares reply text and citation chips, so clients no longer interpret cron schedules, reasoning policy, or citation markup.
 - OpenAPI exposes reusable transcript block and job item schemas so native clients can use generated types directly across HTTP and event responses.
 - Transcript blocks have a typed API contract. The server projects job steps, bot working states, and automation timing descriptions for the web, Android, and Apple clients.

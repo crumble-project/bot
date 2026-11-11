@@ -8,6 +8,9 @@ sidebar:
 The Discord message gateway sends your Discord messages to your existing
 bot chats and returns their answers to Discord.
 
+Files sent on Discord don't reach the bot or its library. Send files through
+the web client instead.
+
 Discord is the only supported messaging platform. Crumble connects outward to
 Discord, so you don't need a public webhook endpoint.
 

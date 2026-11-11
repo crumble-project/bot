@@ -62,6 +62,10 @@ _Avoid_: Room, channel, group session
 The complete visible history of a bot chat or group chat, including messages, replies, tool activity, and compaction events.
 _Avoid_: Model context
 
+**Library**:
+The files the owner sent in a bot chat or group chat, kept for the owner to browse and for the bot to read. Each bot and each group chat has its own.
+_Avoid_: Drive, storage, attachments folder
+
 **Working context**:
 The selected recent messages, summaries, instructions, and recalled material available to the bot for its next response.
 _Avoid_: Full history, transcript
