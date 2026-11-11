@@ -14,9 +14,11 @@ export type ConversationParts = {
   memory: BotTool[];
   skill: BotTool[];
   skillManage: BotTool;
+  library: BotTool;
   vision: BotTool[];
   memoryExtension: Extension;
   skillExtension: Extension;
+  libraryExtension: Extension;
   visionExtension: Extension;
   offered: Extension[];
 };
@@ -55,6 +57,7 @@ export const chatTools = (
   ...parts.memory,
   ...parts.skill,
   parts.skillManage,
+  parts.library,
   ...extensions.flatMap((extension) => extension.tools ?? []),
   ...own,
   ...parts.vision,

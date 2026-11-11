@@ -70,6 +70,7 @@ import { skillManageTool } from "../skills/skill-manage";
 import type { LibraryRef } from "../files/library-repository";
 import { FileStore } from "../files/file-store";
 import { Library } from "../files/library";
+import { libraryExtension } from "../files/library-tool";
 import {
   modelBlocks,
   resolveMessageFiles,
@@ -104,6 +105,7 @@ export type RuntimeCallbacks = MemoryStore & {
   currentAgent: (agent: Agent) => Agent | null;
   ownerTimezone: () => string | undefined;
   skillLibrary: BotSkills["Service"];
+  library: Library["Service"];
   validateFiles: (
     agentId: string,
     ids: readonly string[],
@@ -159,8 +161,10 @@ type HarnessRecord = {
   memory: BotTool;
   skill: BotTool;
   skillManage: BotTool;
+  library: BotTool;
   memoryExtension: Extension;
   skillExtension: Extension;
+  libraryExtension: Extension;
   visionExtension: Extension;
   askAboutImage: BotTool;
   kinds: ConversationKind[];
@@ -468,6 +472,23 @@ export class AgentRuntime {
     return { next, installed };
   }
 
+  private libraryTools(agent: Agent, ownOnly = false) {
+    return libraryExtension({
+      agent,
+      library: this.callbacks.library,
+      libraries: ({ groupId }) =>
+        groupId && !ownOnly
+          ? [
+              { kind: "group", groupId },
+              { kind: "bot", agentId: agent.id },
+            ]
+          : [{ kind: "bot", agentId: agent.id }],
+      workspace:
+        agent.tools.includes(BOT_TOOL.coding) ||
+        agent.tools.includes(BOT_TOOL.desktop),
+    });
+  }
+
   private toolExtensions(agent: Agent) {
     const { tool: memory, extension: memoryTools } = memoryExtension(
       agent,
@@ -486,6 +507,11 @@ export class AgentRuntime {
 
     registry.install(memoryTools);
     registry.install(skillExtension);
+    const library = this.libraryTools(agent);
+    const libraryTool = library.tools?.[0];
+
+    if (!libraryTool) throw new Error("Library tool is missing");
+    registry.install(library);
 
     return {
       memory,
@@ -493,6 +519,8 @@ export class AgentRuntime {
       skillManage,
       memoryExtension: memoryTools,
       skillExtension,
+      library: libraryTool,
+      libraryExtension: library,
       registry,
     };
   }
@@ -503,7 +531,7 @@ export class AgentRuntime {
   ) {
     return defineExtension({
       name: JOB_KNOWLEDGE_EXTENSION,
-      tools: [skill],
+      tools: [skill, ...(this.libraryTools(choices.agent, true).tools ?? [])],
       sections: [
         {
           key: "bot_knowledge",
@@ -626,11 +654,13 @@ export class AgentRuntime {
       memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
       skill: skillCount > 0 ? [record.skill] : [],
       skillManage: record.skillManage,
+      library: record.library,
       vision: this.describesImagesFor(record, agent)
         ? [record.askAboutImage]
         : [],
       memoryExtension: record.memoryExtension,
       skillExtension: record.skillExtension,
+      libraryExtension: record.libraryExtension,
       visionExtension: record.visionExtension,
       offered,
     };
@@ -1242,6 +1272,7 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
                 ...options,
                 models,
                 skillLibrary,
+                library,
                 validateFiles: (agentId, ids) =>
                   library.validate({ kind: "bot", agentId }, ids),
                 resolveFiles: (agentId, ids, ref) =>

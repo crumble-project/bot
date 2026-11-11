@@ -56,6 +56,7 @@ export function groupConversations(): ConversationKind {
         extensions: (parts) => [
           parts.memoryExtension,
           parts.skillExtension,
+          parts.libraryExtension,
           ...parts.offered.filter(inGroupTurns),
           extension,
           parts.visionExtension,

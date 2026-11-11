@@ -139,6 +139,7 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
       join(dir, "agents"),
       runtimeCallbacks({
         models,
+        library,
         resolveFiles: (agentId, ids, ref) =>
           resolveMessageFiles(
             library,
