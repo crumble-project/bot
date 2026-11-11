@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { ProductDatabase } from "../shared/product-database";
+import { atomic, ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { newFileId } from "./ids";
-import { libraryFiles } from "./schema";
+import { deletedLibraryFiles, libraryFiles } from "./schema";
 
 export type LibraryRef =
   | { kind: "bot"; agentId: string }
@@ -63,6 +63,10 @@ export class LibraryRepository extends Context.Service<
       id: string,
     ): Effect.Effect<LibraryEntry | undefined>;
     referenced(hash: string): Effect.Effect<boolean>;
+    deletedName(
+      library: LibraryRef,
+      id: string,
+    ): Effect.Effect<string | undefined>;
   }
 >()("crumble/files/LibraryRepository") {
   static readonly layer = Layer.effect(
@@ -153,16 +157,44 @@ export class LibraryRepository extends Context.Service<
           .where(owner(library))).map((row) => row.hash);
       }, Effect.orDie);
 
-      const remove = Effect.fn("LibraryRepository.remove")(function* (
+      const remove = Effect.fn("LibraryRepository.remove")(
+        function* (library: LibraryRef, id: string) {
+          const [row] = yield* db
+            .delete(libraryFiles)
+            .where(and(owner(library), eq(libraryFiles.id, id)))
+            .returning();
+
+          if (row)
+            yield* db.insert(deletedLibraryFiles).values({
+              id: row.id,
+              agentId: row.agentId,
+              groupId: row.groupId,
+              name: row.name,
+            });
+
+          return row ? entryOf(row) : undefined;
+        },
+        atomic(db),
+        Effect.orDie,
+      );
+
+      const deletedName = Effect.fn("LibraryRepository.deletedName")(function* (
         library: LibraryRef,
         id: string,
       ) {
         const [row] = yield* db
-          .delete(libraryFiles)
-          .where(and(owner(library), eq(libraryFiles.id, id)))
-          .returning();
+          .select({ name: deletedLibraryFiles.name })
+          .from(deletedLibraryFiles)
+          .where(
+            and(
+              eq(deletedLibraryFiles.id, id),
+              library.kind === "bot"
+                ? eq(deletedLibraryFiles.agentId, library.agentId)
+                : eq(deletedLibraryFiles.groupId, library.groupId),
+            ),
+          );
 
-        return row ? entryOf(row) : undefined;
+        return row?.name;
       }, Effect.orDie);
 
       const referenced = Effect.fn("LibraryRepository.referenced")(function* (
@@ -185,6 +217,7 @@ export class LibraryRepository extends Context.Service<
         hashes,
         remove,
         referenced,
+        deletedName,
       });
     }),
   );

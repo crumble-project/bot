@@ -2,7 +2,6 @@ import type { Working } from "./working";
 import { Context, Effect, Layer } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import type { JobKindName } from "../shared/job-kinds";
-import type { AttachmentInput } from "../shared/attachment-rules";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import type { LearnedChange } from "../contract/skills";
@@ -143,7 +142,7 @@ export class Bots extends Context.Service<
       content: string,
       requestId: string,
       replyTo?: string,
-      attachments?: AttachmentInput[],
+      files?: string[],
       timezone?: string,
     ) => Effect.Effect<Execution, AppError>;
     readonly notice: (

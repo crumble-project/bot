@@ -9,6 +9,26 @@ import {
 import { agents } from "../bot-store/schema";
 import { groupChats } from "../group-chats/schema";
 
+export const deletedLibraryFiles = sqliteTable(
+  "deleted_library_files",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").references(() => agents.id, {
+      onDelete: "cascade",
+    }),
+    groupId: text("group_id").references(() => groupChats.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+  },
+  (table) => [
+    check(
+      "deleted_library_files_one_owner",
+      sql`(${table.agentId} IS NOT NULL) != (${table.groupId} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const libraryFiles = sqliteTable(
   "library_files",
   {

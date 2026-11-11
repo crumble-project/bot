@@ -1,6 +1,10 @@
 import { Effect } from "effect";
+import {
+  attachmentDigest,
+  fileIdDigest,
+  validAttachments,
+} from "../shared/attachments";
 import type { AttachmentInput } from "../shared/attachment-rules";
-import { attachmentDigest, validAttachments } from "../shared/attachments";
 import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
 import { Conflict, REQUEST_ID_REUSED, type AppError } from "../shared/errors";
@@ -14,6 +18,7 @@ import { OWNER_TIMEZONE } from "./runtime";
 export type SendOptions = {
   scheduleId?: string;
   replyTo?: string | undefined;
+  files?: string[] | undefined;
   attachments?: AttachmentInput[] | undefined;
 };
 
@@ -62,14 +67,22 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     if (!owner.enabled)
       return yield* conflict("Enable this agent before starting work");
     const replyTo = options.replyTo ?? null;
+    const files = options.files ?? [];
     const attachments = options.attachments ?? [];
-    yield* validAttachments(attachments);
-    const attachmentsDigest = attachmentDigest(attachments);
+
+    if (attachments.length) yield* validAttachments(attachments);
+
+    const attachmentsDigest = attachments.length
+      ? attachmentDigest(attachments)
+      : fileIdDigest(files);
 
     const existing = yield* executions.getByRequest(conversationId, requestId);
 
     if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
       return yield* conflict(REQUEST_ID_REUSED);
+
+    if (!existing && files.length)
+      yield* runtime.validateFiles(owner.id, files);
 
     const execution =
       existing ??
@@ -80,7 +93,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
         requestId,
         prompt: content,
         replyTo,
-        attachments,
+        attachments: attachments.length ? attachments : files,
         attachmentsDigest,
         submissionId: null,
         status: "pending",
@@ -109,7 +122,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     content: string,
     requestId: string,
     replyTo?: string,
-    attachments: AttachmentInput[] = [],
+    files: string[] = [],
     timezone?: string,
   ) {
     if (timezone && validTimezone(timezone))
@@ -117,7 +130,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
 
     return yield* send((yield* chat(agentId)).id, content, requestId, {
       replyTo,
-      attachments,
+      files,
     });
   });
 

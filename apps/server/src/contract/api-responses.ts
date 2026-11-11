@@ -303,6 +303,19 @@ const message = z
         description: "On a `call-started` or `call-ended` event: the call.",
       }),
     attachments: z.array(attachment).optional(),
+    files: z
+      .array(
+        z.union([
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            mimeType: z.string(),
+            size: z.number(),
+          }),
+          z.object({ id: z.string(), deleted: z.literal(true) }),
+        ]),
+      )
+      .optional(),
     toolCallId: z.string().optional(),
     toolName: z.string().optional(),
     isError: z.boolean().optional(),

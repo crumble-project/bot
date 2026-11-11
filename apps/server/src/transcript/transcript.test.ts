@@ -24,7 +24,7 @@ type FakeEntry = {
   }[];
   data?:
     | { content?: string; communication?: FakeCommunication }
-    | Record<string, string | number>;
+    | Record<string, JsonValue>;
 };
 
 type FakeQuery = {
@@ -63,6 +63,33 @@ const user = (id: number, text: string, kind = "pi.user") => ({
 });
 
 describe("durable transcript helpers", () => {
+  test("marks legacy attachment metadata deleted", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          ...user(1, "hello", "crumble.message"),
+          data: {
+            text: "hello",
+            attachments: [
+              {
+                name: "old.png",
+                mimeType: "image/png",
+                size: 4,
+                kind: "image",
+              },
+            ],
+          },
+        },
+      ]),
+      "a",
+    );
+
+    expect(page.messages[0]?.files).toEqual([
+      { id: "legacy:a:1:0", deleted: true },
+    ]);
+    expect(page.messages[0]?.attachments).toBeUndefined();
+  });
+
   test("normalizes provider blocks and removes private fields", async () => {
     const page = await readTranscript(
       fakeHarness([

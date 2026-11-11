@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { attachmentKind } from "../shared/attachment-rules";
-import { NotFound } from "../shared/errors";
+import { InvalidInput, NotFound } from "../shared/errors";
 import { FileStore, type FileTooLarge } from "./file-store";
 import {
   LibraryRepository,
@@ -72,6 +72,10 @@ export class Library extends Context.Service<
       ids: readonly string[],
     ): Effect.Effect<Map<string, LibraryEntry>>;
     text(entry: LibraryEntry): Effect.Effect<string | null>;
+    validate(
+      library: LibraryRef,
+      ids: readonly string[],
+    ): Effect.Effect<void, InvalidInput>;
     removeLibrary(library: LibraryRef): Effect.Effect<void>;
   }
 >()("crumble/files/Library") {
@@ -214,6 +218,24 @@ export class Library extends Context.Service<
           );
         });
 
+        const validate = Effect.fn("Library.validate")(function* (
+          library: LibraryRef,
+          ids: readonly string[],
+        ) {
+          const found = yield* entries(library, ids);
+
+          for (const id of ids) {
+            if (found.has(id)) continue;
+            const name = yield* repository.deletedName(library, id);
+
+            return yield* new InvalidInput({
+              message: name
+                ? `${name} was deleted from the library`
+                : "File not found in this library",
+            });
+          }
+        });
+
         const removeLibrary = Effect.fn("Library.removeLibrary")(function* (
           library: LibraryRef,
         ) {
@@ -247,6 +269,7 @@ export class Library extends Context.Service<
           download,
           remove,
           entries,
+          validate,
           text: (entry) =>
             entry.text === "extracted"
               ? files.text(

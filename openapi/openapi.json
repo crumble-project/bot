@@ -1466,6 +1466,54 @@
               "$ref": "#/components/schemas/AttachmentInfo"
             }
           },
+          "files": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "size"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "deleted"
+                  ]
+                }
+              ]
+            }
+          },
           "toolCallId": {
             "type": "string"
           },
@@ -15207,32 +15255,11 @@
                     "minLength": 1,
                     "maxLength": 200
                   },
-                  "attachments": {
+                  "files": {
                     "type": "array",
                     "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 200
-                        },
-                        "mimeType": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "data": {
-                          "type": "string",
-                          "minLength": 1,
-                          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "mimeType",
-                        "data"
-                      ]
+                      "type": "string",
+                      "format": "uuid"
                     },
                     "maxItems": 8,
                     "default": []
@@ -15246,7 +15273,8 @@
                 "required": [
                   "content",
                   "requestId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }

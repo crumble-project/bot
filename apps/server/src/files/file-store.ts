@@ -52,59 +52,75 @@ export class FileStore extends Context.Service<
         };
 
         const put = (source: ReadableStream<Uint8Array>, limit: number) =>
-          Effect.tryPromise({
-            try: async (signal) => {
-              const path = join(temporary, crypto.randomUUID());
-              const reader = source.getReader();
+          Effect.suspend(() => {
+            let pending: Promise<unknown> | undefined;
 
-              const cancel = () => {
-                void reader.cancel().catch(() => undefined);
-              };
+            return Effect.tryPromise({
+              try: (signal) =>
+                (pending = (async () => {
+                  const path = join(temporary, crypto.randomUUID());
+                  const reader = source.getReader();
 
-              signal.addEventListener("abort", cancel, { once: true });
+                  let cancellation: Promise<void> | undefined;
 
-              try {
-                const file = await open(path, "wx");
-                let size = 0;
-                const digest = createHash("sha256");
+                  const cancel = () => {
+                    cancellation ??= reader.cancel().catch(() => undefined);
+                  };
 
-                try {
-                  while (true) {
-                    const chunk = await reader.read();
+                  signal.addEventListener("abort", cancel, { once: true });
 
-                    if (signal.aborted) throw signal.reason;
+                  try {
+                    const file = await open(path, "wx");
+                    let size = 0;
+                    const digest = createHash("sha256");
 
-                    if (chunk.done) break;
-                    size += chunk.value.byteLength;
+                    try {
+                      while (true) {
+                        const chunk = await reader.read();
 
-                    if (size > limit) throw new FileTooLarge({ limit });
-                    digest.update(chunk.value);
-                    let offset = 0;
+                        if (signal.aborted) throw signal.reason;
 
-                    while (offset < chunk.value.byteLength) {
-                      const result = await file.write(chunk.value, offset);
-                      offset += result.bytesWritten;
+                        if (chunk.done) break;
+                        size += chunk.value.byteLength;
+
+                        if (size > limit) throw new FileTooLarge({ limit });
+                        digest.update(chunk.value);
+                        let offset = 0;
+
+                        while (offset < chunk.value.byteLength) {
+                          const result = await file.write(chunk.value, offset);
+                          offset += result.bytesWritten;
+                        }
+                      }
+                    } finally {
+                      await file.close();
                     }
+
+                    const hash = digest.digest("hex");
+                    await rename(path, pathOf(hash));
+
+                    return { hash, size };
+                  } finally {
+                    signal.removeEventListener("abort", cancel);
+                    cancel();
+                    await cancellation;
+                    reader.releaseLock();
+                    await rm(path, { force: true });
                   }
-                } finally {
-                  await file.close();
-                }
-
-                const hash = digest.digest("hex");
-                await rename(path, pathOf(hash));
-
-                return { hash, size };
-              } finally {
-                signal.removeEventListener("abort", cancel);
-                await reader.cancel().catch(() => undefined);
-                reader.releaseLock();
-                await rm(path, { force: true });
-              }
-            },
-            catch: (cause) => {
-              if (cause instanceof FileTooLarge) return cause;
-              throw cause;
-            },
+                })()),
+              catch: (cause) => {
+                if (cause instanceof FileTooLarge) return cause;
+                throw cause;
+              },
+            }).pipe(
+              Effect.onInterrupt(() =>
+                Effect.promise(async () => {
+                  try {
+                    await pending;
+                  } catch {}
+                }),
+              ),
+            );
           });
 
         const textPathOf = (hash: string, format: "plain" | "pdf") =>
@@ -124,7 +140,7 @@ export class FileStore extends Context.Service<
             } finally {
               await rm(path, { force: true });
             }
-          });
+          }).pipe(Effect.uninterruptible);
 
         const bytes = Effect.fn("FileStore.bytes")(function* (hash: string) {
           const file = Bun.file(pathOf(hash));

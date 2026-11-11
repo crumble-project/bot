@@ -5,6 +5,7 @@ import { callConversations } from "../../src/voice-gateway/call-conversation";
 import { hostModels } from "../../src/providers/providers";
 import type { RuntimeCallbacks } from "../../src/bots/runtime";
 import type { BotSkills } from "../../src/skills/skills";
+import { InvalidInput } from "../../src/shared/errors";
 
 const unsupported = () =>
   Effect.die(new Error("no skill library in this test"));
@@ -34,6 +35,13 @@ export const runtimeCallbacks = (
   updateMemory: noMemoryStore,
   deleteMemory: noMemoryStore,
   skillLibrary: noSkills,
+  validateFiles: (_agentId, ids) =>
+    ids.length
+      ? Effect.fail(new InvalidInput({ message: "File not found" }))
+      : Effect.void,
+  resolveFiles: (_agentId, ids) =>
+    Effect.succeed(ids.map((id) => ({ file: { id, deleted: true as const } }))),
+  existingFiles: () => Effect.succeed(new Set()),
   visionModel: () => undefined,
   extensions: () => [],
   jobExtensions: () => [],

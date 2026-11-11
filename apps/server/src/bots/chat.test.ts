@@ -18,7 +18,10 @@ import { imageHash } from "../vision/vision";
 import { standaloneBots } from "./bots-test-support";
 import { type Activity } from "./bots";
 import { Store } from "../../test/support/store";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
+import { Library } from "../files/library";
+import { FileStore } from "../files/file-store";
+import { resolveMessageFiles } from "../files/message-files";
 import { EventRepository } from "../event-sources/event-repository";
 import { eventRequest, voiceRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../automations/schedule-repository";
@@ -27,6 +30,7 @@ import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
+const testLibraries = new WeakMap<AgentRuntime, Library["Service"]>();
 
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
@@ -69,6 +73,18 @@ function open(
   }
 
   const store = new Store(dir);
+  const core = store.runtime.runSync(Effect.context());
+
+  const libraryContext = Effect.runSync(
+    Effect.scoped(
+      Layer.build(Library.layer({ maxFileBytes: 10 * 1024 * 1024 })).pipe(
+        Effect.provideContext(core),
+      ),
+    ),
+  );
+
+  const library = Context.get(libraryContext, Library);
+  const fileStore = Context.get(core, FileStore);
 
   const service = standaloneBots(
     store,
@@ -76,6 +92,19 @@ function open(
       dir,
       runtimeCallbacks({
         models,
+        validateFiles: (agentId, ids) =>
+          library.validate({ kind: "bot", agentId }, ids),
+        resolveFiles: (agentId, ids) =>
+          resolveMessageFiles(
+            library,
+            fileStore,
+            { kind: "bot", agentId },
+            ids,
+          ),
+        existingFiles: (agentId, ids) =>
+          library
+            .entries({ kind: "bot", agentId }, ids)
+            .pipe(Effect.map((entries) => new Set(entries.keys()))),
         ...(vision && {
           visionModel: () => ({ provider: "eye", model: "vision" }),
         }),
@@ -83,7 +112,9 @@ function open(
     ),
   );
 
-  return { store, service };
+  testLibraries.set(service.runtime, library);
+
+  return { store, service, library };
 }
 
 function setup(
@@ -509,27 +540,249 @@ describe("event automations", () => {
   });
 });
 
-describe("attachments", () => {
-  test("reach the model as content blocks and stay out of snapshots", async () => {
+describe("library files", () => {
+  test("a text-only model rejects image blocks but accepts large image references", async () => {
+    const { service, agent, library } = setup(
+      [fauxAssistantMessage("received")],
+      ["text"],
+    );
+
+    const ref = { kind: "bot" as const, agentId: agent.id };
+
+    const small = await Effect.runPromise(
+      library.upload(ref, {
+        name: "small.png",
+        mimeType: "image/png",
+        body: new Blob(["small"]).stream(),
+      }),
+    );
+
+    const large = await Effect.runPromise(
+      library.upload(ref, {
+        name: "large.png",
+        mimeType: "image/png",
+        body: new Blob([new Uint8Array(6 * 1024 * 1024)]).stream(),
+      }),
+    );
+
+    await expect(
+      service.sendChat(agent.id, "look", uuid(11), undefined, [small.file.id]),
+    ).rejects.toThrow("can't read images");
+
+    const accepted = await service.sendChat(
+      agent.id,
+      "look",
+      uuid(12),
+      undefined,
+      [large.file.id],
+    );
+
+    expect(await settle(service, accepted.id)).toBe("done");
+    await service.close();
+  });
+
+  test("routes text, PDF, image and other files by their limits", async () => {
     const seen: unknown[] = [];
 
-    const record: FauxResponseStep = (context) => {
-      seen.push(context.messages.at(-1)?.content);
+    const { service, store, agent, library } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
 
-      return fauxAssistantMessage("got them");
-    };
+        return fauxAssistantMessage("received");
+      },
+    ]);
 
-    const { service, store, agent } = setup([record]);
+    const ref = { kind: "bot" as const, agentId: agent.id };
+
+    const upload = async (name: string, mimeType: string, body: Blob) =>
+      (
+        await Effect.runPromise(
+          library.upload(ref, { name, mimeType, body: body.stream() }),
+        )
+      ).file.id;
+
+    const small = await upload(
+      "small.txt",
+      "text/plain",
+      new Blob(["small text"]),
+    );
+
+    const large = await upload(
+      "large.txt",
+      "text/plain",
+      new Blob(["x".repeat(32769)]),
+    );
+
+    const pdf = await upload(
+      "text.pdf",
+      "application/pdf",
+      Bun.file("apps/server/test/fixtures/text.pdf"),
+    );
+
+    const scan = await upload(
+      "scan.pdf",
+      "application/pdf",
+      Bun.file("apps/server/test/fixtures/scan.pdf"),
+    );
+
+    const image = await upload(
+      "small.png",
+      "image/png",
+      new Blob([new Uint8Array(4 * 1024 * 1024)]),
+    );
+
+    const bigImage = await upload(
+      "big.png",
+      "image/png",
+      new Blob([new Uint8Array(6 * 1024 * 1024)]),
+    );
+
+    const zip = await upload(
+      "archive.zip",
+      "application/zip",
+      new Blob(["zip"]),
+    );
+
+    const execution = await service.sendChat(
+      agent.id,
+      "read",
+      uuid(10),
+      undefined,
+      [small, large, pdf, scan, image, bigImage, zip],
+    );
+
+    expect(await settle(service, execution.id)).toBe("done");
+    const blocks = seen[0];
+    expect(Array.isArray(blocks)).toBe(true);
+
+    if (!Array.isArray(blocks)) throw new Error("Expected blocks");
+    expect(blocks[1].text).toContain("small text");
+    expect(blocks[2].text).toContain(large);
+    expect(blocks[2].text).toContain("library tool");
+    expect(blocks[3].text).toContain("Crumble library fixture");
+    expect(blocks[4].text.toLowerCase()).toContain("no text could be read");
+    expect(blocks[5].type).toBe("image");
+    expect(blocks[6].text).toContain(bigImage);
+    expect(blocks[7].text).toContain(zip);
+
+    const entry = (await Effect.runPromise(library.entries(ref, [pdf]))).get(
+      pdf,
+    )!;
+
+    const fileStore = store.runtime.runSync(FileStore);
+    await Effect.runPromise(
+      fileStore.putText(entry.hash, "x".repeat(32769), "pdf"),
+    );
+
+    const resolved = await Effect.runPromise(
+      resolveMessageFiles(library, fileStore, ref, [pdf]),
+    );
+
+    expect("content" in resolved[0]! && resolved[0].content.kind).toBe(
+      "reference",
+    );
+    await service.close();
+  });
+
+  test("delivers a queued message after its file is deleted", async () => {
+    const seen: unknown[] = [];
+
+    const { service, store, agent, library } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+
+        return fauxAssistantMessage("received");
+      },
+    ]);
+
+    const ref = { kind: "bot" as const, agentId: agent.id };
+
+    const upload = await Effect.runPromise(
+      library.upload(ref, {
+        name: "queued.txt",
+        mimeType: "text/plain",
+        body: new Blob(["queued"]).stream(),
+      }),
+    );
+
+    const chat = await service.chat(agent.id);
+
+    const execution = store.createExecution({
+      agentId: agent.id,
+      conversationId: chat.id,
+      scheduleId: null,
+      submissionId: null,
+      requestId: uuid(15),
+      prompt: "queued",
+      replyTo: null,
+      attachments: [upload.file.id],
+      attachmentsDigest: "digest",
+      status: "pending",
+      error: null,
+    });
+
+    await Effect.runPromise(library.remove(ref, upload.file.id));
+    await service.recover();
+    expect(await settle(service, execution.id)).toBe("done");
+    expect(JSON.stringify(seen)).toContain(
+      "deleted from the library before it arrived",
+    );
+
+    const shown = (await service.chatSnapshot(agent.id)).messages.find(
+      (message) => message.role === "user",
+    );
+
+    expect(shown?.files).toEqual([{ id: upload.file.id, deleted: true }]);
+    await service.close();
+  });
+
+  test("delivers files, rejects unknown IDs and preserves retries after deletion", async () => {
+    const seen: unknown[] = [];
+
+    const { service, store, agent, library } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+
+        return fauxAssistantMessage("got them");
+      },
+    ]);
+
+    const ref = { kind: "bot" as const, agentId: agent.id };
+
+    const upload = (name: string, mimeType: string, data: Uint8Array) =>
+      Effect.runPromise(
+        library.upload(ref, {
+          name,
+          mimeType,
+          body: new Blob([new Uint8Array(data)]).stream(),
+        }),
+      );
+
+    const image = await upload(
+      "dot.png",
+      "image/png",
+      Buffer.from(png, "base64"),
+    );
+
+    const text = await upload(
+      "notes.txt",
+      "text/plain",
+      Buffer.from(notes, "base64"),
+    );
+
+    const ids = [image.file.id, text.file.id];
+    await expect(
+      service.sendChat(agent.id, "bad", uuid(9), undefined, [
+        crypto.randomUUID(),
+      ]),
+    ).rejects.toThrow();
 
     const execution = await service.sendChat(
       agent.id,
       "what is this?",
       uuid(1),
       undefined,
-      [
-        { name: "dot.png", mimeType: "image/png", data: png },
-        { name: "notes.txt", mimeType: "text/plain", data: notes },
-      ],
+      ids,
     );
 
     await settle(service, execution.id);
@@ -541,130 +794,47 @@ describe("attachments", () => {
         text: '<attachment name="notes.txt">\nBuy oat milk\n</attachment>',
       },
     ]);
-    expect(store.executionAttachments(execution.id)).toEqual([]);
+    expect(store.executionAttachments(execution.id)).toEqual({
+      kind: "files",
+      ids: [],
+    });
 
-    const shown = (await service.chatSnapshot(agent.id)).messages.find(
+    let shown = (await service.chatSnapshot(agent.id)).messages.find(
       (message) => message.role === "user",
     )!;
 
-    expect(shown.content).toBe("what is this?");
-    expect(shown.attachments).toEqual([
-      { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
-      { name: "notes.txt", mimeType: "text/plain", size: 12, kind: "text" },
+    expect(shown.files).toEqual([
+      { id: image.file.id, name: "dot.png", mimeType: "image/png", size: 70 },
+      { id: text.file.id, name: "notes.txt", mimeType: "text/plain", size: 12 },
     ]);
-    expect(JSON.stringify(shown.blocks)).not.toContain(png);
-    const image = await service.runtime.attachment(agent, shown.entryId, 0);
-    expect(image.mimeType).toBe("image/png");
-    expect(image.data.toString("base64")).toBe(png);
     await expect(
-      service.runtime.attachment(agent, shown.entryId, 1),
+      service.runtime.attachment(agent, shown.entryId, 0),
     ).rejects.toThrow("Attachment not found");
-    await service.close();
-  });
-
-  test("an image alone is a message", async () => {
-    const { service, agent } = setup([fauxAssistantMessage("a dot")]);
-    await settle(
-      service,
-      (
-        await service.sendChat(agent.id, "", uuid(1), undefined, [
-          { name: "dot.png", mimeType: "image/png", data: png },
-        ])
-      ).id,
-    );
-
-    const users = (await service.chatSnapshot(agent.id)).messages.filter(
+    await Effect.runPromise(library.remove(ref, text.file.id));
+    shown = (await service.chatSnapshot(agent.id)).messages.find(
       (message) => message.role === "user",
-    );
-
+    )!;
+    expect(shown.files?.[1]).toEqual({ id: text.file.id, deleted: true });
     expect(
-      users.map(({ content, attachments }) => ({ content, attachments })),
-    ).toEqual([
-      {
-        content: "",
-        attachments: [
-          { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
-        ],
-      },
-    ]);
-    await service.close();
-  });
-
-  test("without a vision model, models without image input refuse images before answering", async () => {
-    const { service, agent } = setup([fauxAssistantMessage("never")], ["text"]);
+      (
+        await service.sendChat(
+          agent.id,
+          "what is this?",
+          uuid(1),
+          undefined,
+          ids,
+        )
+      ).id,
+    ).toBe(execution.id);
     await expect(
-      service.sendChat(agent.id, "look", uuid(1), undefined, [
-        { name: "dot.png", mimeType: "image/png", data: png },
+      service.sendChat(agent.id, "what is this?", uuid(1), undefined, [
+        text.file.id,
       ]),
-    ).rejects.toThrow(/can't read images.*set a vision model in Settings/);
-    await service.close();
-  });
-
-  test("unsupported files are refused without leaving an execution", async () => {
-    const { service, store, agent } = setup([]);
+    ).rejects.toThrow("different message");
     await expect(
-      service.sendChat(agent.id, "read", uuid(1), undefined, [
-        { name: "doc.pdf", mimeType: "application/pdf", data: notes },
-      ]),
-    ).rejects.toThrow("only images");
-    expect(store.listExecutions(agent.id)).toEqual([]);
+      service.sendChat(agent.id, "again", uuid(2), undefined, [text.file.id]),
+    ).rejects.toThrow("notes.txt was deleted from the library");
     await service.close();
-  });
-
-  test("a request ID retried with other files is refused", async () => {
-    const { service, agent } = setup([fauxAssistantMessage("ok")]);
-
-    const first = await service.sendChat(agent.id, "see", uuid(1), undefined, [
-      { name: "notes.txt", mimeType: "text/plain", data: notes },
-    ]);
-
-    await settle(service, first.id);
-    await expect(service.sendChat(agent.id, "see", uuid(1))).rejects.toThrow(
-      "different message",
-    );
-    await service.close();
-  });
-
-  test("recovery resubmits attachments that were stored before a crash", async () => {
-    const seen: unknown[] = [];
-    const { service, store, agent, dir } = setup([]);
-    const chat = await service.chat(agent.id);
-    store.createExecution({
-      agentId: agent.id,
-      conversationId: chat.id,
-      scheduleId: null,
-      submissionId: null,
-      requestId: uuid(1),
-      prompt: "after the crash",
-      replyTo: null,
-      attachments: [{ name: "notes.txt", mimeType: "text/plain", data: notes }],
-      attachmentsDigest: "digest",
-      status: "pending",
-      error: null,
-    });
-    await service.close();
-
-    const reopened = open(dir, [
-      (context) => {
-        seen.push(context.messages.at(-1)?.content);
-
-        return fauxAssistantMessage("recovered");
-      },
-    ]);
-
-    await reopened.service.recover();
-    const execution = reopened.store.listExecutions(agent.id)[0]!;
-    await settle(reopened.service, execution.id);
-    expect(seen).toEqual([
-      [
-        { type: "text", text: `[message ${uuid(1)}]\nafter the crash` },
-        {
-          type: "text",
-          text: '<attachment name="notes.txt">\nBuy oat milk\n</attachment>',
-        },
-      ],
-    ]);
-    await reopened.service.close();
   });
 });
 
@@ -726,15 +896,29 @@ describe("vision model", () => {
     service: ReturnType<typeof setup>["service"],
     agentId: string,
     n: number,
-  ) =>
-    settle(
+  ) => {
+    const library = testLibraries.get(service.runtime)!;
+
+    const uploaded = await Effect.runPromise(
+      library.upload(
+        { kind: "bot", agentId },
+        {
+          name: "dot.png",
+          mimeType: "image/png",
+          body: new Blob([Buffer.from(png, "base64")]).stream(),
+        },
+      ),
+    );
+
+    return settle(
       service,
       (
         await service.sendChat(agentId, "what is this?", uuid(n), undefined, [
-          { name: "dot.png", mimeType: "image/png", data: png },
+          uploaded.file.id,
         ])
       ).id,
     );
+  };
 
   test("describes an image for a model that can't read it, and the transcript keeps the image", async () => {
     const seen: unknown[] = [];
@@ -754,11 +938,14 @@ describe("vision model", () => {
     const snapshot = await service.chatSnapshot(agent.id);
     const shown = snapshot.messages.find((message) => message.role === "user")!;
 
-    expect(shown.attachments).toEqual([
-      { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
-    ]);
-    const image = await service.runtime.attachment(agent, shown.entryId, 0);
-    expect(image.data.toString("base64")).toBe(png);
+    expect(shown.files?.[0]).toMatchObject({
+      name: "dot.png",
+      mimeType: "image/png",
+      size: 70,
+    });
+    await expect(
+      service.runtime.attachment(agent, shown.entryId, 0),
+    ).rejects.toThrow("Attachment not found");
 
     // SAFETY: the snapshot's usage is Pi Durable's usage document.
     const usage = (snapshot.usage as UsageDoc).models["eye/vision"]!;

@@ -6,7 +6,7 @@ import { errorText } from "../shared/errors";
 import { parseRequestId } from "../shared/request-ids";
 import type { InputOrigin } from "../transcript/origins";
 import { frameInput } from "./input-framing";
-import type { BotsContext } from "./bots-context";
+import { isGroupTurn, type BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 
@@ -51,6 +51,12 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
 
     const origin = yield* deps.origin(execution);
     const attachments = yield* executions.attachments(execution.id);
+
+    const files =
+      attachments.kind === "files" && attachments.ids.length
+        ? yield* runtime.resolveFiles(owner.id, attachments.ids)
+        : [];
+
     const event = yield* eventInput(execution);
     const call = yield* callNote(execution);
 
@@ -75,7 +81,15 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
         execution.conversationId,
         execution.prompt,
         execution.requestId,
-        { input: { ...prepared, modelContent }, origin, attachments },
+        {
+          input: { ...prepared, modelContent },
+          origin,
+          files,
+          attachments:
+            attachments.kind === "legacy" && isGroupTurn(execution)
+              ? attachments.attachments
+              : [],
+        },
       ),
     );
   });

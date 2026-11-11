@@ -4,12 +4,70 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
 import { Library } from "./library";
+import { Effect } from "effect";
 import type { LibraryRef } from "./library-repository";
 
 const cleanups: (() => void)[] = [];
 
 afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
+});
+
+test("deleted names survive reopening and remain scoped to the library", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "library-deleted-"));
+  const store = new Store(dir);
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+
+  const bot = store.createAgent({
+    name: "Ada",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "chat",
+    enabled: true,
+    tools: [],
+    skills: [],
+    mcpServers: [],
+    delegates: [],
+  });
+
+  const library: LibraryRef = { kind: "bot", agentId: bot.id };
+  const group = store.createGroupChat({ name: "Group", memberIds: [bot.id] });
+
+  const uploaded = await store.runtime.runPromise(
+    Library.use((service) =>
+      service.upload(library, {
+        name: "report.txt",
+        mimeType: "text/plain",
+        body: new Blob(["hello"]).stream(),
+      }),
+    ),
+  );
+
+  await store.runtime.runPromise(
+    Library.use((service) => service.remove(library, uploaded.file.id)),
+  );
+  store.close();
+  const reopened = new Store(dir);
+  cleanups.push(() => reopened.close());
+
+  const deleted = await reopened.runtime.runPromise(
+    Library.use((service) =>
+      service.validate(library, [uploaded.file.id]),
+    ).pipe(Effect.flip),
+  );
+
+  expect(deleted.message).toBe("report.txt was deleted from the library");
+
+  const foreign = await reopened.runtime.runPromise(
+    Library.use((service) =>
+      service.validate({ kind: "group", groupId: group.id }, [
+        uploaded.file.id,
+      ]),
+    ).pipe(Effect.flip),
+  );
+
+  expect(foreign.message).toBe("File not found in this library");
 });
 
 for (const sameLibrary of [true, false]) {

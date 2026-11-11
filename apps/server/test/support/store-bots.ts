@@ -14,7 +14,6 @@ import {
   type GroupMemberChange,
 } from "../../src/group-chats/group-chat-repository";
 import { ScheduleRepository } from "../../src/automations/schedule-repository";
-import type { AttachmentInput } from "../../src/shared/attachment-rules";
 import type { Agent, AgentInput } from "../../src/contract/agents";
 import type { Execution } from "../../src/shared/domain";
 import type { Schedule, ScheduleInput } from "../../src/contract/schedules";
@@ -107,7 +106,7 @@ const executionStore = (run: StoreRun) => ({
   listExecutions: (agentId?: string): Execution[] => {
     return run(ExecutionRepository.use((r) => r.list(agentId)));
   },
-  executionAttachments: (executionId: string): AttachmentInput[] => {
+  executionAttachments: (executionId: string) => {
     return run(ExecutionRepository.use((r) => r.attachments(executionId)));
   },
   getExecution: (executionId: string) => {

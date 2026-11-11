@@ -28,6 +28,7 @@ function setup() {
       hashes: () => Effect.succeed([]),
       remove: () => Effect.succeed(undefined),
       referenced: () => Effect.sync(() => referenced),
+      deletedName: () => Effect.succeed(undefined),
     }),
   );
 
@@ -94,6 +95,47 @@ test("bytes ignores a leftover temp file and the next put replaces it", async ()
   );
 
   expect(await new Response(bytes).text()).toBe("hello");
+  expect(readdirSync(join(dir, "files", ".tmp"))).toEqual([]);
+});
+
+test("interrupted uploads finish cleanup before releasing the account lock", async () => {
+  const { dir, runtime } = setup();
+  const reading = Promise.withResolvers<void>();
+  const cancelled = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const source = new ReadableStream<Uint8Array>({
+    pull() {
+      reading.resolve();
+    },
+    cancel() {
+      cancelled.resolve();
+      return released.promise;
+    },
+  });
+  const upload = runtime.runFork(
+    FileStore.use((store) => store.withLock(store.put(source, 10))),
+  );
+  await reading.promise;
+  const interrupted = runtime.runPromise(Fiber.interrupt(upload));
+  await cancelled.promise;
+  let acquired = false;
+  const next = runtime.runPromise(
+    FileStore.use((store) =>
+      store.withLock(
+        Effect.sync(() => {
+          acquired = true;
+        }),
+      ),
+    ),
+  );
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(acquired).toBe(false);
+  } finally {
+    released.resolve();
+  }
+  await interrupted;
+  await next;
   expect(readdirSync(join(dir, "files", ".tmp"))).toEqual([]);
 });
 

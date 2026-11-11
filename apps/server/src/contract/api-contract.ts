@@ -166,11 +166,17 @@ const hasContent = <T extends z.infer<typeof messageFields>>(
     path: ["content"],
   });
 
-export const messageInput = hasContent(
-  messageFields.extend({
+export const messageInput = messageFields
+  .omit({ attachments: true })
+  .extend({
+    files: z.array(z.uuid()).max(MAX_ATTACHMENTS).default([]),
     timezone: z.string().min(1).max(100).optional(),
-  }),
-);
+  })
+  .strict()
+  .refine((value) => value.content || value.files.length, {
+    message: "Write a message or attach a file",
+    path: ["content"],
+  });
 
 /** `replyTo` names a message in the same group; replying to a bot's message also wakes that bot. */
 export const groupMessageInput = hasContent(messageFields);

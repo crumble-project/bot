@@ -12,6 +12,7 @@ import type {
 } from "@earendil-works/pi-durable";
 
 import type { AttachmentInfo } from "../shared/attachment-rules";
+import type { MessageFile } from "../files/message-files";
 import {
   formatEntryId,
   formatMessageId,
@@ -115,6 +116,7 @@ export type TranscriptMessage = {
     callee?: string;
   };
   attachments?: AttachmentInfo[];
+  files?: MessageFile[];
   toolCallId?: string;
   toolName?: string | undefined;
   isError?: boolean | undefined;
@@ -160,6 +162,9 @@ function conversationPreview(message: TranscriptMessage): string {
 
   if (text && hasTextBlock(message))
     return text.slice(0, MESSAGE_PREVIEW_CHARS);
+  const file = message.files?.[0];
+
+  if (file) return "deleted" in file ? "File deleted" : `File: ${file.name}`;
   const attachment = message.attachments?.[0];
 
   return attachment ? `Attachment: ${attachment.name}` : "";
@@ -567,6 +572,27 @@ function normalizeModelEntry(
   const origin = originOf(data?.["origin"]);
   const attachments = attachmentsOf(data?.["attachments"]);
 
+  const parsedFiles = z
+    .array(
+      z.union([
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number(),
+        }),
+        z.object({ id: z.string(), deleted: z.literal(true) }),
+      ]),
+    )
+    .safeParse(data?.["files"]);
+
+  const files: MessageFile[] = parsedFiles.success
+    ? parsedFiles.data
+    : attachments.map((_, index) => ({
+        id: `legacy:${entryId}:${index}`,
+        deleted: true,
+      }));
+
   if (data?.["jobFailed"] === true && origin && input.text)
     return normalizeJobFailure(entryId, entry, origin, input.text);
 
@@ -579,7 +605,11 @@ function normalizeModelEntry(
     const attached = message.role === "user" ? attachments : [];
     const metadata = toolMetadata.parse(message);
 
-    if (emptyMessage(message, content, attached, metadata)) return [];
+    if (
+      emptyMessage(message, content, attached, metadata) &&
+      !(message.role === "user" && files.length)
+    )
+      return [];
 
     const result: TranscriptMessage = {
       id: formatMessageId(entryId, index),
@@ -596,7 +626,7 @@ function normalizeModelEntry(
 
     if (origin) result.origin = origin;
 
-    if (attached.length) result.attachments = attached;
+    if (message.role === "user" && files.length) result.files = files;
     applyToolMetadata(result, metadata);
 
     return [result];
@@ -887,8 +917,7 @@ export async function readAttachment(
 
   const entry = await entryAt(await harness.root(BACKGROUND_CONTEXT), target);
 
-  const image =
-    entry && (inputImage(entry, index) ?? screenshotImage(entry, index));
+  const image = entry && screenshotImage(entry, index);
 
   if (!image) throw new NotFound({ message: "Attachment not found" });
 
@@ -899,19 +928,6 @@ const imagesOf = (content: ModelContent | undefined) =>
   Array.isArray(content)
     ? content.flatMap((block) => (block.type === "image" ? [block] : []))
     : [];
-
-function inputImage(entry: EntryRecord, index: number) {
-  const attachments = attachmentsOf(record(entry.data)?.["attachments"]);
-
-  if (attachments[index]?.kind !== "image") return undefined;
-
-  // Image blocks follow the attachment order, so the nth image is the nth image attachment.
-  const imageIndex = attachments
-    .slice(0, index)
-    .filter((item) => item.kind === "image").length;
-
-  return imagesOf(entry.model?.[0]?.content)[imageIndex];
-}
 
 function screenshotImage(entry: EntryRecord, index: number) {
   const message = entry.model?.[0];
