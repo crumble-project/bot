@@ -749,7 +749,7 @@ export const routes = {
     path: "/v1/agents/{id}/coding-jobs/{name}/history",
     operationId: "getCodingJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(response.jobHistoryResponse) },
   }),
   desktopJobs: define({
     method: "get",
@@ -813,7 +813,7 @@ export const routes = {
     path: "/v1/agents/{id}/desktop-jobs/{name}/history",
     operationId: "getDesktopJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(response.jobHistoryResponse) },
   }),
   sendMessage: define({
     method: "post",

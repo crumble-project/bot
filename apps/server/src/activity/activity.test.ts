@@ -201,7 +201,7 @@ describe("operational activity", () => {
         role: "assistant",
         content: "",
         timestamp: 1,
-        blocks: [{ type: "toolCall", name: "x" }],
+        blocks: [{ type: "toolCall", id: "call", arguments: {}, name: "x" }],
       },
       {
         id: "a:2:0",
@@ -209,7 +209,7 @@ describe("operational activity", () => {
         role: "assistant",
         content: "",
         timestamp: 2,
-        blocks: [{ type: "toolCall", name: "y" }],
+        blocks: [{ type: "toolCall", id: "call", arguments: {}, name: "y" }],
       },
     ]);
 

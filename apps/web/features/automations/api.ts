@@ -33,7 +33,15 @@ export const toggleScheduleOptions = (id: string) =>
       const previous = queryClient.getQueryData(schedulesQuery.queryKey);
 
       queryClient.setQueryData(schedulesQuery.queryKey, (list?: Schedule[]) =>
-        list?.map((each) => (each.id === id ? { ...each, enabled } : each)),
+        list?.map((each) =>
+          each.id === id
+            ? {
+                ...each,
+                enabled,
+                timing: `${enabled ? "" : "Paused · "}${each.description}`,
+              }
+            : each,
+        ),
       );
 
       return previous;

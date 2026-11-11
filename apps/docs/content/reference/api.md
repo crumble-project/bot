@@ -69,6 +69,25 @@ The token reaches no other route.
 | **Password managers**    | `/v1/password-managers`, `/v1/password-managers/{id}`                                                                                                                                                                                                                           |
 | **MCP servers**          | `/v1/mcp-servers`, `/v1/mcp-servers/{id}`, `/v1/mcp-servers/{id}/oauth`, `POST /v1/mcp-servers/{id}/oauth/callback`                                                                                                                                                             |
 
+## Transcript and display fields
+
+Transcript messages expose `blocks` as an array discriminated by `type`. The
+server normalizes provider content before returning it. Image blocks contain
+metadata; use the attachment endpoint to fetch image bytes.
+
+Coding and desktop job history responses include `items`, ordered for display.
+Each item's `kind` identifies a task, reply, or tool step. Steps include a display
+label, an icon identifier, an optional subject, and their result when available.
+Render these items instead of deriving steps from provider blocks.
+
+Bot chat snapshots include `working`, which identifies the bot's current activity.
+Use this field for activity indicators instead of interpreting tool calls.
+
+Schedule responses include `description` for their timing and `timing` for the
+same text with a `Paused · ` prefix when disabled. These fields include event
+source names and use the schedule's time zone. Render them directly for saved
+automations; keep editable recurrence inputs separate.
+
 ## Event Streams
 
 Streams use Server-Sent Events:

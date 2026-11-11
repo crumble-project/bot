@@ -1,3 +1,4 @@
+import type { Working } from "./working";
 import { Context, Effect, Layer } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import type { JobKindName } from "../shared/job-kinds";
@@ -45,6 +46,7 @@ export type LearnedActivity = {
 export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
 
 export type ChatSnapshot = RuntimeSnapshot & {
+  working: Working;
   agentId: string;
   conversation: Conversation;
   error: string | null;

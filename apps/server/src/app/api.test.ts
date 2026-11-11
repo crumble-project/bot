@@ -1700,6 +1700,24 @@ describe("HTTP API for script tasks and schedules", () => {
 
     expect(schedule.status).toBe(201);
     const value = await schedule.json();
+    expect(value.description).toStartWith("Once,");
+    expect(value.timing).toBe(value.description);
+    const listed = await (await req(app, "/v1/schedules")).json();
+    expect(listed).toContainEqual(value);
+
+    const updated = await (
+      await req(app, `/v1/schedules/${value.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false }),
+      })
+    ).json();
+
+    expect(updated.description).toBe(value.description);
+    expect(updated.timing).toBe(`Paused · ${value.description}`);
+    await req(app, `/v1/schedules/${value.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: true }),
+    });
 
     const ran = await req(app, `/v1/schedules/${value.id}/run`, {
       method: "POST",

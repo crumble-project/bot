@@ -1,6 +1,5 @@
 import cronstrue from "cronstrue";
 import { hasBareWeekdayStep } from "@crumble/server/contract/cron";
-import type { EventSource } from "@/features/event-sources/api";
 import { relativeTime } from "@/lib/time";
 import type { Schedule } from "./api";
 
@@ -27,35 +26,6 @@ export function describeCron(cron: string, timezone: string) {
   } catch {
     return plain;
   }
-}
-
-export function describeTiming(schedule: Schedule, sources?: EventSource[]) {
-  if (schedule.eventSourceId) {
-    const source = sources?.find((each) => each.id === schedule.eventSourceId);
-
-    return source ? `On event · ${source.name}` : "On event";
-  }
-
-  if (schedule.cron) return describeCron(schedule.cron, schedule.timezone);
-
-  if (!schedule.runAt) return "Once";
-
-  const date = new Date(schedule.runAt);
-
-  const text = date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: schedule.timezone,
-  });
-
-  return date.getTime() < Date.now() && !schedule.nextRunAt
-    ? `Ran ${text}`
-    : `Once, ${text}`;
-}
-
-/** An automation's timing as the Mac app shows it, prefixed "Paused · " when disabled. */
-export function automationTiming(schedule: Schedule, sources?: EventSource[]) {
-  return `${schedule.enabled ? "" : "Paused · "}${describeTiming(schedule, sources)}`;
 }
 
 export function wallClock(date: Date, zone: string) {

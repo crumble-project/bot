@@ -1,3 +1,4 @@
+import { workingOf } from "./working";
 import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
@@ -106,6 +107,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       ...read,
       agentId: owner.id,
       conversation: found,
+      working: workingOf(read.status, read.partial, read.messages),
       error: latest?.status === "failed" ? latest.error : null,
     };
   });

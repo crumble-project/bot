@@ -22,7 +22,93 @@
           "content": {
             "type": "string"
           },
-          "blocks": {},
+          "blocks": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "text"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "thinking"
+                    },
+                    "thinking": {
+                      "type": "string"
+                    },
+                    "redacted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "thinking"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "image"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "mimeType"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "toolCall"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id",
+                    "name",
+                    "arguments"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            }
+          },
           "stopReason": {
             "type": "string"
           },

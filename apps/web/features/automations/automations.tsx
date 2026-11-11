@@ -46,7 +46,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BotAvatar } from "@/components/bot-avatar";
 import { ErrorAlert, ConfirmDeleteContent, Page } from "@/components/page";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import { eventSourcesQuery } from "@/features/event-sources/api";
 import { call, queryClient, send } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
@@ -63,7 +62,6 @@ import { RunsBody } from "./runs";
 import { Heading, TableFrame } from "@/components/table-frame";
 import {
   type Status,
-  describeTiming,
   finished,
   listed,
   nextRunLabel,
@@ -346,8 +344,6 @@ function AutomationName({
   creator?: Bot | undefined;
   failure?: Error | null;
 }) {
-  const sources = useQuery(eventSourcesQuery).data;
-
   return (
     <div className="flex min-w-0 items-center gap-3">
       <BotAvatar
@@ -367,10 +363,7 @@ function AutomationName({
         <span className="truncate text-muted-foreground">
           {bot.name}
           {creator && ` · by ${creator.name}`}
-          <span className="md:hidden">
-            {" "}
-            · {describeTiming(schedule, sources)}
-          </span>
+          <span className="md:hidden"> · {schedule.description}</span>
         </span>
         {failure && (
           <span className="truncate text-xs text-destructive">
@@ -461,7 +454,6 @@ function AutomationRow({
 }) {
   const actions = useAutomationActions(schedule);
   const { toggle, run, remove } = actions;
-  const sources = useQuery(eventSourcesQuery).data;
   const [deleting, setDeleting] = useState(false);
 
   return (
@@ -475,7 +467,7 @@ function AutomationRow({
         />
       </TableCell>
       <TableCell className="hidden w-1/3 max-w-0 truncate text-muted-foreground md:table-cell">
-        {describeTiming(schedule, sources)}
+        {schedule.description}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
         {nextRunLabel(schedule, now)}

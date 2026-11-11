@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Schedule } from "./api";
-import { describeTiming, finished } from "./timing";
+import { finished } from "./timing";
 
 const eventAutomation: Schedule = {
   id: "schedule/2",
@@ -17,16 +17,12 @@ const eventAutomation: Schedule = {
   eventSourceId: "source-1",
   enabled: true,
   nextRunAt: null,
+  description: "On event · GitHub",
+  timing: "On event · GitHub",
   createdAt: "2026-11-01T00:00:00.000Z",
   createdByAgentId: null,
 };
 
-test("an event automation names its source and never counts as finished", () => {
-  expect(
-    describeTiming(eventAutomation, [
-      { id: "source-1", name: "GitHub", createdAt: "", usedBy: 1 },
-    ]),
-  ).toBe("On event · GitHub");
-  expect(describeTiming(eventAutomation)).toBe("On event");
+test("an event automation never counts as finished", () => {
   expect(finished(eventAutomation)).toBe(false);
 });

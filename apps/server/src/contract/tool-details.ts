@@ -3,25 +3,6 @@ import { botRequestResponse } from "./api-responses";
 import type { ChartLayout } from "./chart";
 import { webSource } from "./web-search";
 
-// What tools store as details and blocks. The wire leaves those `unknown`, so these never reach the OpenAPI document.
-
-const optionalText = z.string().optional().catch(undefined);
-
-export const contentBlocks = z.array(
-  z.looseObject({
-    type: z.string().optional(),
-    text: z.string().optional(),
-    id: z.string().optional(),
-    name: z.string().optional(),
-    arguments: z
-      .looseObject({ command: optionalText, path: optionalText })
-      .optional()
-      .catch(undefined),
-  }),
-);
-
-export type ContentBlock = z.infer<typeof contentBlocks>[number];
-
 /** Pi Durable's usage document, as far as clients sum its cost. */
 export const usageDocument = z.looseObject({
   models: z

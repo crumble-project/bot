@@ -1308,6 +1308,19 @@
                   "failed"
                 ]
               },
+              "working": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "thinking",
+                  "writing",
+                  "searching",
+                  "remembering",
+                  "tinkering",
+                  "struggling",
+                  "failed"
+                ]
+              },
               "updatedAt": {
                 "type": "number"
               },
@@ -1324,6 +1337,7 @@
               "conversation",
               "partial",
               "status",
+              "working",
               "updatedAt",
               "error"
             ]
@@ -1349,7 +1363,95 @@
             "type": "string"
           },
           "blocks": {
-            "description": "Provider content blocks, with inline image bytes removed."
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "thinking"
+                      ]
+                    },
+                    "thinking": {
+                      "type": "string"
+                    },
+                    "redacted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "thinking"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "image"
+                      ]
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "mimeType"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "toolCall"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id",
+                    "name",
+                    "arguments"
+                  ]
+                }
+              ]
+            }
           },
           "stopReason": {
             "type": "string"
@@ -1719,6 +1821,115 @@
           "name",
           "conversationId",
           "status"
+        ]
+      },
+      "JobHistoryPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TranscriptPage"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "task"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "reply"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "step"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "tool": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "icon": {
+                          "type": "string",
+                          "enum": [
+                            "terminal",
+                            "file",
+                            "pencil",
+                            "pointer",
+                            "tool"
+                          ]
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "$ref": "#/components/schemas/TranscriptMessage"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "tool",
+                        "label",
+                        "icon"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          }
         ]
       },
       "DesktopJobs": {
@@ -3534,6 +3745,12 @@
               "null"
             ]
           },
+          "description": {
+            "type": "string"
+          },
+          "timing": {
+            "type": "string"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -3559,6 +3776,8 @@
           "eventSourceId",
           "enabled",
           "nextRunAt",
+          "description",
+          "timing",
           "createdAt",
           "createdByAgentId"
         ]
@@ -13779,7 +13998,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TranscriptPage"
+                  "$ref": "#/components/schemas/JobHistoryPage"
                 }
               }
             }
@@ -14651,7 +14870,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TranscriptPage"
+                  "$ref": "#/components/schemas/JobHistoryPage"
                 }
               }
             }

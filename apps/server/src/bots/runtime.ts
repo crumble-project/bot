@@ -1,3 +1,4 @@
+import { projectJobPage } from "./job-history";
 import {
   BOT_MESSAGE_ENTRY,
   CALL_ENTRY,
@@ -1020,7 +1021,7 @@ export class AgentRuntime {
         message: `${jobKindTitle(JOB_KINDS[kind])} not found`,
       });
 
-    return this.visible(
+    const page = await this.visible(
       harness,
       options,
       () =>
@@ -1031,6 +1032,19 @@ export class AgentRuntime {
           options,
         ),
       false,
+    );
+
+    return projectJobPage(page, options.before, (before) =>
+      this.visible(
+        harness,
+        {},
+        () =>
+          readConversationTranscript(harness, agent.id, job.conversationId, {
+            limit: 200,
+            before,
+          }),
+        false,
+      ),
     );
   }
 

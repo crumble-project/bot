@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { JsonValue } from "@earendil-works/chord";
 import { latestMessagePreview, readTranscript } from "./transcript";
 import type { Cursor, Harness } from "@earendil-works/pi-durable";
 
@@ -15,7 +16,7 @@ type FakeEntry = {
   id: number;
   conversationId: number;
   kind: string;
-  model?: { role: string; content: string }[];
+  model?: { role: string; content: string | Record<string, JsonValue>[] }[];
   data?:
     | { content?: string; communication?: FakeCommunication }
     | Record<string, string | number>;
@@ -57,6 +58,54 @@ const user = (id: number, text: string, kind = "pi.user") => ({
 });
 
 describe("durable transcript helpers", () => {
+  test("normalizes provider blocks and removes private fields", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          id: 2,
+          conversationId: 1,
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [
+                { type: "text", text: "hello", textSignature: "private" },
+                {
+                  type: "thinking",
+                  thinking: "hmm",
+                  thinkingSignature: "private",
+                },
+                { type: "image", mimeType: "image/png", data: "secret" },
+                {
+                  type: "toolCall",
+                  id: "call",
+                  name: "bash",
+                  arguments: { command: "pwd" },
+                  thoughtSignature: "private",
+                },
+              ],
+            },
+          ],
+        },
+        user(1, "task"),
+      ]),
+      "a",
+    );
+
+    expect(page.messages[0]?.blocks).toEqual([{ type: "text", text: "task" }]);
+    expect(page.messages[1]?.blocks).toEqual([
+      { type: "text", text: "hello" },
+      { type: "thinking", thinking: "hmm" },
+      { type: "image", mimeType: "image/png" },
+      {
+        type: "toolCall",
+        id: "call",
+        name: "bash",
+        arguments: { command: "pwd" },
+      },
+    ]);
+  });
+
   test("chooses the latest visible text and skips structural output", () => {
     expect(
       latestMessagePreview([

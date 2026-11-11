@@ -4,6 +4,8 @@ import { eventSchemas } from "./api-responses";
 
 type ContractArtifacts = Record<string, string>;
 
+const stringPropertyNames = z.object({ type: z.literal("string") }).strict();
+
 export function contractArtifacts() {
   const artifacts: ContractArtifacts = {};
   artifacts["openapi.json"] = `${JSON.stringify(openAPIDocument(), null, 2)}\n`;
@@ -15,6 +17,9 @@ export function contractArtifacts() {
       target: "draft-2020-12",
       io: "output",
       override: ({ jsonSchema }) => {
+        if (stringPropertyNames.safeParse(jsonSchema.propertyNames).success)
+          delete jsonSchema.propertyNames;
+
         if (
           jsonSchema.type === "object" &&
           jsonSchema.additionalProperties === false

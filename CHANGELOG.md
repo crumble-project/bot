@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Transcript blocks have a typed API contract. The server projects job steps, bot working states, and automation timing descriptions for the web, Android, and Apple clients.
+
 ## 0.7.0
 
 - Signing in to the web app returns to the page that asked for it, such as a settings page the native apps open, instead of the home page. Only paths on the same site are followed.

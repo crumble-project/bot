@@ -56,7 +56,10 @@ import {
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
 import type { WaitingFor } from "../contract/reply-event";
-import type { BotCommunication } from "../contract/api-responses";
+import {
+  transcriptBlock,
+  type BotCommunication,
+} from "../contract/api-responses";
 import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import { JOB_FAILURE_EVENT } from "../contract/tools";
@@ -89,7 +92,7 @@ export type TranscriptMessage = {
   requestId?: string | undefined;
   role: string;
   content: string;
-  blocks?: unknown;
+  blocks?: z.infer<typeof transcriptBlock>[];
   stopReason?: string;
   timestamp?: number | undefined;
   kind?: string;
@@ -325,14 +328,16 @@ function attachmentsOf(value: JsonValue | undefined): AttachmentInfo[] {
 }
 
 /** Image bytes stay out of snapshots and pages; clients fetch them by attachment index instead. */
-function withoutImageData(content: ModelContent) {
-  if (!Array.isArray(content)) return content;
+function withoutImageData(
+  content: ModelContent,
+): z.infer<typeof transcriptBlock>[] {
+  if (!Array.isArray(content)) return [{ type: "text", text: content }];
 
-  return content.map((block) =>
-    block?.type === "image"
-      ? { type: "image", mimeType: block.mimeType }
-      : block,
-  );
+  return content.flatMap((block) => {
+    const parsed = transcriptBlock.safeParse(block);
+
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function normalizeBoundary(

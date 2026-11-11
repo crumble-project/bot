@@ -193,6 +193,22 @@ const attachment = z
   })
   .openapi("AttachmentInfo");
 
+export const transcriptBlock = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("thinking"),
+    thinking: z.string(),
+    redacted: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("image"), mimeType: z.string() }),
+  z.object({
+    type: z.literal("toolCall"),
+    id: z.string(),
+    name: z.string(),
+    arguments: z.record(z.string(), z.unknown()),
+  }),
+]);
+
 const message = z
   .object({
     id: z.string(),
@@ -200,9 +216,7 @@ const message = z
     requestId: z.string().optional(),
     role: z.string(),
     content: z.string(),
-    blocks: z.unknown().optional().openapi({
-      description: "Provider content blocks, with inline image bytes removed.",
-    }),
+    blocks: z.array(transcriptBlock).optional(),
     stopReason: z.string().optional(),
     timestamp: z.number().optional(),
     kind: z.string().optional().openapi({
@@ -274,6 +288,30 @@ export const historyResponse = z
     oldestEntryId: z.string().nullable(),
   })
   .openapi("TranscriptPage");
+
+export const jobHistoryResponse = historyResponse
+  .extend({
+    items: z.array(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("task"), id: z.string(), text: z.string() }),
+        z.object({
+          kind: z.literal("reply"),
+          id: z.string(),
+          text: z.string(),
+        }),
+        z.object({
+          kind: z.literal("step"),
+          id: z.string(),
+          tool: z.string(),
+          label: z.string(),
+          icon: z.enum(["terminal", "file", "pencil", "pointer", "tool"]),
+          subject: z.string().optional(),
+          result: message.optional(),
+        }),
+      ]),
+    ),
+  })
+  .openapi("JobHistoryPage");
 
 const jobsResponse = (kind: "Coding" | "Desktop") =>
   z
@@ -377,6 +415,16 @@ export const chatSnapshotResponse = historyResponse
       .optional()
       .openapi({ description: "Pi Durable usage document." }),
     status: z.enum(["idle", "running", "failed"]),
+    working: z.enum([
+      "idle",
+      "thinking",
+      "writing",
+      "searching",
+      "remembering",
+      "tinkering",
+      "struggling",
+      "failed",
+    ]),
     updatedAt: z.number(),
     error: z.string().nullable(),
   })
@@ -851,6 +899,8 @@ export const scheduleResponse = z
     }),
     enabled: z.boolean(),
     nextRunAt: z.string().nullable(),
+    description: z.string(),
+    timing: z.string(),
     createdAt: z.string(),
     createdByAgentId: z.string().nullable(),
   })
