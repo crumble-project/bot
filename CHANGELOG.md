@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- OpenAPI exposes reusable transcript block and job item schemas so native clients can use generated types directly across HTTP and event responses.
 - Transcript blocks have a typed API contract. The server projects job steps, bot working states, and automation timing descriptions for the web, Android, and Apple clients.
 
 ## 0.7.0

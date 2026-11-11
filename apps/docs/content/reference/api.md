@@ -75,6 +75,11 @@ Transcript messages expose `blocks` as an array discriminated by `type`. The
 server normalizes provider content before returning it. Image blocks contain
 metadata; use the attachment endpoint to fetch image bytes.
 
+`TranscriptBlock` and `JobHistoryItem` are named OpenAPI schemas with named
+variants. Event schemas reference the same block definitions through `$defs`.
+Client generators reuse these names across HTTP and event responses. Use the
+generated types directly, adding presentation helpers and local UI state where needed.
+
 Coding and desktop job history responses include `items`, ordered for display.
 Each item's `kind` identifies a task, reply, or tool step. Steps include a display
 label, an icon identifier, an optional subject, and their result when available.

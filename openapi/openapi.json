@@ -1365,92 +1365,7 @@
           "blocks": {
             "type": "array",
             "items": {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "text"
-                      ]
-                    },
-                    "text": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "text"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "thinking"
-                      ]
-                    },
-                    "thinking": {
-                      "type": "string"
-                    },
-                    "redacted": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "thinking"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "image"
-                      ]
-                    },
-                    "mimeType": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "mimeType"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "toolCall"
-                      ]
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "arguments": {
-                      "type": "object",
-                      "additionalProperties": {}
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "id",
-                    "name",
-                    "arguments"
-                  ]
-                }
-              ]
+              "$ref": "#/components/schemas/TranscriptBlock"
             }
           },
           "stopReason": {
@@ -1588,6 +1503,115 @@
           "entryId",
           "role",
           "content"
+        ]
+      },
+      "TranscriptBlock": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TranscriptTextBlock"
+          },
+          {
+            "$ref": "#/components/schemas/TranscriptThinkingBlock"
+          },
+          {
+            "$ref": "#/components/schemas/TranscriptImageBlock"
+          },
+          {
+            "$ref": "#/components/schemas/TranscriptToolCallBlock"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "text": "#/components/schemas/TranscriptTextBlock",
+            "thinking": "#/components/schemas/TranscriptThinkingBlock",
+            "image": "#/components/schemas/TranscriptImageBlock",
+            "toolCall": "#/components/schemas/TranscriptToolCallBlock"
+          }
+        }
+      },
+      "TranscriptTextBlock": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "text"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ]
+      },
+      "TranscriptThinkingBlock": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thinking"
+            ]
+          },
+          "thinking": {
+            "type": "string"
+          },
+          "redacted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "thinking"
+        ]
+      },
+      "TranscriptImageBlock": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "image"
+            ]
+          },
+          "mimeType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "mimeType"
+        ]
+      },
+      "TranscriptToolCallBlock": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "toolCall"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "arguments"
         ]
       },
       "MessageOrigin": {
@@ -1834,95 +1858,7 @@
               "items": {
                 "type": "array",
                 "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "task"
-                          ]
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "text": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "id",
-                        "text"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "reply"
-                          ]
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "text": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "id",
-                        "text"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "step"
-                          ]
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "tool": {
-                          "type": "string"
-                        },
-                        "label": {
-                          "type": "string"
-                        },
-                        "icon": {
-                          "type": "string",
-                          "enum": [
-                            "terminal",
-                            "file",
-                            "pencil",
-                            "pointer",
-                            "tool"
-                          ]
-                        },
-                        "subject": {
-                          "type": "string"
-                        },
-                        "result": {
-                          "$ref": "#/components/schemas/TranscriptMessage"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "id",
-                        "tool",
-                        "label",
-                        "icon"
-                      ]
-                    }
-                  ]
+                  "$ref": "#/components/schemas/JobHistoryItem"
                 }
               }
             },
@@ -1930,6 +1866,114 @@
               "items"
             ]
           }
+        ]
+      },
+      "JobHistoryItem": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/JobTaskItem"
+          },
+          {
+            "$ref": "#/components/schemas/JobReplyItem"
+          },
+          {
+            "$ref": "#/components/schemas/JobStepItem"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "task": "#/components/schemas/JobTaskItem",
+            "reply": "#/components/schemas/JobReplyItem",
+            "step": "#/components/schemas/JobStepItem"
+          }
+        }
+      },
+      "JobTaskItem": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "text"
+        ]
+      },
+      "JobReplyItem": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reply"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "text"
+        ]
+      },
+      "JobStepItem": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "step"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "enum": [
+              "terminal",
+              "file",
+              "pencil",
+              "pointer",
+              "tool"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/TranscriptMessage"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "tool",
+          "label",
+          "icon"
         ]
       },
       "DesktopJobs": {

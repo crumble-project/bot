@@ -193,21 +193,36 @@ const attachment = z
   })
   .openapi("AttachmentInfo");
 
-export const transcriptBlock = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string() }),
-  z.object({
-    type: z.literal("thinking"),
-    thinking: z.string(),
-    redacted: z.boolean().optional(),
-  }),
-  z.object({ type: z.literal("image"), mimeType: z.string() }),
-  z.object({
-    type: z.literal("toolCall"),
-    id: z.string(),
-    name: z.string(),
-    arguments: z.record(z.string(), z.unknown()),
-  }),
-]);
+export const transcriptBlock = z
+  .discriminatedUnion("type", [
+    z
+      .object({ type: z.literal("text"), text: z.string() })
+      .openapi("TranscriptTextBlock")
+      .register(z.globalRegistry, { id: "TranscriptTextBlock" }),
+    z
+      .object({
+        type: z.literal("thinking"),
+        thinking: z.string(),
+        redacted: z.boolean().optional(),
+      })
+      .openapi("TranscriptThinkingBlock")
+      .register(z.globalRegistry, { id: "TranscriptThinkingBlock" }),
+    z
+      .object({ type: z.literal("image"), mimeType: z.string() })
+      .openapi("TranscriptImageBlock")
+      .register(z.globalRegistry, { id: "TranscriptImageBlock" }),
+    z
+      .object({
+        type: z.literal("toolCall"),
+        id: z.string(),
+        name: z.string(),
+        arguments: z.record(z.string(), z.unknown()),
+      })
+      .openapi("TranscriptToolCallBlock")
+      .register(z.globalRegistry, { id: "TranscriptToolCallBlock" }),
+  ])
+  .openapi("TranscriptBlock")
+  .register(z.globalRegistry, { id: "TranscriptBlock" });
 
 const message = z
   .object({
@@ -289,28 +304,34 @@ export const historyResponse = z
   })
   .openapi("TranscriptPage");
 
+export const jobHistoryItem = z
+  .discriminatedUnion("kind", [
+    z
+      .object({ kind: z.literal("task"), id: z.string(), text: z.string() })
+      .openapi("JobTaskItem")
+      .register(z.globalRegistry, { id: "JobTaskItem" }),
+    z
+      .object({ kind: z.literal("reply"), id: z.string(), text: z.string() })
+      .openapi("JobReplyItem")
+      .register(z.globalRegistry, { id: "JobReplyItem" }),
+    z
+      .object({
+        kind: z.literal("step"),
+        id: z.string(),
+        tool: z.string(),
+        label: z.string(),
+        icon: z.enum(["terminal", "file", "pencil", "pointer", "tool"]),
+        subject: z.string().optional(),
+        result: message.optional(),
+      })
+      .openapi("JobStepItem")
+      .register(z.globalRegistry, { id: "JobStepItem" }),
+  ])
+  .openapi("JobHistoryItem")
+  .register(z.globalRegistry, { id: "JobHistoryItem" });
+
 export const jobHistoryResponse = historyResponse
-  .extend({
-    items: z.array(
-      z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("task"), id: z.string(), text: z.string() }),
-        z.object({
-          kind: z.literal("reply"),
-          id: z.string(),
-          text: z.string(),
-        }),
-        z.object({
-          kind: z.literal("step"),
-          id: z.string(),
-          tool: z.string(),
-          label: z.string(),
-          icon: z.enum(["terminal", "file", "pencil", "pointer", "tool"]),
-          subject: z.string().optional(),
-          result: message.optional(),
-        }),
-      ]),
-    ),
-  })
+  .extend({ items: z.array(jobHistoryItem) })
   .openapi("JobHistoryPage");
 
 const jobsResponse = (kind: "Coding" | "Desktop") =>
