@@ -1,4 +1,4 @@
-export type NoticeKind = "credential" | "login";
+export type NoticeKind = "credential" | "login" | "files";
 
 export const scheduleRequest = (scheduleId: string, due: string) =>
   `schedule:${scheduleId}:${due}`;
@@ -118,6 +118,7 @@ export function parseRequestId(requestId: string): ParsedRequest {
       return { kind: "delegate", sourceAgentId: subject, taskId: detail };
     case "job-question":
       return { kind: "job-question", assigneeId: subject, questionId: detail };
+    case "files":
     case "credential":
     case "login":
       return { kind: "notice", notice: prefix, name: subject, id: detail };

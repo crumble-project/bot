@@ -28,6 +28,8 @@ import { ScheduleRepository } from "../automations/schedule-repository";
 import { scheduleInput } from "../contract/schedules";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 import { until } from "../../test/support/until";
+import { ProductDatabase } from "../shared/product-database";
+import { executions } from "../bot-store/schema.executions";
 
 const dirs: string[] = [];
 const testLibraries = new WeakMap<AgentRuntime, Library["Service"]>();
@@ -305,6 +307,160 @@ const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
 const notes = Buffer.from("Buy oat milk").toString("base64");
+
+describe("legacy execution recovery", () => {
+  const legacy = [{ name: "dot.png", mimeType: "image/png", data: png }];
+  const notice =
+    "Files sent just before the update didn't arrive. Send them again.";
+
+  function pending(
+    store: Store,
+    agentId: string,
+    conversationId: string,
+    requestId: string,
+    attachments: string | null,
+  ) {
+    const id = crypto.randomUUID();
+    const at = new Date().toISOString();
+    store.run(
+      Effect.gen(function* () {
+        const db = yield* ProductDatabase;
+        yield* db.insert(executions).values({
+          id,
+          agentId,
+          conversationId,
+          requestId,
+          prompt: "look",
+          status: "pending",
+          attachments,
+          createdAt: at,
+          updatedAt: at,
+        });
+      }).pipe(Effect.orDie),
+    );
+    return id;
+  }
+
+  test("continues a Pi-committed legacy submission without another turn or notice", async () => {
+    const seen: unknown[] = [];
+    const { service, store, agent } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+        return fauxAssistantMessage("original answer");
+      },
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+        return fauxAssistantMessage("unexpected");
+      },
+    ]);
+    const chat = await service.chat(agent.id);
+    const requestId = uuid(41);
+    const original = await service.runtime.submit(
+      agent,
+      chat.id,
+      "look",
+      requestId,
+      {
+        input: {
+          modelContent: `[message ${requestId}]\nlook`,
+          data: {
+            text: "look",
+            attachments: [
+              {
+                name: "dot.png",
+                mimeType: "image/png",
+                size: 70,
+                kind: "image",
+              },
+            ],
+          },
+        },
+        origin: { kind: "owner" },
+        attachments: legacy,
+      },
+    );
+    await service.runtime.wait(original, agent);
+    const id = pending(
+      store,
+      agent.id,
+      chat.id,
+      requestId,
+      JSON.stringify(legacy),
+    );
+    expect(store.executionAttachments(id).kind).toBe("legacy");
+    await service.recover();
+    expect(await settle(service, id)).toBe("done");
+    expect(store.getExecution(id)?.submissionId).toBe(original);
+    expect(seen).toHaveLength(1);
+    const messages = (await service.chatSnapshot(agent.id)).messages;
+    expect(messages.filter((message) => message.role === "user")).toHaveLength(
+      1,
+    );
+    expect(messages.some((message) => message.content === notice)).toBe(false);
+    await service.close();
+  });
+
+  test("delivers unseen legacy input text-only with deleted files and a notice", async () => {
+    const seen: unknown[] = [];
+    const { service, store, agent } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+        return fauxAssistantMessage("received");
+      },
+    ]);
+    const chat = await service.chat(agent.id);
+    const id = pending(
+      store,
+      agent.id,
+      chat.id,
+      uuid(42),
+      JSON.stringify(legacy),
+    );
+    expect(store.executionAttachments(id).kind).toBe("legacy");
+    await service.recover();
+    expect(await settle(service, id)).toBe("done");
+    expect(seen).toHaveLength(1);
+    expect(typeof seen[0]).toBe("string");
+    expect(JSON.stringify(seen).toLowerCase()).toContain("file");
+    expect(seen[0]).not.toBe(`[message ${uuid(42)}]\nlook`);
+    await until(async () =>
+      (await service.chatSnapshot(agent.id)).messages.some(
+        (message) => message.content === notice,
+      ),
+    );
+    const messages = (await service.chatSnapshot(agent.id)).messages;
+    const user = messages.find((message) => message.requestId === uuid(42));
+    expect(user?.content).toBe("look");
+    expect(user?.files).toHaveLength(1);
+    expect(user?.files?.[0]).toMatchObject({ deleted: true });
+    expect(JSON.stringify(seen)).not.toContain(png);
+    expect(
+      messages.filter((message) => message.content === notice),
+    ).toHaveLength(1);
+    await service.close();
+  });
+
+  test("delivers a pending execution without attachments normally", async () => {
+    const seen: unknown[] = [];
+    const { service, store, agent } = setup([
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+        return fauxAssistantMessage("received");
+      },
+    ]);
+    const chat = await service.chat(agent.id);
+    const id = pending(store, agent.id, chat.id, uuid(43), null);
+    await service.recover();
+    expect(await settle(service, id)).toBe("done");
+    expect(seen).toEqual([`[message ${uuid(43)}]\nlook`]);
+    const messages = (await service.chatSnapshot(agent.id)).messages;
+    expect(
+      messages.find((message) => message.requestId === uuid(43))?.files ?? [],
+    ).toEqual([]);
+    expect(messages.some((message) => message.content === notice)).toBe(false);
+    await service.close();
+  });
+});
 
 describe("activity", () => {
   test("announces each finished reply with the start of its text", async () => {

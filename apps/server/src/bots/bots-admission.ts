@@ -6,7 +6,7 @@ import { errorText } from "../shared/errors";
 import { parseRequestId } from "../shared/request-ids";
 import type { InputOrigin } from "../transcript/origins";
 import { frameInput } from "./input-framing";
-import { isGroupTurn, type BotsContext } from "./bots-context";
+import { isChatTurn, isGroupTurn, type BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 
@@ -18,6 +18,7 @@ type AdmissionDeps = {
     execution: Execution,
     submissionId: string,
     owner: Agent,
+    legacy?: boolean,
   ) => Effect.Effect<void>;
 };
 
@@ -47,10 +48,13 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     execution: Execution,
     owner: Agent,
   ) {
-    if (execution.submissionId) return execution.submissionId;
+    const attachments = yield* executions.attachments(execution.id);
+    const legacy = attachments.kind === "legacy" && isChatTurn(execution);
+
+    if (execution.submissionId)
+      return { submissionId: execution.submissionId, legacy };
 
     const origin = yield* deps.origin(execution);
-    const attachments = yield* executions.attachments(execution.id);
 
     const files =
       attachments.kind === "files" && attachments.ids.length
@@ -75,14 +79,29 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       { event, call },
     );
 
-    return yield* pi(() =>
+    const submissionId = yield* pi(() =>
       runtime.submit(
         owner,
         execution.conversationId,
         execution.prompt,
         execution.requestId,
         {
-          input: { ...prepared, modelContent },
+          input: legacy
+            ? {
+                ...prepared,
+                data: {
+                  ...prepared.data,
+                  files:
+                    attachments.kind === "legacy"
+                      ? attachments.attachments.map((_, index) => ({
+                          id: `legacy:${execution.id}:${index}`,
+                          deleted: true,
+                        }))
+                      : [],
+                },
+                modelContent: `${modelContent}\n\nFiles attached before the update didn't survive. Ask the owner to send them again if you need them.`,
+              }
+            : { ...prepared, modelContent },
           origin,
           files,
           attachments:
@@ -92,6 +111,8 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
         },
       ),
     );
+
+    return { submissionId, legacy };
   });
 
   const cancelled = Effect.fnUntraced(function* (
@@ -112,7 +133,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
 
   const run = (execution: Execution, owner: Agent) =>
     Effect.gen(function* () {
-      const submissionId = yield* submit(execution, owner);
+      const { submissionId, legacy } = yield* submit(execution, owner);
 
       yield* executions.update(execution.id, {
         submissionId,
@@ -122,7 +143,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       yield* FiberMap.run(
         monitors,
         execution.id,
-        deps.monitor(execution, submissionId, owner),
+        deps.monitor(execution, submissionId, owner, legacy),
         { onlyIfMissing: true },
       );
     }).pipe(Effect.onError((cause) => failed(execution, cause)));

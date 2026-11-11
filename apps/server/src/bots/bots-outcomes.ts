@@ -1,3 +1,6 @@
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { EntryId } from "@earendil-works/pi-durable";
+import { noticeRequest } from "../shared/request-ids";
 import { errorText } from "../shared/errors";
 import { logged } from "../shared/app-errors";
 import { Effect, Predicate, Result } from "effect";
@@ -25,7 +28,7 @@ const outcomeError = (result: SubmissionOutcome) =>
       : "The agent could not answer this input";
 
 export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
-  const { runtime, scope } = context;
+  const { runtime, scope, notices } = context;
   const { settle } = deps.notifications;
   const { announceReply } = deps.announcements;
 
@@ -48,10 +51,49 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
       );
   });
 
+  const upgradeNotice = Effect.fnUntraced(function* (
+    execution: Execution,
+    submissionId: string,
+    owner: Agent,
+  ) {
+    const turn = yield* Effect.promise(() =>
+      runtime.settledTurn(owner, execution.conversationId, submissionId),
+    );
+
+    if (!turn) return;
+
+    // SAFETY: settledTurn returns the durable input entry ID supplied by Pi.
+    const page = yield* Effect.promise(() =>
+      turn.conversation.entries(
+        { order: "ascending", minEntryId: turn.entry as EntryId },
+        1,
+        undefined,
+        BACKGROUND_CONTEXT,
+      ),
+    );
+
+    const input = page.items[0];
+
+    if (!input || Number(input.id) !== turn.entry) return;
+
+    if (
+      Predicate.hasProperty(input.data, "attachments") &&
+      Array.isArray(input.data.attachments) &&
+      input.data.attachments.length
+    )
+      return;
+    yield* notices.notice(
+      execution.agentId,
+      "Files sent just before the update didn't arrive. Send them again.",
+      noticeRequest("files", "upgrade", execution.id),
+    );
+  });
+
   return Effect.fnUntraced(function* (
     execution: Execution,
     submissionId: string,
     owner: Agent,
+    legacy = false,
   ) {
     const outcome = yield* Effect.result(
       Effect.tryPromise({
@@ -65,5 +107,10 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
         ? recordFailure(execution, outcome.failure)
         : recordOutcome(execution, outcome.success),
     );
+
+    if (legacy && Result.isSuccess(outcome))
+      yield* upgradeNotice(execution, submissionId, owner).pipe(
+        logged("File upgrade notice failed", execution.id),
+      );
   });
 };

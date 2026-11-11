@@ -18,6 +18,7 @@ export type InputOrigin =
   | { kind: "script"; name: string }
   | { kind: "bot"; agentId: string; name: string }
   | { kind: "credential"; name: string }
+  | { kind: "files" }
   | { kind: "bot_request" }
   | { kind: "review" }
   | { kind: "call" }
@@ -47,6 +48,7 @@ const REQUEST_SOURCES: Record<
   script: undefined,
   bot: undefined,
   credential: undefined,
+  files: undefined,
   bot_request: undefined,
   review: undefined,
   call: undefined,
@@ -74,6 +76,7 @@ export type TurnSource =
   | { kind: "script"; scheduleId: string }
   // Origins document no login kind, and clients label a login like a credential.
   | { kind: "credential"; name: string }
+  | { kind: "files" }
   | { kind: "bot_request" }
   | { kind: "call" }
   | { kind: "callee" }
@@ -100,7 +103,9 @@ export function turnSource({
     case "script":
       return { kind: "script", scheduleId: request.scheduleId };
     case "notice":
-      return { kind: "credential", name: request.name };
+      return request.notice === "files"
+        ? { kind: "files" }
+        : { kind: "credential", name: request.name };
     case "bot-request":
       return { kind: "bot_request" };
     case "gateway":
