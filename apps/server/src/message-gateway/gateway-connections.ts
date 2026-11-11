@@ -352,7 +352,8 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     states.get(adapterId)!.connection === connection &&
     !reconfiguring.has(adapterId);
 
-  const reconfigure = (id: string, save: Effect.Effect<void>) =>
+  /** Stops the adapter's connection and workers, then stores `next`; the next reconcile connects with it. */
+  const reconfigure = (id: string, next: GatewayConfig) =>
     Semaphore.withPermit(
       configurationChanges,
       Effect.gen(function* () {
@@ -361,7 +362,7 @@ export const gatewayConnections = Effect.fnUntraced(function* (
 
         yield* stop(state);
         yield* hooks.cancelWorkers(id);
-        yield* save;
+        yield* settings.set(configKey(id), next);
         state.error = null;
       }).pipe(
         Effect.ensuring(

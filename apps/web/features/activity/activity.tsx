@@ -16,7 +16,6 @@ import {
   IconTool,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +41,7 @@ import { api, queryClient } from "@/lib/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { StateDiff } from "@/components/state-diff";
 import { RevertChange, changeSummary, changeTitle } from "./changes";
-import { FilterPills, Page } from "@/components/page";
+import { ErrorAlert, FilterPills, Page } from "@/components/page";
 import { activityKey } from "./api";
 import { ALL } from "@/features/bots/queries";
 import { activityDetails } from "@crumble/server/contract/activity-details";
@@ -325,12 +324,7 @@ function ActivityBody({
 
   if (feed.isPending) return <Skeleton className="h-40 rounded-xl" />;
 
-  if (feed.isError)
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>{feed.error.message}</AlertDescription>
-      </Alert>
-    );
+  if (feed.isError) return <ErrorAlert>{feed.error.message}</ErrorAlert>;
 
   if (activities.length === 0 && !feed.hasNextPage)
     return <ActivityEmpty kind={kind} />;

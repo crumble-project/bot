@@ -1,7 +1,11 @@
 import { Effect, FiberMap, type Scope } from "effect";
 import { parseRequestId } from "../shared/request-ids";
 import type { Execution } from "../shared/domain";
-import { keyedListeners, keyedLocks } from "../shared/keyed";
+import {
+  keyedListeners,
+  keyedLocks,
+  type KeyedListeners,
+} from "../shared/keyed";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { EventRepository } from "../event-sources/event-repository";
@@ -37,7 +41,7 @@ export type BotsContext = {
   readonly callNotes: CallNotes["Service"];
   readonly deletion: BotDeletion["Service"];
   readonly scope: Scope.Scope;
-  readonly listeners: ReturnType<typeof keyedListeners>;
+  readonly listeners: KeyedListeners;
   readonly activityListeners: Set<(event: Activity) => void>;
   readonly settledListeners: Set<
     (execution: Execution) => void | Promise<void>

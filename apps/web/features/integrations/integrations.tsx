@@ -7,7 +7,6 @@ import {
   IconPlug,
   IconTrash,
 } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +44,7 @@ import {
   Section,
   SectionEmpty,
   Page,
+  ErrorAlert,
 } from "@/components/page";
 import { BotAvatar } from "@/components/bot-avatar";
 import { SHARED, ownerItems } from "@/features/bots/queries";
@@ -167,9 +167,7 @@ export function IntegrationsPage() {
       {servers.isPending || bots.isPending ? (
         <Skeleton className="h-40" />
       ) : servers.isError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{servers.error.message}</AlertDescription>
-        </Alert>
+        <ErrorAlert>{servers.error.message}</ErrorAlert>
       ) : (
         <IntegrationSections
           shared={list.filter((server) => server.agentId === null)}

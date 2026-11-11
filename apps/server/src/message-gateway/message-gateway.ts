@@ -13,7 +13,6 @@ import {
   type AppError,
   errorText,
 } from "../shared/errors";
-import { SettingsRepository } from "../shared/settings-repository";
 import { pruneHourly, startTicking } from "../shared/ticker";
 import type { GatewayMessage } from "./adapter";
 import { decodeConfig, gatewayConnections } from "./gateway-connections";
@@ -67,7 +66,6 @@ export class MessageGateway extends Context.Service<
           return yield* new InvalidInput({
             message: `Invalid message limit for ${adapter.id}`,
           });
-      const settings = yield* SettingsRepository;
       const secrets = yield* Secrets;
       const agents = yield* AgentRepository;
       const receipts = yield* GatewayRepository;
@@ -226,10 +224,7 @@ export class MessageGateway extends Context.Service<
           if (botId && !(yield* agents.get(botId)))
             return yield* new InvalidInput({ message: `Unknown bot ${botId}` });
 
-        yield* connections.reconfigure(
-          id,
-          settings.set(`message-gateway:${id}`, current),
-        );
+        yield* connections.reconfigure(id, current);
 
         return (yield* list).find((description) => description.id === id)!;
       });

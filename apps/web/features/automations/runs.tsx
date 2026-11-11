@@ -2,13 +2,13 @@ import { useState } from "react";
 import { type UseQueryResult, useQueries } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ErrorAlert } from "@/components/page";
 import {
   Empty,
   EmptyDescription,
@@ -32,7 +32,7 @@ import {
   type ScriptRun,
   scriptRunsQuery,
 } from "./api";
-import { Heading, TableFrame } from "./table-frame";
+import { Heading, TableFrame } from "@/components/table-frame";
 
 const SCRIPT_STATUS = {
   running: "Running",
@@ -275,11 +275,7 @@ export function RunsBody({
   if (executions.isPending) return <Skeleton className="h-40 rounded-xl" />;
 
   if (executions.isError)
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>{executions.error.message}</AlertDescription>
-      </Alert>
-    );
+    return <ErrorAlert>{executions.error.message}</ErrorAlert>;
 
   if (!entries.length) return <NoRuns />;
 

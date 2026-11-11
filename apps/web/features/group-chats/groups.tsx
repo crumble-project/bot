@@ -30,7 +30,7 @@ import {
   type GroupChatSnapshot,
   groupChatQuery,
   groupPath,
-  groupsQuery,
+  invalidateGroups,
   membersOf,
 } from "./api";
 import type { Message } from "@/features/chat/api";
@@ -96,8 +96,7 @@ const groupConversation = (
     sendContext: () => ({}),
     stop: () => send<"stopGroupChat">(`${path}/stop`, "POST"),
     followsAfterView: () => false,
-    refreshList: () =>
-      queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey }),
+    refreshList: invalidateGroups,
   };
 };
 
@@ -404,7 +403,7 @@ function useGroupForm(group: GroupChat | undefined) {
         : call<"createGroupChat">("/v1/group-chats", "POST", input);
     },
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
+      await invalidateGroups();
       await queryClient.invalidateQueries({
         queryKey: groupChatQuery(saved.id).queryKey,
       });
@@ -416,7 +415,7 @@ function useGroupForm(group: GroupChat | undefined) {
     mutationFn: (id: string) =>
       send<"deleteGroupChat">(groupPath(id), "DELETE"),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
+      await invalidateGroups();
       await navigate({ to: "/" });
     },
   });

@@ -4,8 +4,8 @@ import {
   useNavigate,
   type UseNavigateResult,
 } from "@tanstack/react-router";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ErrorAlert } from "@/components/page";
 import { Spinner } from "@/components/ui/spinner";
 
 type Finish = (
@@ -44,9 +44,7 @@ export function RedirectReturn({
     <div className="m-auto flex max-w-sm flex-col items-center gap-4 p-6 text-center">
       {error ? (
         <>
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <ErrorAlert>{error}</ErrorAlert>
           <Button
             variant="outline"
             render={<Link to={backTo} />}

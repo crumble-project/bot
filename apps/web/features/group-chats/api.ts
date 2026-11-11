@@ -4,7 +4,7 @@ import type {
   groupChatResponse,
   groupChatSnapshotResponse,
 } from "@crumble/server/contract/api-responses";
-import { api } from "@/lib/api";
+import { api, queryClient } from "@/lib/api";
 
 export type GroupChat = z.infer<typeof groupChatResponse>;
 
@@ -24,6 +24,9 @@ export const groupsQuery = queryOptions({
   queryKey: ["groups"],
   queryFn: ({ signal }) => api<"listGroupChats">("/v1/group-chats", { signal }),
 });
+
+export const invalidateGroups = () =>
+  queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
 
 export const groupChatQuery = (id: string) =>
   queryOptions({

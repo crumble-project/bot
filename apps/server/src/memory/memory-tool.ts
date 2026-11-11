@@ -12,6 +12,7 @@ import {
 import { groupOf } from "../group-chats/group-conversation";
 import type { Agent } from "../contract/agents";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
+import type { ChangeContext } from "../learned-changes/change-source";
 import { reviewOf } from "../learned-changes/review-conversation";
 
 export type MemoryRecord = {
@@ -22,11 +23,7 @@ export type MemoryRecord = {
   updatedAt?: string;
 };
 
-export type MemoryContext = {
-  groupId: string | null;
-  submissionIds: string[];
-  reviewOf: string | null;
-};
+export type MemoryContext = ChangeContext;
 
 export type MemoryStore = {
   listMemory: (agentId: string) => MemoryRecord[] | Promise<MemoryRecord[]>;

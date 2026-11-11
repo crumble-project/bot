@@ -267,7 +267,8 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
   kind?: FeedItem["kind"] | undefined;
 };
 
-type ActivityQueue = { items: FeedItem[]; tags: (string | null)[] };
+/** `before`: the cursor of the transcript page the item was read from, where reading resumes while it is unconsumed. */
+type Queued = { item: FeedItem; before: string | null };
 
 function oldestMessageKey(messages: TranscriptMessage[]) {
   return messages.reduce<Key | null>((min, message) => {
@@ -292,17 +293,6 @@ function isFreshActivity(
   );
 }
 
-function sortedQueue(items: FeedItem[], tags: (string | null)[]) {
-  const order = items
-    .map((item, index) => ({ item, tag: tags[index]! }))
-    .sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
-
-  return {
-    items: order.map(({ item }) => item),
-    tags: order.map(({ tag }) => tag),
-  };
-}
-
 async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
   agent: A,
   start: string | null | undefined,
@@ -310,8 +300,7 @@ async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
 ) {
   const { limit, cursor, kind } = options;
   let before = start ?? undefined;
-  const items: FeedItem[] = [];
-  const tags: (string | null)[] = [];
+  const queue: Queued[] = [];
   let page: TranscriptPage | null = null;
 
   for (let index = 0; index < HISTORY_PAGES; index++) {
@@ -321,14 +310,13 @@ async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
       isFreshActivity(item, kind, cursor),
     );
 
-    items.push(...fresh);
-    tags.push(...fresh.map(() => before ?? null));
+    for (const item of fresh) queue.push({ item, before: before ?? null });
 
-    if (!page.hasMore || !page.oldestEntryId || items.length >= limit) break;
+    if (!page.hasMore || !page.oldestEntryId || queue.length >= limit) break;
     before = page.oldestEntryId;
   }
 
-  return { items, tags, page };
+  return { queue, page };
 }
 
 async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
@@ -336,16 +324,11 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
 ) {
-  const { items, tags, page } = await readTranscriptPages(
-    agent,
-    start,
-    options,
-  );
-
+  const { queue, page } = await readTranscriptPages(agent, start, options);
   const more = Boolean(page?.hasMore && page.oldestEntryId);
   const floor = more && page ? oldestMessageKey(page.messages) : null;
 
-  const queue = sortedQueue(items, tags);
+  queue.sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
 
   return { queue, floor, next: more ? page!.oldestEntryId! : (false as const) };
 }
@@ -395,7 +378,7 @@ async function loadAgentQueues<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {
   const { cursor, kind } = options;
-  const queues: ActivityQueue[] = [];
+  const queues: Queued[][] = [];
   const hints: Cursor["h"] = {};
   const fetched: FetchedQueue[] = [];
   let floor: Key | null = null;
@@ -462,14 +445,18 @@ export async function activityPage<A extends Pick<Agent, "id" | "name">>(
   const { limit, cursor } = options;
   const { queues, hints, fetched, floor } = await loadAgentQueues(options);
   const changeQueue = changeFeedQueue(options);
-  const all = [...queues.map((queue) => queue.items), changeQueue];
+
+  const all = [
+    ...queues.map((queue) => queue.map(({ item }) => item)),
+    changeQueue,
+  ];
+
   const { heads, activities } = mergeActivityQueues(all, limit, floor);
 
   for (const { agentId, queue, next } of fetched) {
-    const head = heads[queue]!;
-    const { items, tags } = queues[queue]!;
+    const unconsumed = queues[queue]![heads[queue]!];
 
-    hints[agentId] = head < items.length ? tags[head]! : next;
+    hints[agentId] = unconsumed ? unconsumed.before : next;
   }
 
   const hasMore =

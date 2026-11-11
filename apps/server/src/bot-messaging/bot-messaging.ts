@@ -239,8 +239,8 @@ export class BotMessaging extends Context.Service<
         };
       });
 
+      /** Writes the exchange's message into the transcript of `sourceId`, the bot that sent the request. */
       const record = Effect.fnUntraced(function* (
-        transcriptAgentId: string,
         sourceId: string,
         execution: Execution,
         status: "sent" | "done" | "failed" | "cancelled",
@@ -253,7 +253,7 @@ export class BotMessaging extends Context.Service<
           status === "done" ? [target, from] : [from, target];
 
         yield* bots.recordBotMessage(
-          transcriptAgentId,
+          sourceId,
           {
             content,
             communication: {
@@ -454,7 +454,7 @@ export class BotMessaging extends Context.Service<
             sourceAgentId: from.id,
             targetAgentId: target.id,
           });
-          yield* record(from.id, from.id, execution, "sent", message);
+          yield* record(from.id, execution, "sent", message);
 
           return yield* receipt(execution);
         }),
@@ -494,7 +494,6 @@ export class BotMessaging extends Context.Service<
 
           if (status !== "pending" && status !== "running")
             yield* record(
-              sourceId,
               sourceId,
               execution,
               status,

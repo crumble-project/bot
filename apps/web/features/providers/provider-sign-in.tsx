@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { IconExternalLink } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ErrorAlert } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -115,11 +116,7 @@ export function SignInDialog({
           </DialogDescription>
         </DialogHeader>
         <LoginBody {...login} />
-        {failure && (
-          <Alert variant="destructive">
-            <AlertDescription>{failure.message}</AlertDescription>
-          </Alert>
-        )}
+        {failure && <ErrorAlert>{failure.message}</ErrorAlert>}
         <DialogFooter>
           {sessionId !== null && status === "pending" && (
             <Button
@@ -149,11 +146,9 @@ function SignInSteps({ session }: { session: ProviderSignIn }) {
 
   if (session.status !== "pending")
     return (
-      <Alert variant="destructive">
-        <AlertDescription>
-          {session.failure?.message ?? `Sign-in ${session.status}.`}
-        </AlertDescription>
-      </Alert>
+      <ErrorAlert>
+        {session.failure?.message ?? `Sign-in ${session.status}.`}
+      </ErrorAlert>
     );
 
   return (

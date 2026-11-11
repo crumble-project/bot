@@ -18,6 +18,7 @@ import {
   SIGN_IN_METHODS,
 } from "../shared/domain";
 import { agentInput, THINKING_LEVELS } from "./agents";
+import { PLUGIN_CONTRIBUTIONS } from "./plugins";
 import { loginFieldInput } from "./secrets";
 import { SCHEDULE_KINDS } from "./schedules";
 import { SKILL_STATES } from "./skills";
@@ -1042,19 +1043,10 @@ export const pluginSettingsResponse = z
     plugins: z.array(
       z.object({
         id: z.string(),
-        contributes: z
-          .array(
-            z.enum([
-              "providers",
-              "jobKinds",
-              "webSearchProviders",
-              "chatAdapters",
-            ]),
-          )
-          .openapi({
-            description:
-              "What the plugin adds to the server, so a client can show its settings where those are chosen.",
-          }),
+        contributes: z.array(z.enum(PLUGIN_CONTRIBUTIONS)).openapi({
+          description:
+            "What the plugin adds to the server, so a client can show its settings where those are chosen.",
+        }),
         settings: z.array(pluginSettingResponse),
       }),
     ),

@@ -5,7 +5,6 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import { IconBell, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,7 @@ import {
   RowMenu,
   Section,
   SectionEmpty,
+  ErrorAlert,
 } from "@/components/page";
 import type { Bot } from "@/features/bots/api";
 import { send, type RoutePath } from "@/lib/api";
@@ -437,9 +437,7 @@ export function UsesDialog<U extends SecretUse>({
         {uses.isPending ? (
           <Skeleton className="h-32" />
         ) : uses.isError ? (
-          <Alert variant="destructive">
-            <AlertDescription>{uses.error.message}</AlertDescription>
-          </Alert>
+          <ErrorAlert>{uses.error.message}</ErrorAlert>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
@@ -558,11 +556,7 @@ export function ActionFailure({
 
   if (!failed) return null;
 
-  return (
-    <Alert variant="destructive">
-      <AlertDescription>{failed.message}</AlertDescription>
-    </Alert>
-  );
+  return <ErrorAlert>{failed.message}</ErrorAlert>;
 }
 
 export function DeleteSecretDialog({

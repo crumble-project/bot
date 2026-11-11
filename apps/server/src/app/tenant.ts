@@ -3,7 +3,7 @@ import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { Effect, Layer, ManagedRuntime, type Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
-import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
+import { Bots, botsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
 import { groupConversations } from "../group-chats/group-turns";
@@ -112,8 +112,6 @@ export type TenantOptions = {
 export type TenantRuntime = {
   app: ReturnType<typeof createAPI>;
   token: string;
-  service: BotsAccess;
-  scheduler: SchedulerAccess;
   workspaces: Workspaces | undefined;
   /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
   removeWorkspaces: () => Promise<void>;
@@ -413,8 +411,6 @@ export async function createTenant(
         return {
           app,
           token,
-          service,
-          scheduler,
           workspaces,
           removeWorkspaces: () =>
             account.runPromise(removeAccountWorkspaces(workspaces)),

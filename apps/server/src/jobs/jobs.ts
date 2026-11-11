@@ -238,6 +238,9 @@ const closeTurnWork = (
 const stoppedError = (kindState: JobKindBase, name: string) =>
   `${kindState.label} ${name} was stopped`;
 
+const failedError = (kindState: JobKindBase, name: string, reason: string) =>
+  `${kindState.label} ${name} failed: ${reason}`;
+
 const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
   Object.keys(job.deliveries ?? {}).length > 0 ||
   (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
@@ -522,7 +525,7 @@ const deliveryReport = async (
   settled: SettledSubmissionRecord,
 ): Promise<JobReport | undefined> => {
   if (settled.status === "unanswered") {
-    const failure = `${kindState.label} ${name} failed: ${settled.reason}`;
+    const failure = failedError(kindState, name, settled.reason);
 
     return settled.reason === "aborted"
       ? undefined
@@ -646,7 +649,7 @@ const deliveryError = (
 
   return settled.reason === "aborted"
     ? stoppedError(kindState, name)
-    : `${kindState.label} ${name} failed: ${settled.reason}`;
+    : failedError(kindState, name, settled.reason);
 };
 
 const askedQuestion = ({

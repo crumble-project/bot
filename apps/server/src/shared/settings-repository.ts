@@ -10,7 +10,6 @@ export class SettingsRepository extends Context.Service<
     readonly get: (key: string) => Effect.Effect<JsonValue | undefined>;
     readonly set: (key: string, value: JsonValue) => Effect.Effect<void>;
     readonly delete: (key: string) => Effect.Effect<boolean>;
-    readonly list: Effect.Effect<Record<string, JsonValue>>;
   }
 >()("crumble/shared/SettingsRepository") {
   static readonly layer = Layer.effect(
@@ -54,22 +53,7 @@ export class SettingsRepository extends Context.Service<
         return deleted.length > 0;
       }, Effect.orDie);
 
-      const list = db
-        .select()
-        .from(settings)
-        .pipe(
-          Effect.map((rows) => {
-            const out: Record<string, JsonValue> = {};
-
-            for (const row of rows) out[row.key] = JSON.parse(row.value);
-
-            return out;
-          }),
-          Effect.orDie,
-          Effect.withSpan("SettingsRepository.list"),
-        );
-
-      return SettingsRepository.of({ get, set, delete: remove, list });
+      return SettingsRepository.of({ get, set, delete: remove });
     }),
   );
 }

@@ -9,6 +9,7 @@ import {
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
 import { groupOf } from "../group-chats/group-conversation";
+import type { ChangeContext } from "../learned-changes/change-source";
 import { reviewOf } from "../learned-changes/review-conversation";
 import { SKILL_TOOL_NAME } from "../contract/tools";
 
@@ -21,12 +22,7 @@ export type AvailableSkill = {
   scope: "default" | "shared" | "own";
 };
 
-export type SkillToolContext = {
-  groupId: string | null;
-  submissionIds: string[];
-  runKey: string | null;
-  reviewOf: string | null;
-};
+export type SkillToolContext = ChangeContext & { runKey: string | null };
 
 export async function skillToolContext(
   api: ToolExecutionApi,

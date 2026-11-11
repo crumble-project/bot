@@ -42,15 +42,15 @@ import {
   SectionEmpty,
   SettingRow,
 } from "@/components/page";
-import { Heading } from "@/features/automations/table-frame";
-import { type Bot, botsQuery } from "@/features/bots/api";
 import {
   AddRowButton,
-  BotSelect,
   QueryState,
   RemoveRowButton,
   SaveBar,
-} from "@/features/message-gateways/message-gateways";
+} from "@/components/config-editor";
+import { Heading } from "@/components/table-frame";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { BotSelect } from "@/features/bots/bot-select";
 import { call, queryClient, send } from "@/lib/api";
 import {
   type VoiceGateway,

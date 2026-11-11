@@ -89,6 +89,25 @@ const storedCalls = z.object({
 
 const digest = (token: string) => createHash("sha256").update(token).digest();
 
+type Keyed<K> = {
+  readonly size: number;
+  keys(): Iterable<K>;
+  delete(key: K): boolean;
+};
+
+/** Forgets the oldest keys beyond `limit`, skipping those still `inUse`. */
+const forgetOldest = <K>(
+  keyed: Keyed<K>,
+  limit: number,
+  inUse: (key: K) => boolean = () => false,
+) => {
+  for (const key of keyed.keys()) {
+    if (keyed.size <= limit) return;
+
+    if (!inUse(key)) keyed.delete(key);
+  }
+};
+
 const unavailableLines = (config: VoiceGatewayConfig, bots: Agent[]) =>
   config.lines.flatMap((line) => {
     const bot = bots.find((candidate) => candidate.id === line.botId);
@@ -149,9 +168,10 @@ type CallEnd = {
   error?: string | undefined;
 };
 
-type SettledCall =
-  | CallEnd
-  | { outcome: "unacknowledged" | "timedOut" | "revoked" };
+/** How a pending call stops ringing: the voice gateway's report, or its token going away. */
+type PendingEnd = CallEnd | { outcome: "revoked" };
+
+type SettledCall = PendingEnd | { outcome: "unacknowledged" | "timedOut" };
 
 export type VoiceCallResult =
   | SettledCall
@@ -205,7 +225,7 @@ type PendingCall = {
   started?: boolean;
   event: VoiceCallEvent;
   acknowledged: Deferred.Deferred<void>;
-  settled: Deferred.Deferred<CallEnd | { outcome: "revoked" }>;
+  settled: Deferred.Deferred<PendingEnd>;
 };
 
 /** `key` names the tool call, so running it again never dials again. */
@@ -457,22 +477,17 @@ export class VoiceGateway extends Context.Service<
         const rememberOutside = (call: OutsideCall) => {
           outside.set(call.callId, call);
           unsaved = true;
-
-          for (const id of outside.keys()) {
-            if (outside.size <= KEPT_ENDED) return;
-
-            if (!pending.has(id) && !activeCall(id)) outside.delete(id);
-          }
+          forgetOldest(
+            outside,
+            KEPT_ENDED,
+            (id) => pending.has(id) || activeCall(id) !== undefined,
+          );
         };
 
         const tombstone = (callId: string) => {
           ended.add(callId);
           unsaved = true;
-
-          for (const id of ended) {
-            if (ended.size <= KEPT_ENDED) return;
-            ended.delete(id);
-          }
+          forgetOldest(ended, KEPT_ENDED);
         };
 
         const end = (call: VoiceCall, reason: VoiceCallEnd, now: number) => {
@@ -490,7 +505,7 @@ export class VoiceGateway extends Context.Service<
           });
         };
 
-        const settlePending = (call: PendingCall, settled: CallEnd) => {
+        const settlePending = (call: PendingCall, settled: PendingEnd) => {
           pending.delete(call.event.callId);
           Deferred.doneUnsafe(call.acknowledged, Effect.void);
           Deferred.doneUnsafe(call.settled, Effect.succeed(settled));
@@ -527,15 +542,8 @@ export class VoiceGateway extends Context.Service<
           live = null;
           lineReport = [];
 
-          for (const call of pending.values()) {
-            Deferred.doneUnsafe(call.acknowledged, Effect.void);
-            Deferred.doneUnsafe(
-              call.settled,
-              Effect.succeed({ outcome: "revoked" as const }),
-            );
-          }
-
-          pending.clear();
+          for (const call of pending.values())
+            settlePending(call, { outcome: "revoked" });
         };
 
         const reassign = (
@@ -873,16 +881,32 @@ export class VoiceGateway extends Context.Service<
         const hangingUp = (username: string) =>
           Effect.sync(() => active.get(username)?.hangUp === true);
 
-        // A pending call's key stays, so its tool call can never dial twice.
-        const forgetPlaced = () => {
-          const kept = new Set([...pending.values()].map((call) => call.key));
+        // The key names the tool call or the call request, so neither dials twice; a pending call's key stays.
+        const ring = Effect.fnUntraced(function* (
+          key: string,
+          botId: string,
+          event: VoiceCallEvent,
+        ) {
+          const ringing = new Set(
+            [...pending.values()].map((call) => call.key),
+          );
 
-          for (const key of placed) {
-            if (placed.size <= KEPT_PLACED) return;
+          placed.add(key);
+          forgetOldest(placed, KEPT_PLACED, (kept) => ringing.has(kept));
 
-            if (!kept.has(key)) placed.delete(key);
-          }
-        };
+          const call: PendingCall = {
+            key,
+            botId,
+            party: event.party ?? "owner",
+            event,
+            acknowledged: yield* Deferred.make<void>(),
+            settled: yield* Deferred.make<PendingEnd>(),
+          };
+
+          pending.set(event.callId, call);
+
+          return call;
+        });
 
         const place = (request: CallRequest) =>
           locked(
@@ -896,25 +920,13 @@ export class VoiceGateway extends Context.Service<
               );
 
               if (!target) return { refusal, call: null };
-              placed.add(request.key);
-              forgetPlaced();
 
-              const call: PendingCall = {
-                key: request.key,
-                botId: request.botId,
-                party: "owner",
-                event: {
-                  callId: crypto.randomUUID(),
-                  ...target,
-                  greeting: request.greeting,
-                },
-                acknowledged: yield* Deferred.make<void>(),
-                settled: yield* Deferred.make<
-                  CallEnd | { outcome: "revoked" }
-                >(),
-              };
+              const call = yield* ring(request.key, request.botId, {
+                callId: crypto.randomUUID(),
+                ...target,
+                greeting: request.greeting,
+              });
 
-              pending.set(call.event.callId, call);
               live?.send({ event: "call", data: call.event });
 
               return { refusal: null, call };
@@ -937,27 +949,15 @@ export class VoiceGateway extends Context.Service<
               );
 
               if (!line) return { refusal, call: null };
-              placed.add(request.requestId);
-              forgetPlaced();
 
-              const call: PendingCall = {
-                key: request.requestId,
-                botId: request.botId,
+              const call = yield* ring(request.requestId, request.botId, {
+                callId: request.callId,
+                username: line.username,
+                to: request.number,
+                greeting: request.opening,
                 party: "outside",
-                event: {
-                  callId: request.callId,
-                  username: line.username,
-                  to: request.number,
-                  greeting: request.opening,
-                  party: "outside",
-                },
-                acknowledged: yield* Deferred.make<void>(),
-                settled: yield* Deferred.make<
-                  CallEnd | { outcome: "revoked" }
-                >(),
-              };
+              });
 
-              pending.set(request.callId, call);
               rememberOutside({
                 callId: request.callId,
                 requestId: request.requestId,

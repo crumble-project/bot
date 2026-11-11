@@ -5,7 +5,7 @@ import { AgentRepository } from "../bot-store/agent-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
-import { changeSourceOf } from "../learned-changes/change-source";
+import { changeByOf } from "../learned-changes/change-source";
 import { MemoryRepository } from "./memory-repository";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
@@ -84,15 +84,7 @@ export class BotMemory extends Context.Service<
         agentId: string,
         context: MemoryContext,
       ): Effect.Effect<ChangeBy> =>
-        context.reviewOf
-          ? Effect.succeed({
-              actor: "review",
-              source: { executionId: context.reviewOf },
-            })
-          : changeSourceOf(agentId, context).pipe(
-              Effect.map((source): ChangeBy => ({ actor: "bot", source })),
-              Effect.provideContext(sources),
-            );
+        changeByOf(agentId, context).pipe(Effect.provideContext(sources));
 
       return BotMemory.of({
         list: Effect.fn("BotMemory.list")(function* (agentId) {

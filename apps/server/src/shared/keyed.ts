@@ -1,10 +1,11 @@
 import { Semaphore } from "effect";
 
-export const keyedListeners = () => {
-  const listeners = new Map<string, Set<() => void>>();
+/** Callbacks by key; `notify` hands its value to every callback added under the key. */
+export const keyedListeners = <T = void>() => {
+  const listeners = new Map<string, Set<(value: T) => void>>();
 
   return {
-    add: (key: string, callback: () => void) => {
+    add: (key: string, callback: (value: T) => void) => {
       const set = listeners.get(key) ?? new Set();
       set.add(callback);
       listeners.set(key, set);
@@ -15,11 +16,13 @@ export const keyedListeners = () => {
         if (!set.size) listeners.delete(key);
       };
     },
-    notify: (key: string) => {
-      for (const listener of listeners.get(key) ?? []) listener();
+    notify: (key: string, value: T) => {
+      for (const listener of listeners.get(key) ?? []) listener(value);
     },
   };
 };
+
+export type KeyedListeners<T = void> = ReturnType<typeof keyedListeners<T>>;
 
 export const keyedLocks = () => {
   const locks = new Map<string, Semaphore.Semaphore>();

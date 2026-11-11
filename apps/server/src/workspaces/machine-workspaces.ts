@@ -243,21 +243,16 @@ type Relay = {
   close(): Promise<void>;
 };
 
-type Activity = {
-  begin(): void;
-  end(): void;
-};
-
 const relayRequest = z.array(z.string());
 
 /**
- * Reports each call, so the workspace knows when it is idle. `info` and `session` count too: they connect, and a
- * machine that idle-stopped while its daemon starts fails the call.
+ * Holds the workspace for each call, so it never idle-stops under one. `info` and `session` count too: they connect,
+ * and a machine that idle-stopped while its daemon starts fails the call.
  */
 class TrackedConnection extends Connection {
   constructor(
     options: ConnectionOptions,
-    private readonly activity: Activity,
+    private readonly hold: () => () => void,
   ) {
     super(options);
   }
@@ -275,12 +270,12 @@ class TrackedConnection extends Connection {
   }
 
   private async tracked<T>(call: () => Promise<T>) {
-    this.activity.begin();
+    const release = this.hold();
 
     try {
       return await call();
     } finally {
-      this.activity.end();
+      release();
     }
   }
 }
@@ -289,7 +284,6 @@ class Workspace {
   readonly connection: Connection;
   readonly env: ExecutionEnv;
   running: Running | undefined;
-  private inflight = 0;
   private holds = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly lock = Semaphore.makeUnsafe(1);
@@ -302,16 +296,7 @@ class Workspace {
     // pi-env runs this command for its connection: the Pi boundary, where a failed start rejects with its tagged error.
     this.connection = new TrackedConnection(
       { command: () => Effect.runPromise(this.ensureStarted()) },
-      {
-        begin: () => {
-          this.inflight += 1;
-          clearTimeout(this.idleTimer);
-        },
-        end: () => {
-          this.inflight -= 1;
-          this.armIdleTimer();
-        },
-      },
+      () => this.hold(),
     );
     this.env = new RemoteExecutionEnv({
       connection: this.connection,
@@ -396,11 +381,7 @@ class Workspace {
           // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
           if (force && !keepConnection) this.connection.close();
 
-          if (
-            !this.running ||
-            (!force && (this.inflight > 0 || this.holds > 0))
-          )
-            return Effect.void;
+          if (!this.running || (!force && this.holds > 0)) return Effect.void;
 
           return this.teardown();
         }),
@@ -532,7 +513,7 @@ class Workspace {
   private armIdleTimer() {
     clearTimeout(this.idleTimer);
 
-    if (!this.running || this.inflight > 0 || this.holds > 0) return;
+    if (!this.running || this.holds > 0) return;
 
     this.idleTimer = setTimeout(
       () =>

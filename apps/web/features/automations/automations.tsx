@@ -17,7 +17,6 @@ import {
   IconTrash,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,7 +44,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BotAvatar } from "@/components/bot-avatar";
-import { ConfirmDeleteContent, Page } from "@/components/page";
+import { ErrorAlert, ConfirmDeleteContent, Page } from "@/components/page";
 import { type Bot, botsQuery } from "@/features/bots/api";
 import { eventSourcesQuery } from "@/features/event-sources/api";
 import { call, queryClient, send } from "@/lib/api";
@@ -61,7 +60,7 @@ import {
 } from "./api";
 import { AutomationDialog, type Editing } from "./editor";
 import { RunsBody } from "./runs";
-import { Heading, TableFrame } from "./table-frame";
+import { Heading, TableFrame } from "@/components/table-frame";
 import {
   type Status,
   describeTiming,
@@ -189,11 +188,7 @@ function AutomationsBody({
     return <Skeleton className="h-40 rounded-xl" />;
 
   if (schedules.isError)
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>{schedules.error.message}</AlertDescription>
-      </Alert>
-    );
+    return <ErrorAlert>{schedules.error.message}</ErrorAlert>;
 
   if (!shown.length)
     return <AutomationsEmpty firstBot={firstBot} onCreate={onCreate} />;

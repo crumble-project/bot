@@ -3,7 +3,7 @@ import type { Agent } from "../contract/agents";
 import type { ChangeBy } from "../shared/domain";
 import type { Skill, SkillInput } from "../contract/skills";
 import { atomic, ProductDatabase } from "../shared/product-database";
-import { changeSourceOf } from "../learned-changes/change-source";
+import { changeByOf } from "../learned-changes/change-source";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { DefaultSkills } from "./default-skills";
 import {
@@ -47,24 +47,11 @@ export class BotSkills extends Context.Service<
       const defaultSkills = yield* DefaultSkills;
       const sources = yield* Effect.context<ExecutionRepository>();
 
-      const source = (agentId: string, context: SkillToolContext) =>
-        changeSourceOf(agentId, context).pipe(Effect.provideContext(sources));
-
       const by = (
         agentId: string,
         context: SkillToolContext,
       ): Effect.Effect<ChangeBy> =>
-        context.reviewOf
-          ? Effect.succeed({
-              actor: "review",
-              source: { executionId: context.reviewOf },
-            })
-          : source(agentId, context).pipe(
-              Effect.map((change): ChangeBy => ({
-                actor: "bot",
-                source: change,
-              })),
-            );
+        changeByOf(agentId, context).pipe(Effect.provideContext(sources));
 
       const own = (agentId: string) =>
         skills
@@ -128,18 +115,17 @@ export class BotSkills extends Context.Service<
           input: SkillInput,
           context: SkillToolContext,
         ) {
+          const change = yield* by(agentId, context);
+
           return yield* skills.create(
             {
               ...input,
               agentId,
               createdBy: "bot",
-              sourceExecutionId:
-                context.reviewOf ??
-                (yield* source(agentId, context)).executionId ??
-                null,
+              sourceExecutionId: change.source?.executionId ?? null,
             },
             undefined,
-            yield* by(agentId, context),
+            change,
           );
         }),
         update: Effect.fn("BotSkills.update")(function* (

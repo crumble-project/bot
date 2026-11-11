@@ -84,7 +84,6 @@ function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
 export type ServerSettingsStore = {
   get(): ServerSettings;
   update(patch: ServerSettingsPatch): Promise<ServerSettings>;
-  subscribe(listener: (settings: ServerSettings) => void): () => void;
 };
 
 export async function serverSettingsStore<O extends BetterAuthOptions>(
@@ -95,8 +94,6 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
   );
 
   let current = decodeSettings(rows);
-
-  const listeners = new Set<(settings: ServerSettings) => void>();
 
   return {
     get: () => current,
@@ -123,14 +120,7 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
 
       current = next;
 
-      for (const listener of listeners) listener(current);
-
       return current;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-
-      return () => listeners.delete(listener);
     },
   };
 }
