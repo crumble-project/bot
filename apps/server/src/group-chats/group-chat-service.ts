@@ -73,7 +73,10 @@ export const groupChatsService = (
             yield* context.conversations.setArchived(conversationId, true);
         }
 
-        yield* context.groups.delete(groupId);
+        yield* context.library.removeLibrary(
+          { kind: "group", groupId },
+          context.groups.delete(groupId),
+        );
         yield* context.changed(groupId);
       }),
     );

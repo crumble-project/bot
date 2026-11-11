@@ -17,6 +17,7 @@ import { CallNotes } from "../bot-ports/call-notes";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
+import { Library } from "../files/library";
 
 export const isGroupTurn = (execution: Execution) =>
   parseRequestId(execution.requestId).kind === "group-turn";
@@ -37,6 +38,7 @@ export type BotsContext = {
   readonly schedules: ScheduleRepository["Service"];
   readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
+  readonly library: Library["Service"];
   readonly notices: BotNotices["Service"];
   readonly callNotes: CallNotes["Service"];
   readonly deletion: BotDeletion["Service"];
@@ -60,6 +62,7 @@ export const botsContext = Effect.gen(function* () {
     schedules: yield* ScheduleRepository,
     events: yield* EventRepository,
     runtime: yield* BotRuntime,
+    library: yield* Library,
     notices: yield* BotNotices,
     callNotes: yield* CallNotes,
     deletion: yield* BotDeletion,

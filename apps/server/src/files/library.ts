@@ -76,7 +76,10 @@ export class Library extends Context.Service<
       library: LibraryRef,
       ids: readonly string[],
     ): Effect.Effect<void, InvalidInput>;
-    removeLibrary(library: LibraryRef): Effect.Effect<void>;
+    removeLibrary(
+      library: LibraryRef,
+      removeOwner?: Effect.Effect<unknown>,
+    ): Effect.Effect<void>;
   }
 >()("crumble/files/Library") {
   static layer(options: { maxFileBytes: number }) {
@@ -238,6 +241,7 @@ export class Library extends Context.Service<
 
         const removeLibrary = Effect.fn("Library.removeLibrary")(function* (
           library: LibraryRef,
+          removeOwner?: Effect.Effect<unknown>,
         ) {
           yield* files.withLock(
             Effect.gen(function* () {
@@ -253,6 +257,8 @@ export class Library extends Context.Service<
                   { discard: true },
                 );
               }
+
+              if (removeOwner) yield* removeOwner;
 
               yield* Effect.forEach(
                 hashes,

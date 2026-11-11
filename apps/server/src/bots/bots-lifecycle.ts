@@ -67,7 +67,10 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
     const clear = yield* deletion.prepare(id);
 
     yield* pi(() => runtime.deleteAgent(id));
-    yield* agents.delete(id);
+    yield* context.library.removeLibrary(
+      { kind: "bot", agentId: id },
+      agents.delete(id),
+    );
     yield* clear;
   });
 
