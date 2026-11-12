@@ -58,7 +58,7 @@ import {
   MAX_BOT_NAME_CHARS,
   MAX_INSTRUCTIONS_CHARS,
 } from "@crumble/server/contract/limits";
-import { agentInput } from "@crumble/server/contract/agents";
+import { DEFAULT_BOT_INSTRUCTIONS } from "@crumble/server/contract/agents";
 
 const DEFAULT_TOOLS: string[] = [
   BOT_TOOL.memory,
@@ -66,7 +66,7 @@ const DEFAULT_TOOLS: string[] = [
   BOT_TOOL.delegate,
 ];
 
-const DEFAULT_INSTRUCTIONS = agentInput.shape.instructions.parse(undefined);
+const DEFAULT_INSTRUCTIONS = DEFAULT_BOT_INSTRUCTIONS;
 
 const modelsHint = (configured: boolean, modelCount: number) => {
   if (!configured)

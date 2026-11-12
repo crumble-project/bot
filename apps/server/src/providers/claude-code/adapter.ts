@@ -528,7 +528,7 @@ const exited = (child: ChildProcessWithoutNullStreams) =>
         child.once("exit", (code) => resolve(code)),
       );
 
-function piUsage(usage: CapturedMessage["usage"] | undefined): Usage {
+function piUsage(usage?: CapturedMessage["usage"]): Usage {
   const source = usage ?? {};
   const input = source.input_tokens ?? 0;
   const output = source.output_tokens ?? 0;
@@ -567,7 +567,7 @@ export function streamClaudeCode(
     api: model.api,
     provider: model.provider,
     model: model.id,
-    usage: piUsage(undefined),
+    usage: piUsage(),
     stopReason: "pending",
     timestamp: Date.now(),
   };

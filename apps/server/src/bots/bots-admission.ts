@@ -1,5 +1,5 @@
 import { pi } from "../shared/app-errors";
-import { Cause, Effect, FiberMap } from "effect";
+import { Cause, Effect, FiberMap, Option } from "effect";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import { errorText } from "../shared/errors";
@@ -41,7 +41,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
 
     return request.kind === "voice-call"
       ? callNotes.note(execution.agentId, request.callId)
-      : Effect.succeed(undefined);
+      : Effect.succeed(Option.none());
   };
 
   const submit = Effect.fnUntraced(function* (
@@ -80,7 +80,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       prepared.modelContent,
       origin,
       execution.requestId,
-      { event, call },
+      { event, call: Option.getOrUndefined(call) },
     );
 
     const submissionId = yield* pi(() =>

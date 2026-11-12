@@ -1,7 +1,7 @@
 # Lint pass 1: findings that need a design decision
 
 Date: 2026-11-11
-Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 336 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
+Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 297 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
 
 ## 1. `effect/noThrowStatement` is off (287 findings, decided)
 
@@ -57,20 +57,19 @@ Every remaining finding is an `any` arriving from outside the type system. Three
 - **TanStack Router route types** — `apps/web/app/router.tsx` (18 findings). `useParams()` on a `createRoute` handle is `any` until the router is registered globally (`declare module "@tanstack/react-router" { interface Register { router: typeof router } }`). One file, but it can ripple through every `useParams`/`useSearch` call site, so it wants a deliberate attempt with typecheck in front of it.
 - **Third-party boundaries** — `fetch(...).json()` in providers and web-search vendors, `Bun.spawnSync` in `tools/agents-paths.ts`. The last is a special case: `tools/` is in neither tsconfig, so tsgolint resolves it with an error program and reports "type `error`". Either give `tools/` its own tsconfig project (and add it to `bun run typecheck`) or exclude `tools/` from the type-aware lint.
 
-## 4. `unicorn/no-useless-undefined` (38 left)
+## 4. `unicorn/no-useless-undefined` (0 left, decided)
 
-Two shapes, both of which *require* a literal `undefined`:
+The rule now runs with `{ "checkArrowFunctionBody": false }`, which is the option its own documentation provides for callbacks whose contract is to return `undefined`. 22 of the 38 findings were exactly that: zod `.catch(() => undefined)` on an `.optional()` schema, where zod requires an argument and the catch value is `undefined`.
 
-- **zod `.catch(() => undefined)`** (22 sites, mostly `transcript/entries.ts`, `transcript/tool-results.ts`, `bot-desktop/computer-use-*.ts`, `providers/melious.ts`). zod's `catch` takes a value or a callback; there is no no-argument form.
-- **Effect/JS APIs with a required argument** — `Ref.make<T | undefined>(undefined)` (`bot-ports/bot-notices.ts`, `call-notes.ts`), `Effect.succeed(undefined)`, `Queue.offer(due, undefined)`, `piUsage(undefined)`, `agentInput.shape.instructions.parse(undefined)`, `Promise.resolve(undefined)` in `integrations/mcp-oauth.ts`.
+The other 16 argument-position findings were real and are fixed:
 
-Options, in increasing order of churn:
-
-1. Narrow the rule: `"unicorn/no-useless-undefined": ["error", { "checkArguments": false, "checkArrowFunctionBody": false }]`. Written as a rule that only flags `undefined` in return position and object values, it stops producing false positives on required arguments. This is a config change, not a code change, and it silently covers 38 real sites.
-2. 38 `oxlint-disable-next-line` comments with a reason each. Noisy, but every site stays visible.
-3. Rewrite the Effect sites to carry `Option`/`void` instead of `T | undefined` (`Ref<Option<Handler>>`, `Effect<void>`), which is the idiomatic Effect answer and also removes the `undefined` entirely. This changes several service signatures (`CallNotes.note`, `BotNotices.notice`, `BotMessaging.jobsOf`) and their consumers.
+- `Ref.make<T | undefined>(undefined)` became `Ref<Option<T>>` in `bot-ports/bot-notices.ts` and `bot-ports/call-notes.ts`. `CallNoteSource` now returns `Option<OutsideCallNote>`, so `voice-gateway/outside-calls.ts` provides `Option.some`/`Option.none` and `bots/bots-admission.ts` passes `Option.getOrUndefined(call)` into `frameInput`.
+- `Effect.succeed(undefined)` in `bot-messaging/bot-messaging.ts`: `jobsOf` now returns `Option<TurnWork>`, unwrapped with `Option.getOrUndefined` where the polling loop and `outcomeOf` want the bare value.
+- `piUsage(undefined)` became `piUsage()` (optional parameter), and `agentInput.shape.instructions.parse(undefined)` became `DEFAULT_BOT_INSTRUCTIONS`, exported from `contract/agents.ts` and used as the schema's `.default`.
+- `Promise.resolve(undefined)` became an `async` function returning `undefined` (`integrations/mcp-oauth.ts`), which also removed one `noNewPromise` warning.
+- `Queue.offer(due, undefined)` in `push/push.ts` is `Queue<void>`, which still takes a value; it now offers `void 0`.
 
 ## 5. Rule configuration observations
 
 - `ignorePatterns` lists `**/*.test.ts` but not `**/*.test.tsx`: the web tests are linted and the server tests are not, which is the wrong way round for a repository whose Effect code lives behind server tests. This is why `noModuleMocks` had no valid target (section 2). If the asymmetry is unintended, the pattern should read `**/*.test.{ts,tsx}`, which surfaces about 90 findings today.
-- `oxlint --fix` on this tree is currently unsafe: it strips required `undefined` arguments (see the pass-1 log). Anyone running `bun run fix` (which is `oxlint --fix`) will get 47 type errors until `unicorn/no-useless-undefined` is either configured as above or fixed by hand.
+- `oxlint --fix` on this tree was unsafe while `unicorn/no-useless-undefined` used defaults: it strips required `undefined` arguments (see the pass-1 log). With `checkArrowFunctionBody: false` the zod sites are safe, but `checkArguments` still drives the fixer, so keep running `oxlint --fix -A unicorn/no-useless-undefined` and fixing that rule by hand.
