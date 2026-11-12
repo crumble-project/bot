@@ -53,17 +53,25 @@ message. Attaching uploads the file to that chat's library immediately.
 Removing it from the composer removes it from the draft, not the library.
 Uploading the same content again reuses the entry in that library.
 
-Open **Library** from a bot's details or a group chat to browse files newest
-first, download them, or delete them. Each bot and each group chat has its own
-library. Files sent on Discord don't reach the bot or its library.
+A bot's details list its five newest files; select one to download it. Select
+**See all** there, or **Library** in a group chat, to open the full library.
+It lists files newest first as a list or a grid. Select a file to download it,
+or use its menu to delete it. Select **Upload**, or drop files onto the page,
+to add files to the library without sending a message. Each bot and each
+group chat has its own library. Files sent on Discord don't reach the bot or
+its library.
 
 The bot receives small UTF-8 text files inline, up to 32 KB of text. Crumble
 extracts PDF text at upload and uses the same inline limit. Longer text and
-other formats arrive as references with a name, type, size, and file ID.
-If PDF extraction fails or finds no text, the reference says so.
+other formats arrive as references with a name, type, and size. Every file the
+bot receives states its file ID. If PDF extraction fails or finds no text, the
+reference says so.
 
-The bot's library tool can list files, read text in parts, and search within a
-file. In a group chat it reaches the group library and its own library, not
+The bot's library tool can list files, search the whole library by name,
+description, and text, read a file's text in parts, and search within a file.
+Bots keep a short description of what each file is, such as "birth
+certificate", so they can find a scan or photo later from how you refer to it.
+The library page doesn't show these descriptions. In a group chat it reaches the group library and its own library, not
 another member's. Coding and desktop jobs reach their bot's library. A bot
 with a workspace can copy a file there to inspect other formats.
 

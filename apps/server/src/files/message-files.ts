@@ -14,6 +14,7 @@ export type MessageFile =
 export type ResolvedFile =
   | {
       file: MessageFile & { deleted?: never };
+      description: string | null;
       content:
         | { kind: "text"; text: string }
         | { kind: "image"; data: string }
@@ -21,31 +22,49 @@ export type ResolvedFile =
     }
   | { file: { id: string; deleted: true } };
 
+export const DESCRIPTION_HINT =
+  "No description yet. If the name doesn't say what this file is, describe it with the library tool.";
+
+export const describedAs = (description: string | null) =>
+  description === null
+    ? DESCRIPTION_HINT
+    : `Description: ${JSON.stringify(description)}.`;
+
 export function modelBlocks(
   files: readonly ResolvedFile[],
 ): (TextContent | ImageContent)[] {
-  return files.map((resolved) => {
+  return files.flatMap((resolved): (TextContent | ImageContent)[] => {
     if (!("content" in resolved))
-      return {
-        type: "text",
-        text: `File ${resolved.file.id} was deleted from the library before it arrived.`,
-      };
+      return [
+        {
+          type: "text",
+          text: `File ${resolved.file.id} was deleted from the library before it arrived.`,
+        },
+      ];
 
-    const { file, content } = resolved;
+    const { file, content, description } = resolved;
+    const label = `File ${JSON.stringify(file.name)} (id: ${file.id}`;
 
     if (content.kind === "image")
-      return { type: "image", data: content.data, mimeType: file.mimeType };
+      return [
+        { type: "text", text: `${label}). ${describedAs(description)}` },
+        { type: "image", data: content.data, mimeType: file.mimeType },
+      ];
 
     if (content.kind === "text")
-      return {
-        type: "text",
-        text: `<attachment name=${JSON.stringify(file.name)}>\n${content.text}\n</attachment>`,
-      };
+      return [
+        {
+          type: "text",
+          text: `${label}). ${describedAs(description)}\n<attachment name=${JSON.stringify(file.name)}>\n${content.text}\n</attachment>`,
+        },
+      ];
 
-    return {
-      type: "text",
-      text: `File ${JSON.stringify(file.name)} (id: ${file.id}, type: ${file.mimeType}, size: ${file.size} bytes). Use the library tool to read it.${content.note ? ` ${content.note}` : ""}`,
-    };
+    return [
+      {
+        type: "text",
+        text: `${label}, type: ${file.mimeType}, size: ${file.size} bytes). Use the library tool to read it.${content.note ? ` ${content.note}` : ""} ${describedAs(description)}`,
+      },
+    ];
   });
 }
 
@@ -88,7 +107,11 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
               ),
             );
 
-            return { file, content: { kind: "image", data } };
+            return {
+              file,
+              description: entry.description,
+              content: { kind: "image", data },
+            };
           }
 
           if (
@@ -101,11 +124,16 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
               text !== null &&
               Buffer.byteLength(text, "utf8") <= MAX_INLINE_TEXT_BYTES
             )
-              return { file, content: { kind: "text", text } };
+              return {
+                file,
+                description: entry.description,
+                content: { kind: "text", text },
+              };
 
             if (entry.mimeType === "application/pdf" && text === null)
               return {
                 file,
+                description: entry.description,
                 content: {
                   kind: "reference",
                   note: "No text could be read from this PDF.",
@@ -113,7 +141,11 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
               };
           }
 
-          return { file, content: { kind: "reference" } };
+          return {
+            file,
+            description: entry.description,
+            content: { kind: "reference" },
+          };
         }),
       );
     }).pipe(Effect.uninterruptible),

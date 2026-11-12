@@ -1,0 +1,1 @@
+ALTER TABLE `library_files` ADD `description` text;

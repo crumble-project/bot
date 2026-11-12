@@ -279,3 +279,191 @@ test("a bot without a workspace has no copy action", () => {
   });
   expect(JSON.stringify(extension.tools)).not.toContain('"copy"');
 });
+
+const searchSchema = z.object({
+  files: z.array(
+    z.object({
+      id: z.string(),
+      description: z.string().optional(),
+      excerpt: z.string().optional(),
+    }),
+  ),
+  before: z.string().nullable(),
+});
+
+test("describe sets, replaces and clears a description that list returns", async () => {
+  const { bot, ownOther, scope, upload } = setup();
+  const file = await upload(bot, "IMG_0231.txt", "x");
+  const foreign = await upload(ownOther, "foreign.txt", "y");
+
+  expect(
+    await libraryAction(scope(), {
+      action: "describe",
+      id: file.file.id,
+      description: "Birth certificate",
+    }),
+  ).toEqual({
+    id: file.file.id,
+    library: bot,
+    description: "Birth certificate",
+  });
+  await libraryAction(scope(), {
+    action: "describe",
+    id: file.file.id,
+    description: "Lena's birth certificate",
+  });
+
+  const listed = searchSchema.parse(
+    await libraryAction(scope(), { action: "list" }),
+  );
+
+  expect(listed.files[0]?.description).toBe("Lena's birth certificate");
+
+  await libraryAction(scope(), {
+    action: "describe",
+    id: file.file.id,
+    description: "  ",
+  });
+  expect(
+    searchSchema.parse(await libraryAction(scope(), { action: "list" }))
+      .files[0]?.description,
+  ).toBeUndefined();
+
+  await expect(
+    libraryAction(scope(), {
+      action: "describe",
+      id: foreign.file.id,
+      description: "Not mine",
+    }),
+  ).rejects.toThrow("File not found in the available libraries");
+  await expect(
+    libraryAction(scope(), {
+      action: "describe",
+      id: file.file.id,
+      description: "x".repeat(301),
+    }),
+  ).rejects.toThrow("at most 300");
+});
+
+test("a description survives uploading the same content again", async () => {
+  const { bot, scope, upload } = setup();
+  const file = await upload(bot, "scan.txt", "same");
+
+  await libraryAction(scope(), {
+    action: "describe",
+    id: file.file.id,
+    description: "Passport scan",
+  });
+
+  const again = await upload(bot, "scan-copy.txt", "same");
+
+  expect(again.existed).toBe(true);
+  expect(
+    searchSchema.parse(await libraryAction(scope(), { action: "list" }))
+      .files[0]?.description,
+  ).toBe("Passport scan");
+});
+
+test("list with a query matches every word across name, description and text", async () => {
+  const { bot, shared, scope, upload } = setup();
+  const named = await upload(bot, "certificate-birth.txt", "nothing here");
+  const described = await upload(bot, "IMG_0231.txt", "plain");
+  const texted = await upload(
+    shared,
+    "scan.txt",
+    "Page one.\nThis Birth Certificate was issued in Munich.",
+  );
+  const decomposed = await upload(bot, "Löwe.txt", "lion");
+  await upload(bot, "birth-only.txt", "no second word");
+
+  await libraryAction(scope(), {
+    action: "describe",
+    id: described.file.id,
+    description: "Lena's certificate of BIRTH",
+  });
+
+  const result = searchSchema.parse(
+    await libraryAction(scope([bot, shared]), {
+      action: "list",
+      query: "  birth   certificate ",
+    }),
+  );
+
+  expect(result.files.map((file) => file.id).sort()).toEqual(
+    [named.file.id, described.file.id, texted.file.id].sort(),
+  );
+  expect(result.before).toBeNull();
+  expect(result.files.find((file) => file.id === texted.file.id)?.excerpt).toBe(
+    "Birth Certificate was issued in Munich.",
+  );
+  expect(
+    result.files.find((file) => file.id === named.file.id)?.excerpt,
+  ).toBeUndefined();
+
+  expect(
+    searchSchema
+      .parse(await libraryAction(scope(), { action: "list", query: "löwe" }))
+      .files.map((file) => file.id),
+  ).toEqual([decomposed.file.id]);
+
+  expect(
+    await libraryAction(scope(), { action: "list", query: "missing" }),
+  ).toEqual({ files: [], before: null });
+  await expect(
+    libraryAction(scope(), { action: "list", query: "   " }),
+  ).rejects.toThrow("Search query");
+});
+
+test("searching keeps before set on pages without matches", async () => {
+  const { bot, scope, upload } = setup();
+  const match = await upload(bot, "needle.txt", "needle");
+
+  for (let i = 0; i < 100; i++) await upload(bot, `hay-${i}.txt`, `hay ${i}`);
+
+  const first = searchSchema.parse(
+    await libraryAction(scope(), { action: "list", query: "needle" }),
+  );
+
+  expect(first.files).toEqual([]);
+  expect(first.before).not.toBeNull();
+
+  const next = searchSchema.parse(
+    await libraryAction(scope(), {
+      action: "list",
+      query: "needle",
+      before: first.before!,
+    }),
+  );
+
+  expect(next.files.map((file) => file.id)).toEqual([match.file.id]);
+  expect(next.before).toBeNull();
+});
+
+test("listing two interleaved libraries returns every file exactly once", async () => {
+  const { bot, shared, scope, upload } = setup();
+  const ids: string[] = [];
+
+  for (let i = 0; i < 130; i++) {
+    ids.push((await upload(bot, `own-${i}.txt`, `own ${i}`)).file.id);
+
+    if (i % 3 === 0)
+      ids.push((await upload(shared, `group-${i}.txt`, `group ${i}`)).file.id);
+  }
+
+  const seen: string[] = [];
+  let before: string | undefined;
+
+  do {
+    const page = listSchema.parse(
+      await libraryAction(
+        scope([shared, bot]),
+        before ? { action: "list", before } : { action: "list" },
+      ),
+    );
+
+    seen.push(...page.files.map((file) => file.id));
+    before = page.before ?? undefined;
+  } while (before);
+
+  expect(seen).toEqual([...ids].sort().reverse());
+});

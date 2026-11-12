@@ -146,11 +146,11 @@ type LibraryFile = {
 - Text extraction beyond plain text and PDF, such as Word, Excel, or OCR.
 - A read-only mount of the library into workspaces.
 - S3-compatible storage.
-- Search, filters, folders, tags, or pinning in the library view; renaming files.
+- Search, filters, folders, tags, or pinning in the library view; renaming files. Bot search across a library is [library file search](library-file-search.md).
 - Discord file transfer.
 - Storage quotas per account.
 - Moving other entity IDs to UUIDv7 (crumble-project/bot#137).
-- Uploading to the library from the library view instead of the chat.
+- Uploading to the library from the library view instead of the chat. (Since shipped in the web library page.)
 - Jobs started from a group chat and their access to the group library. Group turns can't start jobs (the job tool is chat-only, `apps/server/src/shared/chat-only.ts`), so this is decided together with group-started jobs.
 
 ## Open questions

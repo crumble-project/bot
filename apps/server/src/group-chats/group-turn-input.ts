@@ -10,6 +10,7 @@ import type { GroupChat } from "./group-chat-repository";
 import { replyText } from "../shared/reply-text";
 import { type GroupChatContext } from "./group-chat-context";
 import { senderLabel, type GroupEntry } from "./group-transcripts";
+import { DESCRIPTION_HINT, type MessageFile } from "../files/message-files";
 
 const SUMMARY_TIMEOUT_MS = 60_000;
 
@@ -109,7 +110,7 @@ export const groupTurnInput = (context: GroupChatContext) => {
           attachmentKind(file.mimeType) === "image" &&
           file.size <= MAX_IMAGE_BYTES
         )
-          omitted.unshift(file.name);
+          omitted.unshift(`${file.name} (id: ${file.id})`);
         else if (files.length < MAX_ATTACHMENTS) files.unshift(item.id);
       }
 
@@ -127,6 +128,31 @@ export const groupTurnInput = (context: GroupChatContext) => {
       .map((agent) => agent?.name)
       .filter((member) => member !== undefined && member !== name);
 
+    const ids = unseen.flatMap((entry) =>
+      (entry.files ?? []).flatMap((file) =>
+        "deleted" in file ? [] : [file.id],
+      ),
+    );
+
+    const described = yield* context.library.entries(
+      { kind: "group", groupId: group.id },
+      ids,
+    );
+
+    const fileLabel = (file: MessageFile) => {
+      if ("deleted" in file) return "File deleted";
+
+      const description = described.get(file.id)?.description;
+
+      return description
+        ? `${file.name} (id: ${file.id}, description: ${JSON.stringify(description)})`
+        : `${file.name} (id: ${file.id})`;
+    };
+
+    const undescribed = [...described.values()].some(
+      (entry) => !entry.description,
+    );
+
     const messages = unseen.map((entry) => {
       const reply =
         entry.replyPreview === undefined
@@ -134,13 +160,13 @@ export const groupTurnInput = (context: GroupChatContext) => {
           : ` (replying to "${entry.replyPreview.slice(0, 120)}")`;
 
       const files = entry.files?.length
-        ? ` [attached: ${entry.files.map((file) => ("deleted" in file ? "File deleted" : file.name)).join(", ")}]`
+        ? ` [attached: ${entry.files.map(fileLabel).join(", ")}]`
         : "";
 
       return `${senderLabel(entry.sender)}${reply}: ${entry.text}${files}`;
     });
 
-    return `Group chat ${JSON.stringify(group.name)}. You are ${name}; the other members are the owner and ${members.join(", ") || "no other bots"}.\n\nNew messages:\n\n${messages.join("\n\n")}`;
+    return `Group chat ${JSON.stringify(group.name)}. You are ${name}; the other members are the owner and ${members.join(", ") || "no other bots"}.\n\nNew messages:\n\n${messages.join("\n\n")}${undescribed ? `\n\nFiles: ${DESCRIPTION_HINT}` : ""}`;
   });
 
   return { summarize, turnAttachments, turnInput };

@@ -44,6 +44,7 @@ export const libraryFiles = sqliteTable(
     size: integer("size").notNull(),
     hash: text("hash").notNull(),
     text: text("text", { enum: ["none", "extracted", "failed"] }).notNull(),
+    description: text("description"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [

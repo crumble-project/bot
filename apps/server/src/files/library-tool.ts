@@ -14,10 +14,16 @@ import type { LibraryEntry, LibraryRef } from "./library-repository";
 export const LIBRARY_TOOL_NAME = "library";
 export const MAX_LIBRARY_OUTPUT_BYTES = 50 * 1024;
 export const MAX_LIBRARY_OUTPUT_LINES = 2000;
+export const MAX_DESCRIPTION_CHARS = 300;
+export const MAX_LIST_QUERY_CHARS = 200;
+export const MAX_SEARCH_TEXT_BYTES = 8 * 1024 * 1024;
+const LIST_PAGE = 100;
+const EXCERPT_BYTES = 200;
 
 export type LibraryArguments = {
-  action: "list" | "read" | "search" | "copy";
+  action: "list" | "read" | "search" | "copy" | "describe";
   id?: string | undefined;
+  description?: string | undefined;
   before?: string | undefined;
   offset?: number | undefined;
   length?: number | undefined;
@@ -53,48 +59,196 @@ async function find(scope: Scope, id: string | undefined) {
   throw new Error("File not found in the available libraries");
 }
 
+function queryWords(query: string | undefined) {
+  if (query === undefined) return;
+
+  const words = query.normalize("NFC").trim().split(/\s+/u).filter(Boolean);
+
+  if (!words.length || query.length > MAX_LIST_QUERY_CHARS)
+    throw new Error(
+      `Search query must have words and at most ${MAX_LIST_QUERY_CHARS} characters`,
+    );
+
+  return words.map(
+    (word) => new RegExp(word.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "iu"),
+  );
+}
+
+function excerptAt(text: string, start: number) {
+  let excerpt = "";
+  let bytes = 0;
+
+  for (const point of text.slice(start)) {
+    bytes += Buffer.byteLength(point, "utf8");
+
+    if (bytes > EXCERPT_BYTES) break;
+    excerpt += point;
+  }
+
+  return excerpt.replaceAll("\n", " ");
+}
+
+type ListedFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  library: LibraryRef;
+  description?: string;
+  excerpt?: string;
+};
+
+const newestFirst = (a: LibraryEntry, b: LibraryEntry) => {
+  if (a.id === b.id) return 0;
+
+  return a.id < b.id ? 1 : -1;
+};
+
+async function matchFile(
+  scope: Scope,
+  entry: LibraryEntry,
+  words: RegExp[],
+): Promise<{ matched: boolean; excerpt?: string; textBytes: number }> {
+  const known = `${entry.name}\n${entry.description ?? ""}`.normalize("NFC");
+  const missing = words.filter((word) => !word.test(known));
+
+  if (!missing.length || entry.text !== "extracted")
+    return { matched: !missing.length, textBytes: 0 };
+
+  const raw = await Effect.runPromise(scope.library.text(entry));
+  const text = raw?.normalize("NFC") ?? "";
+  const textBytes = Buffer.byteLength(text, "utf8");
+
+  if (!missing.every((word) => word.test(text)))
+    return { matched: false, textBytes };
+
+  const start = Math.min(
+    ...words.flatMap((word) => {
+      const index = text.search(word);
+
+      return index >= 0 ? [index] : [];
+    }),
+  );
+
+  return { matched: true, excerpt: excerptAt(text, start), textBytes };
+}
+
+function listed(entry: LibraryEntry, excerpt: string | undefined): ListedFile {
+  const file: ListedFile = {
+    id: entry.id,
+    name: entry.name,
+    mimeType: entry.mimeType,
+    size: entry.size,
+    createdAt: entry.createdAt,
+    library: entry.library,
+  };
+
+  if (entry.description !== null) file.description = entry.description;
+
+  if (excerpt !== undefined) file.excerpt = excerpt;
+
+  return file;
+}
+
+async function candidates(scope: Scope, before: string | undefined) {
+  const pages = await Promise.all(
+    scope.libraries.map((library) =>
+      Effect.runPromise(
+        scope.library.browse(
+          library,
+          before ? { before, limit: LIST_PAGE } : { limit: LIST_PAGE },
+        ),
+      ),
+    ),
+  );
+
+  const cutoff = pages
+    .filter((page) => page.length === LIST_PAGE)
+    .map((page) => page.at(-1)!.id)
+    .reduce<string | undefined>(
+      (newest, id) => (newest === undefined || id > newest ? id : newest),
+      undefined,
+    );
+
+  const entries = pages
+    .flat()
+    .filter((entry) => cutoff === undefined || entry.id >= cutoff)
+    .sort(newestFirst);
+
+  return { entries, exhausted: cutoff === undefined };
+}
+
+const overflows = (files: ListedFile[], before: string) =>
+  files.length > 1 && byteSize({ files, before }) > MAX_LIBRARY_OUTPUT_BYTES;
+
+async function scan(scope: Scope, entries: LibraryEntry[], words?: RegExp[]) {
+  const files: ListedFile[] = [];
+  let textBytes = 0;
+  let scanned: string | undefined;
+
+  for (const entry of entries) {
+    const match = words
+      ? await matchFile(scope, entry, words)
+      : { matched: true, textBytes: 0 };
+
+    textBytes += match.textBytes;
+
+    if (match.matched) files.push(listed(entry, match.excerpt));
+
+    if (match.matched && overflows(files, entry.id)) {
+      files.pop();
+
+      return { files, scanned, stopped: true };
+    }
+
+    scanned = entry.id;
+
+    if (textBytes > MAX_SEARCH_TEXT_BYTES && entry !== entries.at(-1))
+      return { files, scanned, stopped: true };
+  }
+
+  return { files, scanned, stopped: false };
+}
+
 async function list(
   scope: Scope,
   before: string | undefined,
+  query: string | undefined,
 ): Promise<JsonValue> {
-  const pages = await Promise.all(
-    scope.libraries.map(async (library) => ({
-      library,
-      files: await Effect.runPromise(
-        scope.library.list(
-          library,
-          before ? { before, limit: 100 } : { limit: 100 },
-        ),
-      ),
-    })),
-  );
+  const words = queryWords(query);
+  const { entries, exhausted } = await candidates(scope, before);
+  const page = await scan(scope, entries, words);
+  const done = exhausted && !page.stopped;
 
-  const all = pages
-    .flatMap((page) =>
-      page.files.map((file) => ({ ...file, library: page.library })),
-    )
-    .sort((a, b) => {
-      if (a.id < b.id) return 1;
+  return { files: page.files, before: done ? null : (page.scanned ?? null) };
+}
 
-      return a.id > b.id ? -1 : 0;
-    });
+async function describe(
+  scope: Scope,
+  args: LibraryArguments,
+): Promise<JsonValue> {
+  if (!args.id) throw new Error("File ID is required");
 
-  const files: typeof all = [];
+  if (args.description === undefined)
+    throw new Error("Description is required");
 
-  for (const file of all) {
-    files.push(file);
+  if (args.description.length > MAX_DESCRIPTION_CHARS)
+    throw new Error(
+      `Description must be at most ${MAX_DESCRIPTION_CHARS} characters`,
+    );
 
-    if (byteSize({ files, before: file.id }) > MAX_LIBRARY_OUTPUT_BYTES) {
-      files.pop();
-      break;
-    }
+  const description = args.description.trim() || null;
+
+  for (const library of scope.libraries) {
+    const entry = await Effect.runPromise(
+      scope.library.describe(library, args.id, description),
+    );
+
+    if (entry) return { id: entry.id, library: entry.library, description };
   }
 
-  const more =
-    files.length < all.length ||
-    pages.some((page) => page.files.length === 100);
-
-  return { files, before: more ? (files.at(-1)?.id ?? null) : null };
+  throw new Error("File not found in the available libraries");
 }
 
 function read(
@@ -292,7 +446,9 @@ export async function libraryAction(
   )
     throw new Error("Length must be positive");
 
-  if (args.action === "list") return list(scope, args.before);
+  if (args.action === "list") return list(scope, args.before, args.query);
+
+  if (args.action === "describe") return describe(scope, args);
   const entry = await find(scope, args.id);
 
   if (args.action === "copy") return copy(scope, entry, args, environment);
@@ -317,16 +473,19 @@ export function libraryExtension(options: {
   workspace: boolean;
 }) {
   const actions = options.workspace
-    ? (["list", "read", "search", "copy"] as const)
-    : (["list", "read", "search"] as const);
+    ? (["list", "read", "search", "describe", "copy"] as const)
+    : (["list", "read", "search", "describe"] as const);
 
   const tool = defineTool({
     name: LIBRARY_TOOL_NAME,
     description:
-      "List available library files, read text in bounded byte ranges, or search literal text. Results label their library. Continue list with before, and read or search with nextOffset as offset. Copy writes a file into /workspace when available.",
+      "Work with the owner's library files. list: newest first; with query, only files whose name, description, or text contains every word, with an excerpt for text matches. Keep calling list with before while it is set, even when a page has no files. read: a file's text in bounded byte ranges. search: literal text inside one file. Continue read or search with nextOffset as offset. describe: set a file's description (empty clears it), a sentence in the owner's words about what the file is, such as 'Lena's birth certificate, issued 1994', so it can be found later; describe a file whenever its name doesn't say what it is. Descriptions are for bots; the owner's library doesn't show them. Results label their library. Copy writes a file into /workspace when available.",
     parameters: Type.Object({
       action: Type.Union(actions.map((action) => Type.Literal(action))),
       id: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      description: Type.Optional(
+        Type.String({ maxLength: MAX_DESCRIPTION_CHARS }),
+      ),
       before: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
       length: Type.Optional(Type.Integer({ minimum: 1 })),

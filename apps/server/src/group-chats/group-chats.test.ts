@@ -26,7 +26,7 @@ import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 import { Effect } from "effect";
 import { Library } from "../files/library";
 import { FileStore } from "../files/file-store";
-import { resolveMessageFiles } from "../files/message-files";
+import { DESCRIPTION_HINT, resolveMessageFiles } from "../files/message-files";
 import { until } from "../../test/support/until";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -882,6 +882,32 @@ describe("attachments", () => {
         (block) => block.type === "image",
       ),
     ).toBe(false);
+  });
+
+  test("members see each file's ID and description, with a hint for undescribed ones", async () => {
+    const { groups, group, inputs, library } = setup();
+    const { file: map } = await image(library, group.id);
+    const { file: plain } = await note(library, group.id, 1);
+
+    await Effect.runPromise(
+      library.describe(
+        { kind: "group", groupId: group.id },
+        map.id,
+        "Route map from Lyon",
+      ),
+    );
+    await groups.post(group.id, "Two files", "r-1", {
+      files: [map.id, plain.id],
+    });
+    await quiet(groups, group.id);
+
+    const input = inputs.get("Ada")![0]!;
+
+    expect(input).toContain(
+      `map.png (id: ${map.id}, description: "Route map from Lyon")`,
+    );
+    expect(input).toContain(`note-1.txt (id: ${plain.id})`);
+    expect(input).toContain(DESCRIPTION_HINT);
   });
 
   test("with a vision model, a text-only model gets the image described", async () => {

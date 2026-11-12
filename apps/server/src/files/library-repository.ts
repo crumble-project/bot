@@ -17,6 +17,7 @@ export type LibraryEntry = {
   size: number;
   hash: string;
   text: "none" | "extracted" | "failed";
+  description: string | null;
   createdAt: string;
 };
 
@@ -36,6 +37,7 @@ const entryOf = (row: typeof libraryFiles.$inferSelect): LibraryEntry => ({
   size: row.size,
   hash: row.hash,
   text: row.text,
+  description: row.description,
   createdAt: row.createdAt,
 });
 
@@ -43,7 +45,7 @@ export class LibraryRepository extends Context.Service<
   LibraryRepository,
   {
     add(
-      input: Omit<LibraryEntry, "id" | "createdAt">,
+      input: Omit<LibraryEntry, "id" | "createdAt" | "description">,
     ): Effect.Effect<{ entry: LibraryEntry; existed: boolean }>;
     get(
       library: LibraryRef,
@@ -58,6 +60,11 @@ export class LibraryRepository extends Context.Service<
       page: { before?: string; limit: number },
     ): Effect.Effect<LibraryEntry[]>;
     hashes(library: LibraryRef): Effect.Effect<string[]>;
+    describe(
+      library: LibraryRef,
+      id: string,
+      description: string | null,
+    ): Effect.Effect<LibraryEntry | undefined>;
     remove(
       library: LibraryRef,
       id: string,
@@ -87,7 +94,7 @@ export class LibraryRepository extends Context.Service<
       }, Effect.orDie);
 
       const add = Effect.fn("LibraryRepository.add")(function* (
-        input: Omit<LibraryEntry, "id" | "createdAt">,
+        input: Omit<LibraryEntry, "id" | "createdAt" | "description">,
       ) {
         const rows = yield* db
           .insert(libraryFiles)
@@ -178,6 +185,20 @@ export class LibraryRepository extends Context.Service<
         Effect.orDie,
       );
 
+      const describe = Effect.fn("LibraryRepository.describe")(function* (
+        library: LibraryRef,
+        id: string,
+        description: string | null,
+      ) {
+        const [row] = yield* db
+          .update(libraryFiles)
+          .set({ description })
+          .where(and(owner(library), eq(libraryFiles.id, id)))
+          .returning();
+
+        return row ? entryOf(row) : undefined;
+      }, Effect.orDie);
+
       const deletedName = Effect.fn("LibraryRepository.deletedName")(function* (
         library: LibraryRef,
         id: string,
@@ -215,6 +236,7 @@ export class LibraryRepository extends Context.Service<
         getMany,
         list,
         hashes,
+        describe,
         remove,
         referenced,
         deletedName,

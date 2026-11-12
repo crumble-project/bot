@@ -26,6 +26,7 @@ function setup() {
       getMany: () => Effect.succeed([]),
       list: () => Effect.succeed([]),
       hashes: () => Effect.succeed([]),
+      describe: () => Effect.succeed(undefined),
       remove: () => Effect.succeed(undefined),
       referenced: () => Effect.sync(() => referenced),
       deletedName: () => Effect.succeed(undefined),

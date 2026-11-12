@@ -59,6 +59,15 @@ export class Library extends Context.Service<
       library: LibraryRef,
       page: { before?: string; limit: number },
     ): Effect.Effect<LibraryFile[], NotFound>;
+    browse(
+      library: LibraryRef,
+      page: { before?: string; limit: number },
+    ): Effect.Effect<LibraryEntry[], NotFound>;
+    describe(
+      library: LibraryRef,
+      id: string,
+      description: string | null,
+    ): Effect.Effect<LibraryEntry | undefined>;
     download(
       library: LibraryRef,
       id: string,
@@ -177,6 +186,15 @@ export class Library extends Context.Service<
           return (yield* repository.list(library, page)).map(publicFile);
         });
 
+        const browse = Effect.fn("Library.browse")(function* (
+          library: LibraryRef,
+          page: { before?: string; limit: number },
+        ) {
+          yield* exists(library);
+
+          return yield* repository.list(library, page);
+        });
+
         const download = Effect.fn("Library.download")(function* (
           library: LibraryRef,
           id: string,
@@ -272,6 +290,9 @@ export class Library extends Context.Service<
         return Library.of({
           upload,
           list,
+          browse,
+          describe: (library, id, description) =>
+            repository.describe(library, id, description),
           download,
           remove,
           entries,
