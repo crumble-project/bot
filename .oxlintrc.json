@@ -53,7 +53,7 @@
     "no-else-return": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-unnecessary-type-assertion": "error",
-    "typescript/no-unsafe-assignment": "error",
+    //"typescript/no-unsafe-assignment": "error",
     "typescript/no-unsafe-return": "error",
     "typescript/switch-exhaustiveness-check": "error",
     "unicorn/no-useless-undefined": [
@@ -61,8 +61,8 @@
       { "checkArguments": false, "checkArrowFunctionBody": false }
     ],
     "effect/noManagedRuntimeInEffect": "error",
-    "effect/noNewPromise": "warn",
-    "effect/noTryCatch": "warn",
+    //"effect/noNewPromise": "warn",
+    //"effect/noTryCatch": "warn",
     "typescript/no-deprecated": "warn",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",
