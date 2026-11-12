@@ -43,11 +43,16 @@ function timingDescription(
 
   const date = new Date(schedule.runAt);
 
-  const text = date.toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
+  const at = partsOf(date, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: schedule.timezone,
   });
+
+  const text = `${at.month} ${at.day}, ${at.year} at ${at.hour}:${at.minute} ${at.dayPeriod}`;
 
   return `${date.getTime() < Date.now() && !schedule.nextRunAt ? "Ran" : "Once,"} ${text} (${schedule.timezone})`;
 }
@@ -69,7 +74,7 @@ function nextRunLabel(
       : relative.format(Math.round(minutes / 60), "hour");
   }
 
-  return next.toLocaleString("en-US", {
+  const at = partsOf(next, {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -77,6 +82,26 @@ function nextRunLabel(
     minute: "2-digit",
     timeZone: schedule.timezone,
   });
+
+  return `${at.weekday}, ${at.month} ${at.day} at ${at.hour}:${at.minute} ${at.dayPeriod}`;
+}
+
+// ICU versions join date and time differently ("Jan 1 at 1 PM", "Jan 1, 1 PM"); build the label from parts so every platform matches.
+function partsOf(date: Date, options: Intl.DateTimeFormatOptions) {
+  const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
+
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+
+  return {
+    weekday: part("weekday"),
+    month: part("month"),
+    day: part("day"),
+    year: part("year"),
+    hour: part("hour"),
+    minute: part("minute"),
+    dayPeriod: part("dayPeriod"),
+  };
 }
 
 export function scheduleDescription<
