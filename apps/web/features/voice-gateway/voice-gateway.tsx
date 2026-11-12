@@ -42,15 +42,15 @@ import {
   SectionEmpty,
   SettingRow,
 } from "@/components/page";
-import { Heading } from "@/features/automations/table-frame";
-import { type Bot, botsQuery } from "@/features/bots/api";
 import {
   AddRowButton,
-  BotSelect,
   QueryState,
   RemoveRowButton,
   SaveBar,
-} from "@/features/message-gateways/message-gateways";
+} from "@/components/config-editor";
+import { Heading } from "@/components/table-frame";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { BotSelect } from "@/features/bots/bot-select";
 import { call, queryClient, send } from "@/lib/api";
 import {
   type VoiceGateway,
@@ -836,6 +836,15 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
   const pending = issue.isPending || revoke.isPending;
   const error = issue.error ?? revoke.error;
 
+  const descriptionOf = () => {
+    if (error) return fieldError(error.message);
+
+    if (gateway.token)
+      return `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`;
+
+    return "Not issued. The voice gateway connects with this token.";
+  };
+
   return (
     <>
       <SettingRow
@@ -845,13 +854,7 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
           </RowTile>
         }
         title="Voice gateway token"
-        description={
-          error
-            ? fieldError(error.message)
-            : gateway.token
-              ? `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`
-              : "Not issued. The voice gateway connects with this token."
-        }
+        description={descriptionOf()}
       >
         {gateway.token ? (
           <>

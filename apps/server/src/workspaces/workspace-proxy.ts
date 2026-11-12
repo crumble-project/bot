@@ -151,7 +151,7 @@ async function acceptConnect(client: net.Socket, timeout: number) {
   if (!head || !validPort(port)) {
     client.end("HTTP/1.1 400 Bad Request\r\n\r\n");
 
-    return undefined;
+    return;
   }
 
   const rest = head.subarray(head.indexOf("\r\n\r\n") + 4);

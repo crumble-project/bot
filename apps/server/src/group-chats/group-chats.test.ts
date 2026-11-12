@@ -23,6 +23,10 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { Effect } from "effect";
+import { Library } from "../files/library";
+import { FileStore } from "../files/file-store";
+import { resolveMessageFiles } from "../files/message-files";
 import { until } from "../../test/support/until";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -126,6 +130,8 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
   }
 
   const store = new Store(dir);
+  const library = store.run(Library.use(Effect.succeed));
+  const fileStore = store.run(FileStore.use(Effect.succeed));
 
   const service = standaloneBots(
     store,
@@ -133,6 +139,14 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
       join(dir, "agents"),
       runtimeCallbacks({
         models,
+        library,
+        resolveFiles: (agentId, ids, ref) =>
+          resolveMessageFiles(
+            library,
+            fileStore,
+            ref ?? { kind: "bot", agentId },
+            ids,
+          ),
         extensions: () => [reactionExtension()],
         ...(vision && {
           visionModel: () => ({ provider: "eye", model: "vision" }),
@@ -141,10 +155,8 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
     ),
   );
 
-  const groups = standaloneGroupChats(
-    service,
-    new GroupTranscripts(join(dir, "groups")),
-  );
+  const transcripts = new GroupTranscripts(join(dir, "groups"));
+  const groups = standaloneGroupChats(service, transcripts);
 
   let closed = false;
 
@@ -157,7 +169,16 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
 
   cleanups.push(close);
 
-  return { store, service, groups, inputs, contents, close };
+  return {
+    store,
+    library,
+    service,
+    groups,
+    transcripts,
+    inputs,
+    contents,
+    close,
+  };
 }
 
 function setup(
@@ -791,22 +812,45 @@ describe("attachments", () => {
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
-  const image = { name: "map.png", mimeType: "image/png", data: png };
-
-  const note = (n: number) => ({
-    name: `note-${n}.txt`,
-    mimeType: "text/plain",
-    data: Buffer.from(`note ${n}`).toString("base64"),
-  });
+  const upload = (
+    library: Library["Service"],
+    groupId: string,
+    name: string,
+    mimeType: string,
+    bytes: Uint8Array,
+  ) =>
+    Effect.runPromise(
+      library.upload(
+        { kind: "group", groupId },
+        { name, mimeType, body: new Blob([Uint8Array.from(bytes)]).stream() },
+      ),
+    );
+  const image = (library: Library["Service"], groupId: string) =>
+    upload(
+      library,
+      groupId,
+      "map.png",
+      "image/png",
+      Buffer.from(png, "base64"),
+    );
+  const note = (library: Library["Service"], groupId: string, n: number) =>
+    upload(
+      library,
+      groupId,
+      `note-${n}.txt`,
+      "text/plain",
+      Buffer.from(`note ${n}`),
+    );
 
   const blocks = (content: Message["content"] | undefined) =>
     Array.isArray(content) ? content : [];
 
   test("an owner image reaches each member and pages show it without bytes", async () => {
-    const { groups, group, contents } = setup();
+    const { groups, group, contents, library } = setup();
+    const { file } = await image(library, group.id);
 
     await groups.post(group.id, "Here is the route", "r-1", {
-      attachments: [image],
+      files: [file.id],
     });
     await quiet(groups, group.id);
 
@@ -819,20 +863,18 @@ describe("attachments", () => {
 
     const [message] = (await groups.snapshot(group.id, {})).messages;
 
-    expect(message?.attachments).toEqual([
-      { name: "map.png", mimeType: "image/png", size: 70, kind: "image" },
+    expect(message?.files).toEqual([
+      { id: file.id, name: "map.png", mimeType: "image/png", size: 70 },
     ]);
     expect(JSON.stringify(message)).not.toContain(png);
-    expect(
-      (await groups.attachment(group.id, message!.entryId, 0)).mimeType,
-    ).toBe("image/png");
   });
 
   test("a text-only model gets the image's name instead", async () => {
-    const { groups, group, store, inputs, contents, agents } = setup();
+    const { groups, group, store, inputs, contents, agents, library } = setup();
+    const { file } = await image(library, group.id);
 
     store.updateAgent(agents[1]!.id, { model: "text" });
-    await groups.post(group.id, "@Grace look", "r-1", { attachments: [image] });
+    await groups.post(group.id, "@Grace look", "r-1", { files: [file.id] });
     await quiet(groups, group.id);
     expect(inputs.get("Grace")![0]).toContain("left out: map.png");
     expect(
@@ -843,14 +885,15 @@ describe("attachments", () => {
   });
 
   test("with a vision model, a text-only model gets the image described", async () => {
-    const { groups, group, store, inputs, contents, agents } = setup(
+    const { groups, group, store, inputs, contents, agents, library } = setup(
       {},
       ["Ada", "Grace"],
       ["A route map from Lyon to Turin."],
     );
 
+    const { file } = await image(library, group.id);
     store.updateAgent(agents[1]!.id, { model: "text" });
-    await groups.post(group.id, "@Grace look", "r-1", { attachments: [image] });
+    await groups.post(group.id, "@Grace look", "r-1", { files: [file.id] });
     await quiet(groups, group.id);
     expect(inputs.get("Grace")![0]).not.toContain("left out");
     expect(
@@ -864,18 +907,12 @@ describe("attachments", () => {
         'described-by="vision model">\nA route map from Lyon to Turin.\n</image>',
       ),
     });
-
-    const [message] = (await groups.snapshot(group.id, {})).messages;
-
-    expect(
-      (await groups.attachment(group.id, message!.entryId, 0)).mimeType,
-    ).toBe("image/png");
   });
 
   test("coalesced messages send their newest eight attachments", async () => {
     const held = gate();
 
-    const { groups, group, contents } = setup({
+    const { groups, group, contents, library } = setup({
       Ada: async (input) => {
         if (input.includes("first")) await held.opened;
 
@@ -883,12 +920,15 @@ describe("attachments", () => {
       },
     });
 
+    const files = await Promise.all(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => note(library, group.id, n)),
+    );
     await groups.post(group.id, "@Ada first", "r-1");
     await groups.post(group.id, "@Ada older", "r-2", {
-      attachments: [1, 2, 3, 4, 5].map(note),
+      files: files.slice(0, 5).map(({ file }) => file.id),
     });
     await groups.post(group.id, "@Ada newer", "r-3", {
-      attachments: [6, 7, 8, 9].map(note),
+      files: files.slice(5).map(({ file }) => file.id),
     });
     held.open();
     await quiet(groups, group.id);
@@ -904,16 +944,70 @@ describe("attachments", () => {
     expect(names).toEqual([2, 3, 4, 5, 6, 7, 8, 9].map((n) => `note-${n}.txt`));
   });
 
+  test("a queued deleted file reaches a member as deleted", async () => {
+    const held = gate();
+    const { groups, group, library, contents } = setup({
+      Ada: async (input) => {
+        if (input.includes("first")) await held.opened;
+        return say("Done");
+      },
+    });
+    const { file } = await note(library, group.id, 1);
+    await groups.post(group.id, "@Ada first", "r-1");
+    await groups.post(group.id, "@Ada read", "r-2", { files: [file.id] });
+    await Effect.runPromise(
+      library.remove({ kind: "group", groupId: group.id }, file.id),
+    );
+    held.open();
+    await quiet(groups, group.id);
+    expect(JSON.stringify(contents.get("Ada")?.[1])).toContain(
+      `File ${file.id} was deleted`,
+    );
+  });
+
+  test("legacy files display as deleted and never reach member turns", async () => {
+    const { groups, group, transcripts, contents } = setup();
+    await transcripts.post(
+      group.id,
+      {
+        text: "old",
+        sender: { kind: "owner" },
+        attachments: [{ name: "old.png", mimeType: "image/png", data: png }],
+      },
+      "legacy",
+    );
+    const page = await groups.history(group.id, {});
+    expect(page.messages[0]?.files?.[0]).toMatchObject({ deleted: true });
+    await groups.post(group.id, "@Ada continue", "new");
+    await quiet(groups, group.id);
+    expect(JSON.stringify(contents.get("Ada")?.[0])).not.toContain(png);
+  });
+
+  test("a text-only member receives a large image as a reference", async () => {
+    const { groups, group, library, store, agents, contents } = setup();
+    store.updateAgent(agents[1]!.id, { model: "text" });
+    const { file } = await upload(
+      library,
+      group.id,
+      "large.png",
+      "image/png",
+      new Uint8Array(5 * 1024 * 1024 + 1),
+    );
+    await groups.post(group.id, "@Grace read", "large", { files: [file.id] });
+    await quiet(groups, group.id);
+    expect(JSON.stringify(contents.get("Grace")?.[0])).toContain(
+      `id: ${file.id}`,
+    );
+  });
+
   test("an invalid attachment writes nothing", async () => {
     const { groups, group } = setup();
 
     await expect(
       groups.post(group.id, "Look", "r-1", {
-        attachments: [
-          { name: "a.zip", mimeType: "application/zip", data: png },
-        ],
+        files: [crypto.randomUUID()],
       }),
-    ).rejects.toThrow("only images");
+    ).rejects.toThrow("File not found");
     expect((await groups.snapshot(group.id, {})).messages).toEqual([]);
   });
 });

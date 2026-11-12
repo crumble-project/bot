@@ -29,12 +29,13 @@ const OUTCOMES = {
     "The voice gateway token was revoked or replaced, so the call ended.",
 };
 
-const outcomeText = (result: VoiceCallResult) =>
-  result.outcome === "refused"
-    ? result.reason
-    : result.outcome === "failed" && result.error
-      ? `The call failed: ${result.error}`
-      : OUTCOMES[result.outcome];
+const outcomeText = (result: VoiceCallResult) => {
+  if (result.outcome === "refused") return result.reason;
+
+  return result.outcome === "failed" && result.error
+    ? `The call failed: ${result.error}`
+    : OUTCOMES[result.outcome];
+};
 
 const settledCleanly = (result: VoiceCallResult) =>
   result.outcome === "unanswered" || result.outcome === "busy";

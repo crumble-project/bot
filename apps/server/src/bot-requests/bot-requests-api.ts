@@ -6,7 +6,7 @@ import type { BotLookup } from "../bot-ports/bot-lookup";
 import { checkBotChoices } from "../bots/bot-choices";
 import type { McpServers } from "../integrations/mcp-servers";
 import type { Runner } from "../shared/runner";
-import { BotRequests } from "./bot-requests";
+import type { BotRequests } from "./bot-requests";
 
 type Options = {
   register: Register;

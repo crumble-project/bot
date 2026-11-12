@@ -6,6 +6,7 @@ import type { Agent } from "../contract/agents";
 import { Context } from "effect";
 import type { z } from "zod";
 import type { externalAuthResponse } from "../contract/api-responses";
+import { PLUGIN_CONTRIBUTIONS } from "../contract/plugins";
 import type { ChatAdapter } from "../message-gateway/adapter";
 import type {
   JobAnswer,
@@ -94,7 +95,7 @@ export function pluginWorkspaces(
     if (workspaces) return workspaces;
   }
 
-  return undefined;
+  return;
 }
 
 /** A value the owner sets for a plugin, such as an API key. See docs/adr/0009-plugin-settings.md. */
@@ -121,9 +122,7 @@ export type CrumblePlugin = {
 };
 
 export const pluginContributions = (plugin: CrumblePlugin) =>
-  (
-    ["providers", "jobKinds", "webSearchProviders", "chatAdapters"] as const
-  ).filter((kind) => (plugin[kind]?.length ?? 0) > 0);
+  PLUGIN_CONTRIBUTIONS.filter((kind) => (plugin[kind]?.length ?? 0) > 0);
 
 export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.providers ?? []);

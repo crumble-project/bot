@@ -23,7 +23,7 @@ function base32(text: string) {
   for (const char of text.replace(/[\s=]/g, "").toUpperCase()) {
     const index = BASE32.indexOf(char);
 
-    if (index < 0) return undefined;
+    if (index < 0) return;
 
     for (let bit = 4; bit >= 0; bit--) bits.push((index >> bit) & 1);
   }

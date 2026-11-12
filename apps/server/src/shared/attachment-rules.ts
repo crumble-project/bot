@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const MAX_ATTACHMENTS = 8;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const MAX_TEXT_BYTES = 512 * 1024;
 
 export const MAX_MESSAGE_BODY = 32 * 1024 * 1024;
 

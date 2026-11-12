@@ -91,7 +91,7 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
         input.content,
         input.requestId,
         input.replyTo,
-        input.attachments,
+        input.files,
         input.timezone,
       ),
       202,

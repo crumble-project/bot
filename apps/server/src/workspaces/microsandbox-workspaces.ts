@@ -2,6 +2,8 @@ import { errorText } from "../shared/errors";
 import { readFile } from "node:fs/promises";
 import { Effect } from "effect";
 import {
+  type MountBuilder,
+  type NetworkBuilder,
   Rule,
   Sandbox,
   SandboxNotFoundError,
@@ -215,7 +217,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
       record.cpus !== size.cpus ||
       record.memoryMib !== size.memoryMib
     )
-      return undefined;
+      return;
 
     // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
     return yield* untilBooted(
@@ -252,9 +254,13 @@ class MicrosandboxMachines implements WorkspaceMachines {
           .image(image)
           .cpus(size.cpus)
           .memory(size.memoryMib)
-          .volume(WORKSPACE_PATH, (mount) => mount.named(name))
+          .volume(WORKSPACE_PATH, (mount: InstanceType<typeof MountBuilder>) =>
+            mount.named(name),
+          )
           .proxy((outbound) => outbound.httpConnect(proxy.address))
-          .network((network) => network.policy(TCP_THROUGH_PROXY))
+          .network((network: InstanceType<typeof NetworkBuilder>) =>
+            network.policy(TCP_THROUGH_PROXY),
+          )
           .replace()
           .create(),
       ),

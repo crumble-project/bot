@@ -31,7 +31,7 @@ const isTargeted = (action: string) => ACTIONS.get(action)?.targeted === true;
 function refTarget(state: ComputerUseState, ref: string) {
   const found = refOf(state, ref);
 
-  if (!found) return undefined;
+  if (!found) return;
 
   const target: IntentTarget = {};
 

@@ -181,7 +181,7 @@ export const isCommitPoint = (
 
 export function decide(
   commitPoint: boolean,
-  answer: JudgeAnswer | undefined,
+  answer?: JudgeAnswer,
 ): Pick<IntentVerdict, "held" | "irreversible"> {
   const irreversible =
     commitPoint || (answer?.irreversible ?? 0) >= IRREVERSIBLE_AT;
@@ -200,7 +200,7 @@ export async function checkIntent(
 
   if (!judge)
     return {
-      ...decide(rulesOnly, undefined),
+      ...decide(rulesOnly),
       commitPoint: rulesOnly,
       answer: undefined,
     };
@@ -214,7 +214,7 @@ export async function checkIntent(
     signal?.throwIfAborted();
 
     return {
-      ...decide(rulesOnly, undefined),
+      ...decide(rulesOnly),
       commitPoint: rulesOnly,
       answer: undefined,
       judgeError: errorText(error),

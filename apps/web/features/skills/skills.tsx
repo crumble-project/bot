@@ -58,6 +58,7 @@ import {
   SectionEmpty,
   UsedBy,
   Page,
+  ErrorAlert,
 } from "@/components/page";
 import { BotAvatar } from "@/components/bot-avatar";
 import { cn } from "@/lib/utils";
@@ -524,14 +525,6 @@ function SkillSections({
   );
 }
 
-function FailureAlert({ message }: { message: string }) {
-  return (
-    <Alert variant="destructive">
-      <AlertDescription>{message}</AlertDescription>
-    </Alert>
-  );
-}
-
 function SkillsBody({
   bots,
   skillBots,
@@ -556,9 +549,9 @@ function SkillsBody({
   if (skills.isPending || bots.isPending || botSkillsPending)
     return <Skeleton className="h-40" />;
 
-  if (bots.isError) return <FailureAlert message={bots.error.message} />;
+  if (bots.isError) return <ErrorAlert>{bots.error.message}</ErrorAlert>;
 
-  if (skills.isError) return <FailureAlert message={skills.error.message} />;
+  if (skills.isError) return <ErrorAlert>{skills.error.message}</ErrorAlert>;
 
   return (
     <>
@@ -644,11 +637,7 @@ function UpdateCheckFailures({
     ),
   ];
 
-  return failures.length ? (
-    <Alert variant="destructive">
-      <AlertDescription>{failures.join(" ")}</AlertDescription>
-    </Alert>
-  ) : null;
+  return failures.length ? <ErrorAlert>{failures.join(" ")}</ErrorAlert> : null;
 }
 
 function InstalledSheets({
@@ -826,7 +815,7 @@ export function SkillsPage() {
       onRefresh={() => void invalidateSkills()}
     >
       <SkillsToolbar page={page} />
-      {failure && <FailureAlert message={failure.message} />}
+      {failure && <ErrorAlert>{failure.message}</ErrorAlert>}
       <UpdateCheckFailures check={page.check} />
       <BulkSkills
         bots={skillBots}

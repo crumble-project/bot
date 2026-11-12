@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { AttachmentInput } from "../shared/attachment-rules";
+import { z } from "zod";
+import {
+  attachmentInput,
+  type AttachmentInput,
+} from "../shared/attachment-rules";
 import { ACTIVE_EXECUTION_STATUSES, type Execution } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
@@ -9,7 +13,7 @@ import { executions } from "./schema.executions";
 export type NewExecution = Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
   prompt?: string;
   replyTo?: string | null;
-  attachments?: AttachmentInput[];
+  attachments?: string[];
 };
 
 const executionOf = (row: typeof executions.$inferSelect): Execution => ({
@@ -63,7 +67,10 @@ export class ExecutionRepository extends Context.Service<
     /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
     readonly attachments: (
       executionId: string,
-    ) => Effect.Effect<AttachmentInput[]>;
+    ) => Effect.Effect<
+      | { kind: "files"; ids: string[] }
+      | { kind: "legacy"; attachments: AttachmentInput[] }
+    >;
     readonly clearAttachments: (executionId: string) => Effect.Effect<void>;
   }
 >()("crumble/bot-store/ExecutionRepository") {
@@ -229,10 +236,18 @@ export class ExecutionRepository extends Context.Service<
             .from(executions)
             .where(eq(executions.id, executionId));
 
-          // SAFETY: the column holds the AttachmentInput array `create` wrote.
-          return row?.attachments
-            ? (JSON.parse(row.attachments) as AttachmentInput[])
-            : [];
+          if (!row?.attachments) return { kind: "files" as const, ids: [] };
+
+          const value: unknown = JSON.parse(row.attachments);
+          const parsed = z.array(z.uuid()).safeParse(value);
+          const legacy = z.array(attachmentInput).safeParse(value);
+
+          return parsed.success
+            ? { kind: "files" as const, ids: parsed.data }
+            : {
+                kind: "legacy" as const,
+                attachments: legacy.success ? legacy.data : [],
+              };
         },
         Effect.orDie,
       );

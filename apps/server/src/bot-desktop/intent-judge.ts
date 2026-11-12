@@ -178,21 +178,17 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
 
     const text = replyText(reply);
 
-    const parsed = chatAnswer.safeParse(
-      (() => {
-        try {
-          return JSON.parse(jsonIn(text));
-        } catch {
-          return undefined;
-        }
-      })(),
-    );
-
-    if (!parsed.success) throw new Error("The judge's answer was unreadable");
+    const answer = (() => {
+      try {
+        return chatAnswer.parse(JSON.parse(jsonIn(text)));
+      } catch {
+        throw new Error("The judge's answer was unreadable");
+      }
+    })();
 
     return {
-      irreversible: parsed.data.irreversible ? 1 : 0,
-      inIntent: parsed.data.in_intent ? 1 : 0,
+      irreversible: answer.irreversible ? 1 : 0,
+      inIntent: answer.in_intent ? 1 : 0,
       inIntentBar: CHAT_BAR,
       usage: reply.usage,
     };

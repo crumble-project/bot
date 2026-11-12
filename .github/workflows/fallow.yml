@@ -38,7 +38,8 @@ jobs:
           sarif: false
           comment: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
           branded-token: false
-      # Fallow audit emits multiple runs; Code Scanning requires a category for each.
+      # Fallow audit emits multiple runs; Code Scanning requires a category for each
+      # and rejects results without a location, which the PR comment still reports.
       - name: Assign SARIF run categories
         id: sarif
         if: always() && steps.fallow.outputs.sarif != ''
@@ -47,7 +48,8 @@ jobs:
         run: |
           jq '.runs |= (to_entries | map(
             .key as $index | .value |
-            .automationDetails.id = ("fallow/audit/" + ($index | tostring) + "/")
+            .automationDetails.id = ("fallow/audit/" + ($index | tostring) + "/") |
+            .results = ((.results // []) | map(select((.locations // []) | length > 0)))
           ))' "$SARIF_FILE" > fallow-upload.sarif
       - name: Upload SARIF
         if: >-

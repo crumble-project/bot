@@ -1,5 +1,4 @@
 import { routes } from "../contract/api-contract";
-import { attachmentHeaders } from "../shared/attachments";
 import type { Register } from "../contract/route";
 import { snapshotSender, streamEvents } from "../shared/event-stream";
 import { groupChatInput } from "../contract/group-chats";
@@ -63,19 +62,9 @@ const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
     return c.json(
       await groupChats.post(c.req.param("id"), input.content, input.requestId, {
         replyTo: input.replyTo,
-        attachments: input.attachments,
+        files: input.files,
       }),
       201,
-    );
-  });
-  register(routes.groupAttachment, async (c) => {
-    const { id, entryId, index } = c.req.valid("param");
-    const file = await groupChats.attachment(id, entryId, index);
-
-    return c.body(
-      new Uint8Array(file.data),
-      200,
-      attachmentHeaders(file.mimeType),
     );
   });
   register(routes.stopGroupChat, async (c) => {

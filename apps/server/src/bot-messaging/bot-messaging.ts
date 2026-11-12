@@ -239,8 +239,8 @@ export class BotMessaging extends Context.Service<
         };
       });
 
+      /** Writes the exchange's message into the transcript of `sourceId`, the bot that sent the request. */
       const record = Effect.fnUntraced(function* (
-        transcriptAgentId: string,
         sourceId: string,
         execution: Execution,
         status: "sent" | "done" | "failed" | "cancelled",
@@ -253,7 +253,7 @@ export class BotMessaging extends Context.Service<
           status === "done" ? [target, from] : [from, target];
 
         yield* bots.recordBotMessage(
-          transcriptAgentId,
+          sourceId,
           {
             content,
             communication: {
@@ -273,8 +273,10 @@ export class BotMessaging extends Context.Service<
         const { submissionId } = execution;
 
         return execution.status === "done" && submissionId
-          ? pi(() => runtime.turnWork(answering, submissionId))
-          : Effect.succeed(undefined);
+          ? pi(() => runtime.turnWork(answering, submissionId)).pipe(
+              Effect.map(Option.some),
+            )
+          : Effect.succeed(Option.none<TurnWork>());
       };
 
       const awaitTurn = (
@@ -310,7 +312,7 @@ export class BotMessaging extends Context.Service<
         deadline: number,
         context: PiContext,
       ) {
-        let work = yield* jobsOf(answering, execution);
+        let work = Option.getOrUndefined(yield* jobsOf(answering, execution));
 
         while (work?.open) {
           const left = deadline - (yield* Clock.currentTimeMillis);
@@ -318,7 +320,7 @@ export class BotMessaging extends Context.Service<
           if (left <= 0) break;
           yield* Effect.sleep(Math.min(JOB_POLL_MS, left));
           yield* checkAborted(context);
-          work = yield* jobsOf(answering, execution);
+          work = Option.getOrUndefined(yield* jobsOf(answering, execution));
         }
 
         return work;
@@ -454,7 +456,7 @@ export class BotMessaging extends Context.Service<
             sourceAgentId: from.id,
             targetAgentId: target.id,
           });
-          yield* record(from.id, from.id, execution, "sent", message);
+          yield* record(from.id, execution, "sent", message);
 
           return yield* receipt(execution);
         }),
@@ -494,7 +496,6 @@ export class BotMessaging extends Context.Service<
 
           if (status !== "pending" && status !== "running")
             yield* record(
-              sourceId,
               sourceId,
               execution,
               status,

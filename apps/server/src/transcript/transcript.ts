@@ -1,3 +1,4 @@
+import { projectCitations } from "./citations";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
@@ -11,6 +12,7 @@ import type {
 } from "@earendil-works/pi-durable";
 
 import type { AttachmentInfo } from "../shared/attachment-rules";
+import type { MessageFile } from "../files/message-files";
 import {
   formatEntryId,
   formatMessageId,
@@ -56,7 +58,10 @@ import {
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
 import type { WaitingFor } from "../contract/reply-event";
-import type { BotCommunication } from "../contract/api-responses";
+import {
+  transcriptBlock,
+  type BotCommunication,
+} from "../contract/api-responses";
 import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import { JOB_FAILURE_EVENT } from "../contract/tools";
@@ -89,7 +94,7 @@ export type TranscriptMessage = {
   requestId?: string | undefined;
   role: string;
   content: string;
-  blocks?: unknown;
+  blocks?: z.infer<typeof transcriptBlock>[];
   stopReason?: string;
   timestamp?: number | undefined;
   kind?: string;
@@ -110,12 +115,16 @@ export type TranscriptMessage = {
     direction: CallEventData["direction"];
     callee?: string;
   };
-  attachments?: AttachmentInfo[];
+  files?: MessageFile[];
   toolCallId?: string;
   toolName?: string | undefined;
   isError?: boolean | undefined;
   toolDetails?: unknown;
   sources?: WebSource[];
+  presentation?: {
+    text: string;
+    citations: { href: string; title: string; site: string }[];
+  };
 };
 
 export type TranscriptPage = {
@@ -152,9 +161,11 @@ function conversationPreview(message: TranscriptMessage): string {
 
   if (text && hasTextBlock(message))
     return text.slice(0, MESSAGE_PREVIEW_CHARS);
-  const attachment = message.attachments?.[0];
+  const file = message.files?.[0];
 
-  return attachment ? `Attachment: ${attachment.name}` : "";
+  if (!file) return "";
+
+  return "deleted" in file ? "File deleted" : `File: ${file.name}`;
 }
 
 function previewOf(message: TranscriptMessage): string {
@@ -325,14 +336,16 @@ function attachmentsOf(value: JsonValue | undefined): AttachmentInfo[] {
 }
 
 /** Image bytes stay out of snapshots and pages; clients fetch them by attachment index instead. */
-function withoutImageData(content: ModelContent) {
-  if (!Array.isArray(content)) return content;
+function withoutImageData(
+  content: ModelContent,
+): z.infer<typeof transcriptBlock>[] {
+  if (!Array.isArray(content)) return [{ type: "text", text: content }];
 
-  return content.map((block) =>
-    block?.type === "image"
-      ? { type: "image", mimeType: block.mimeType }
-      : block,
-  );
+  return content.flatMap((block) => {
+    const parsed = transcriptBlock.safeParse(block);
+
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function normalizeBoundary(
@@ -500,7 +513,12 @@ function normalizeGroupMessage(
 }
 
 function addGroupExtras(message: TranscriptMessage, data: GroupMessageData) {
-  if (data.files?.length) message.attachments = data.files;
+  if (data.files?.length) message.files = data.files;
+  else if (data.attachments?.length)
+    message.files = data.attachments.map((_, index) => ({
+      id: `legacy:${message.entryId}:${index}`,
+      deleted: true,
+    }));
 
   if (data.sources?.length) message.sources = data.sources;
 }
@@ -557,6 +575,27 @@ function normalizeModelEntry(
   const origin = originOf(data?.["origin"]);
   const attachments = attachmentsOf(data?.["attachments"]);
 
+  const parsedFiles = z
+    .array(
+      z.union([
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number(),
+        }),
+        z.object({ id: z.string(), deleted: z.literal(true) }),
+      ]),
+    )
+    .safeParse(data?.["files"]);
+
+  const files: MessageFile[] = parsedFiles.success
+    ? parsedFiles.data
+    : attachments.map((_, index) => ({
+        id: `legacy:${entryId}:${index}`,
+        deleted: true,
+      }));
+
   if (data?.["jobFailed"] === true && origin && input.text)
     return normalizeJobFailure(entryId, entry, origin, input.text);
 
@@ -569,7 +608,11 @@ function normalizeModelEntry(
     const attached = message.role === "user" ? attachments : [];
     const metadata = toolMetadata.parse(message);
 
-    if (emptyMessage(message, content, attached, metadata)) return [];
+    if (
+      emptyMessage(message, content, attached, metadata) &&
+      !(message.role === "user" && files.length)
+    )
+      return [];
 
     const result: TranscriptMessage = {
       id: formatMessageId(entryId, index),
@@ -586,7 +629,7 @@ function normalizeModelEntry(
 
     if (origin) result.origin = origin;
 
-    if (attached.length) result.attachments = attached;
+    if (message.role === "user" && files.length) result.files = files;
     applyToolMetadata(result, metadata);
 
     return [result];
@@ -671,6 +714,42 @@ async function collectEntries(
   return { entries: page.items, truncated: page.next !== undefined };
 }
 
+async function earlierCitationContext(
+  agentId: string,
+  conversation: Conversation | undefined,
+  oldest: number | null,
+  messages: TranscriptMessage[],
+): Promise<TranscriptMessage[]> {
+  const context: TranscriptMessage[] = [];
+  let cursor = oldest;
+  const firstUser = messages.findIndex((message) => message.role === "user");
+
+  const needsContext = messages
+    .slice(0, firstUser < 0 ? undefined : firstUser)
+    .some((message) => message.role === "assistant" && !message.sources);
+
+  while (
+    conversation &&
+    cursor !== null &&
+    needsContext &&
+    !context.some((message) => message.role === "user")
+  ) {
+    const previous = await collectEntries(conversation, 100, cursor);
+
+    if (!previous.entries.length) break;
+
+    for (const entry of previous.entries) {
+      const normalized = normalize(agentId, entry);
+      context.unshift(...normalized);
+      cursor = Number(entry.id);
+
+      if (normalized.some((message) => message.role === "user")) break;
+    }
+  }
+
+  return context;
+}
+
 /** Newest-first page over one conversation. */
 async function readPage(
   agentId: string,
@@ -701,6 +780,15 @@ async function readPage(
   }
 
   const oldest = consumed ? Number(entries[consumed - 1]!.id) : null;
+
+  const context = await earlierCitationContext(
+    agentId,
+    conversation,
+    oldest,
+    messages,
+  );
+
+  projectCitations(messages, context);
 
   return {
     messages,
@@ -832,8 +920,7 @@ export async function readAttachment(
 
   const entry = await entryAt(await harness.root(BACKGROUND_CONTEXT), target);
 
-  const image =
-    entry && (inputImage(entry, index) ?? screenshotImage(entry, index));
+  const image = entry && screenshotImage(entry, index);
 
   if (!image) throw new NotFound({ message: "Attachment not found" });
 
@@ -844,19 +931,6 @@ const imagesOf = (content: ModelContent | undefined) =>
   Array.isArray(content)
     ? content.flatMap((block) => (block.type === "image" ? [block] : []))
     : [];
-
-function inputImage(entry: EntryRecord, index: number) {
-  const attachments = attachmentsOf(record(entry.data)?.["attachments"]);
-
-  if (attachments[index]?.kind !== "image") return undefined;
-
-  // Image blocks follow the attachment order, so the nth image is the nth image attachment.
-  const imageIndex = attachments
-    .slice(0, index)
-    .filter((item) => item.kind === "image").length;
-
-  return imagesOf(entry.model?.[0]?.content)[imageIndex];
-}
 
 function screenshotImage(entry: EntryRecord, index: number) {
   const message = entry.model?.[0];

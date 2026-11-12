@@ -17,6 +17,10 @@ can be read.
 | Workspace disks    | `MSB_HOME`, `~/.microsandbox` by default | The files in each bot's `/workspace`. Only with Microsandbox.                                    |
 | The master key     | Wherever you keep `CRUMBLE_MASTER_KEY`   | Only if you set one. See below.                                                                  |
 
+Include `users/<account>/files/` inside the data directory. It contains library
+file bytes and extracted text; `store.sqlite` holds their entries. Back up both
+together, not just the database.
+
 Without the account keys, encrypted provider sign-ins and credentials can't be
 read.
 

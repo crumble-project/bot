@@ -75,7 +75,7 @@ export const currentPage = (state: ComputerUseState) =>
 
 /** A page's host without its port, as logins name hosts. Undefined for a URL without one. */
 export function pageHost(url: string | undefined) {
-  if (!url || !URL.canParse(url)) return undefined;
+  if (!url || !URL.canParse(url)) return;
 
   return new URL(url).hostname || undefined;
 }

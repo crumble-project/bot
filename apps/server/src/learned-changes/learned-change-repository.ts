@@ -93,13 +93,15 @@ export class LearnedChangeRepository extends Context.Service<
         if (!by) return null;
         const changeId = crypto.randomUUID();
 
-        const action: LearnedChange["action"] = revertsId
-          ? "revert"
-          : before === null
-            ? "create"
-            : after === null
-              ? "delete"
-              : "update";
+        const actionOf = (): LearnedChange["action"] => {
+          if (revertsId) return "revert";
+
+          if (before === null) return "create";
+
+          return after === null ? "delete" : "update";
+        };
+
+        const action = actionOf();
 
         return yield* db
           .insert(learnedChanges)

@@ -5,7 +5,6 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import { IconBell, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,7 @@ import {
   RowMenu,
   Section,
   SectionEmpty,
+  ErrorAlert,
 } from "@/components/page";
 import type { Bot } from "@/features/bots/api";
 import { send, type RoutePath } from "@/lib/api";
@@ -427,6 +427,17 @@ export function UsesDialog<U extends SecretUse>({
 
   const rows = uses.data?.pages.flat() ?? [];
 
+  const contentOf = () => {
+    if (uses.isPending) return <Skeleton className="h-32" />;
+
+    if (uses.isError) return <ErrorAlert>{uses.error.message}</ErrorAlert>;
+
+    if (rows.length === 0)
+      return <p className="text-sm text-muted-foreground">{empty}</p>;
+
+    return <UseRows rows={rows}>{children}</UseRows>;
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
@@ -434,17 +445,7 @@ export function UsesDialog<U extends SecretUse>({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {uses.isPending ? (
-          <Skeleton className="h-32" />
-        ) : uses.isError ? (
-          <Alert variant="destructive">
-            <AlertDescription>{uses.error.message}</AlertDescription>
-          </Alert>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          <UseRows rows={rows}>{children}</UseRows>
-        )}
+        {contentOf()}
         {uses.hasNextPage && (
           <Button
             variant="outline"
@@ -558,11 +559,7 @@ export function ActionFailure({
 
   if (!failed) return null;
 
-  return (
-    <Alert variant="destructive">
-      <AlertDescription>{failed.message}</AlertDescription>
-    </Alert>
-  );
+  return <ErrorAlert>{failed.message}</ErrorAlert>;
 }
 
 export function DeleteSecretDialog({

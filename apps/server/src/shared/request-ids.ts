@@ -1,4 +1,4 @@
-export type NoticeKind = "credential" | "login";
+export type NoticeKind = "credential" | "login" | "files";
 
 export const scheduleRequest = (scheduleId: string, due: string) =>
   `schedule:${scheduleId}:${due}`;
@@ -53,6 +53,23 @@ export const groupTurnRequest = (
 export const groupPostRequest = (executionId: string) =>
   `group-turn:${executionId}`;
 
+export function groupTurnScope(requestId: string, agentId: string) {
+  const [prefix, groupId, memberId, through, ...extra] = requestId.split(":");
+
+  if (
+    prefix !== "group-turn" ||
+    !groupId ||
+    memberId !== agentId ||
+    !through ||
+    !/^(0|[1-9]\d*)$/.test(through) ||
+    !Number.isSafeInteger(Number(through)) ||
+    extra.length > 0
+  )
+    return;
+
+  return { kind: "group" as const, groupId };
+}
+
 /** The ID a job's turn is reviewed under: it has no execution, so nothing resolves this as one. */
 export const jobTurnId = (
   jobKind: string,
@@ -86,15 +103,59 @@ export type ParsedRequest =
   | { kind: "other" };
 
 export function askingBot(request: ParsedRequest) {
-  switch (request.kind) {
-    case "delegate":
-      return request.sourceAgentId;
-    case "job-question":
-      return request.assigneeId;
-    default:
-      return undefined;
-  }
+  if (request.kind === "delegate") return request.sourceAgentId;
+
+  if (request.kind === "job-question") return request.assigneeId;
+
+  return;
 }
+
+type PrefixParser = (subject: string, detail: string) => ParsedRequest;
+
+const noticeOf =
+  (notice: NoticeKind): PrefixParser =>
+  (name, id) => ({
+    kind: "notice",
+    notice,
+    name,
+    id,
+  });
+
+/** Each request prefix and what its fields mean; a prefix missing here, such as a client's own ID, is `other`. */
+const PREFIXES = new Map<string, PrefixParser>([
+  ["schedule", (scheduleId, due) => ({ kind: "schedule", scheduleId, due })],
+  ["script", (scheduleId, runId) => ({ kind: "script", scheduleId, runId })],
+  [
+    "event",
+    (eventId, scheduleId) =>
+      scheduleId ? { kind: "event", eventId, scheduleId } : { kind: "other" },
+  ],
+  [
+    "delegate",
+    (sourceAgentId, taskId) => ({ kind: "delegate", sourceAgentId, taskId }),
+  ],
+  [
+    "job-question",
+    (assigneeId, questionId) => ({
+      kind: "job-question",
+      assigneeId,
+      questionId,
+    }),
+  ],
+  ["files", noticeOf("files")],
+  ["credential", noticeOf("credential")],
+  ["login", noticeOf("login")],
+  ["bot-request", (botRequestId) => ({ kind: "bot-request", botRequestId })],
+  ["gateway", (adapterId, id) => ({ kind: "gateway", adapterId, id })],
+  ["voice", (callId, id) => ({ kind: "voice", callId, id })],
+  ["voice-call", (callId) => ({ kind: "voice-call", callId })],
+  ["outside-call", (callId, id) => ({ kind: "outside-call", callId, id })],
+  [
+    "call-request",
+    (callRequestId) => ({ kind: "call-request", callRequestId }),
+  ],
+  ["review", (executionId) => ({ kind: "review", executionId })],
+]);
 
 /** What a request ID says about its turn. A due time or a task ID may hold colons, so the last field takes the rest. */
 export function parseRequestId(requestId: string): ParsedRequest {
@@ -103,39 +164,7 @@ export function parseRequestId(requestId: string): ParsedRequest {
 
   if (prefix === "group-turn") return { kind: "group-turn" };
 
-  if (!subject) return { kind: "other" };
+  if (!subject || !prefix) return { kind: "other" };
 
-  switch (prefix) {
-    case "schedule":
-      return { kind: "schedule", scheduleId: subject, due: detail };
-    case "script":
-      return { kind: "script", scheduleId: subject, runId: detail };
-    case "event":
-      return detail
-        ? { kind: "event", eventId: subject, scheduleId: detail }
-        : { kind: "other" };
-    case "delegate":
-      return { kind: "delegate", sourceAgentId: subject, taskId: detail };
-    case "job-question":
-      return { kind: "job-question", assigneeId: subject, questionId: detail };
-    case "credential":
-    case "login":
-      return { kind: "notice", notice: prefix, name: subject, id: detail };
-    case "bot-request":
-      return { kind: "bot-request", botRequestId: subject };
-    case "gateway":
-      return { kind: "gateway", adapterId: subject, id: detail };
-    case "voice":
-      return { kind: "voice", callId: subject, id: detail };
-    case "voice-call":
-      return { kind: "voice-call", callId: subject };
-    case "outside-call":
-      return { kind: "outside-call", callId: subject, id: detail };
-    case "call-request":
-      return { kind: "call-request", callRequestId: subject };
-    case "review":
-      return { kind: "review", executionId: subject };
-    default:
-      return { kind: "other" };
-  }
+  return PREFIXES.get(prefix)?.(subject, detail) ?? { kind: "other" };
 }

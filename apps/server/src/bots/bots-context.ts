@@ -1,7 +1,11 @@
 import { Effect, FiberMap, type Scope } from "effect";
 import { parseRequestId } from "../shared/request-ids";
 import type { Execution } from "../shared/domain";
-import { keyedListeners, keyedLocks } from "../shared/keyed";
+import {
+  keyedListeners,
+  keyedLocks,
+  type KeyedListeners,
+} from "../shared/keyed";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { EventRepository } from "../event-sources/event-repository";
@@ -13,6 +17,7 @@ import { CallNotes } from "../bot-ports/call-notes";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
+import { Library } from "../files/library";
 
 export const isGroupTurn = (execution: Execution) =>
   parseRequestId(execution.requestId).kind === "group-turn";
@@ -33,11 +38,12 @@ export type BotsContext = {
   readonly schedules: ScheduleRepository["Service"];
   readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
+  readonly library: Library["Service"];
   readonly notices: BotNotices["Service"];
   readonly callNotes: CallNotes["Service"];
   readonly deletion: BotDeletion["Service"];
   readonly scope: Scope.Scope;
-  readonly listeners: ReturnType<typeof keyedListeners>;
+  readonly listeners: KeyedListeners;
   readonly activityListeners: Set<(event: Activity) => void>;
   readonly settledListeners: Set<
     (execution: Execution) => void | Promise<void>
@@ -56,6 +62,7 @@ export const botsContext = Effect.gen(function* () {
     schedules: yield* ScheduleRepository,
     events: yield* EventRepository,
     runtime: yield* BotRuntime,
+    library: yield* Library,
     notices: yield* BotNotices,
     callNotes: yield* CallNotes,
     deletion: yield* BotDeletion,

@@ -1,10 +1,6 @@
 import { logged, pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import type {
-  AttachmentInfo,
-  AttachmentInput,
-} from "../shared/attachment-rules";
-import { validAttachments } from "../shared/attachments";
+import type { MessageFile } from "../files/message-files";
 import { InvalidInput, type AppError } from "../shared/errors";
 import type { GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
@@ -15,7 +11,7 @@ import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 export type GroupChatPostOptions = {
   replyTo?: string | undefined;
-  attachments?: AttachmentInput[] | undefined;
+  files?: string[] | undefined;
 };
 
 export type GroupChatPost = (
@@ -33,8 +29,7 @@ export type GroupChatPostDeps = {
 
 type OwnerPost = {
   content: string;
-  attachments: AttachmentInput[];
-  info: AttachmentInfo[];
+  files: MessageFile[];
   target: GroupEntry | undefined;
 };
 
@@ -48,7 +43,7 @@ export const groupChatPost = ({
     requestId: string,
     message: OwnerPost,
   ) {
-    const { content, attachments, info, target } = message;
+    const { content, files, target } = message;
 
     return yield* pi(() =>
       context.transcripts.write(
@@ -56,7 +51,7 @@ export const groupChatPost = ({
         {
           text: content,
           sender: { kind: "owner" },
-          ...(attachments.length && { attachments, files: info }),
+          ...(files.length && { files }),
           ...(target && {
             replyTo: target.entryId,
             replyPreview: target.text.slice(0, MESSAGE_PREVIEW_CHARS),
@@ -74,9 +69,29 @@ export const groupChatPost = ({
     options: GroupChatPostOptions = {},
   ) {
     yield* context.get(groupId);
-    const attachments = options.attachments ?? [];
 
-    const { info } = yield* validAttachments(attachments);
+    const ids = options.files ?? [];
+    const ref = { kind: "group" as const, groupId };
+
+    const previous = yield* pi(() =>
+      context.transcripts.byRequest(groupId, requestId),
+    );
+
+    if (!previous && ids.length) yield* context.library.validate(ref, ids);
+
+    const entries = yield* context.library.entries(ref, ids);
+
+    const files: MessageFile[] = ids.map((id) => {
+      const old = previous?.files?.find((file) => file.id === id);
+
+      if (old) return old;
+
+      const entry = entries.get(id);
+
+      return entry
+        ? { id, name: entry.name, mimeType: entry.mimeType, size: entry.size }
+        : { id, deleted: true };
+    });
 
     const replyTo = options.replyTo;
 
@@ -94,7 +109,7 @@ export const groupChatPost = ({
     const { entry, entryId, created } = yield* writeOwnerMessage(
       groupId,
       requestId,
-      { content, attachments, info, target },
+      { content, files, target },
     );
 
     const group = yield* context.get(groupId);

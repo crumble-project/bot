@@ -194,11 +194,11 @@ const authStatus = z.looseObject({
   subscriptionType: z.string().nullish(),
 });
 
-const jsonLine = (line: string) => {
+const jsonLine = <T>(line: string, schema: z.ZodType<T>): T | undefined => {
   try {
-    return JSON.parse(line);
+    return schema.parse(JSON.parse(line));
   } catch {
-    return undefined;
+    return;
   }
 };
 
@@ -251,13 +251,13 @@ export async function claudeCodeStatus(
       20_000,
     );
 
-    const parsed = authStatus.safeParse(jsonLine(result.stdout.trim()));
+    const status = jsonLine(result.stdout.trim(), authStatus);
 
-    if (parsed.success && parsed.data.loggedIn === true)
+    if (status?.loggedIn === true)
       return {
         status: "signed_in",
         cliVersion: version,
-        plan: planLabel(parsed.data.subscriptionType),
+        plan: planLabel(status.subscriptionType),
       };
   } catch {
     return {
@@ -337,7 +337,7 @@ async function readPicker(command: string, options: ClaudeCodeOptions) {
     env["ANTHROPIC_BASE_URL"] = gate.url;
     content = pickerContent(await pickerHandshake(command, env, cwd));
   } catch {
-    return undefined;
+    return;
   } finally {
     await gate.close();
     rmSync(cwd, { recursive: true, force: true });
@@ -371,8 +371,8 @@ async function pickerHandshake(
 
   return result.stdout
     .split("\n")
-    .map((line) => handshake.safeParse(jsonLine(line)))
-    .find((parsed) => parsed.success)?.data?.response.response;
+    .map((line) => jsonLine(line, handshake))
+    .find((parsed) => parsed !== undefined)?.response.response;
 }
 
 type PickerRoute = { route: string; known: boolean; base: string };
@@ -490,7 +490,7 @@ function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
   const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
   const routes = mergePickerRows(rows, announced, creditBilled);
 
-  if (routes.size === 0) return undefined;
+  if (routes.size === 0) return;
   addPinnedRoutes(routes, creditBilled);
 
   return [...routes.values()];

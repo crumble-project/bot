@@ -51,7 +51,7 @@ The token reaches no other route.
 | **Message gateways**     | `GET /v1/message-gateways`, `PUT /v1/message-gateways/{id}`                                                                                                                                                                                                                     |
 | **Bots**                 | `/v1/agents`, `/v1/agents/{id}`, `POST /v1/agents/{id}/duplicate`                                                                                                                                                                                                               |
 | **Bot chat**             | `/v1/agents/{id}/chat`, `/v1/agents/{id}/chat/history`, `POST /v1/agents/{id}/messages`, `POST /v1/agents/{id}/abort`, `POST /v1/agents/{id}/compact`, `/v1/agents/{id}/attachments/{entryId}/{index}`                                                                          |
-| **Group chats**          | `/v1/group-chats`, `/v1/group-chats/{id}`, `/v1/group-chats/{id}/chat`, `/v1/group-chats/{id}/history`, `POST /v1/group-chats/{id}/messages`, `POST /v1/group-chats/{id}/stop`, `/v1/group-chats/{id}/attachments/{entryId}/{index}`                                            |
+| **Group chats**          | `/v1/group-chats`, `/v1/group-chats/{id}`, `/v1/group-chats/{id}/chat`, `/v1/group-chats/{id}/history`, `POST /v1/group-chats/{id}/messages`, `POST /v1/group-chats/{id}/stop`                                                                                                  |
 | **Jobs**                 | `/v1/agents/{id}/coding-jobs`, `/v1/agents/{id}/coding-jobs/{name}/history`, `/v1/agents/{id}/desktop-jobs`, `/v1/agents/{id}/desktop-jobs/{name}/history`                                                                                                                      |
 | **Bot desktop**          | `POST /v1/agents/{id}/desktop/viewer`, `/v1/agents/{id}/desktop/control`, `GET /v1/agents/{id}/desktop/status`                                                                                                                                                                  |
 | **Credentials**          | `/v1/agents/{id}/credentials`, `/v1/agents/{id}/credentials/{name}`, `/v1/agents/{id}/credentials/{name}/uses`                                                                                                                                                                  |
@@ -68,6 +68,98 @@ The token reaches no other route.
 | **Providers & models**   | `/v1/providers`, `/v1/providers/{provider}`, `POST /v1/providers/{provider}/login`, `/v1/provider-logins/{id}`, `POST /v1/provider-logins/{id}/responses`, `/v1/models`, `/v1/vision-model`                                                                                     |
 | **Password managers**    | `/v1/password-managers`, `/v1/password-managers/{id}`                                                                                                                                                                                                                           |
 | **MCP servers**          | `/v1/mcp-servers`, `/v1/mcp-servers/{id}`, `/v1/mcp-servers/{id}/oauth`, `POST /v1/mcp-servers/{id}/oauth/callback`                                                                                                                                                             |
+
+## Library files
+
+Each bot and each group chat has its own library. Use the same account session
+as for messages. File IDs belong to one library and can't be sent in another.
+
+| Operation | Bot library                             | Group library                                |
+| --------- | --------------------------------------- | -------------------------------------------- |
+| Upload    | `POST /v1/agents/{id}/files`            | `POST /v1/group-chats/{id}/files`            |
+| List      | `GET /v1/agents/{id}/files`             | `GET /v1/group-chats/{id}/files`             |
+| Download  | `GET /v1/agents/{id}/files/{fileId}`    | `GET /v1/group-chats/{id}/files/{fileId}`    |
+| Delete    | `DELETE /v1/agents/{id}/files/{fileId}` | `DELETE /v1/group-chats/{id}/files/{fileId}` |
+
+Upload raw bytes, not JSON or multipart data. Set `Content-Type` to the file's
+MIME type and `X-File-Name` to its percent-encoded UTF-8 name. Any file type is
+accepted, up to 100 MB per file. A successful upload returns `201` with a
+`file` object containing `id`, `name`, `mimeType`, `size`, and `createdAt`,
+and an `existed` boolean.
+Uploading identical bytes to the same library returns its existing ID and
+`existed: true`. Uploading adds the entry immediately, even if no message follows.
+Only an explicit library delete removes it.
+
+List returns a JSON array, newest first. Pass `limit` from 1 to 200, defaulting
+to 50, and `before` with the last file ID to fetch older entries.
+
+Send a message with `files`, an array of up to eight uploaded file IDs. Content
+can be empty when the array isn't empty. For example:
+
+```json
+{
+  "content": "Read this document",
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "files": ["019a15bf-0000-7000-8000-000000000001"]
+}
+```
+
+The old base64 `attachments` field is rejected. A new send with an unknown,
+foreign, or deleted ID returns `400`. A retry with the same request ID,
+content, and file IDs returns the existing execution, even after deletion.
+Files deleted before admission become deleted markers; the message still arrives.
+
+Downloads are always attachments, with RFC 6266 `filename*`, `nosniff`, a
+sandbox content security policy, `Cache-Control: private, no-cache`, and the
+content hash as `ETag`. Only PNG, JPEG, GIF, and WebP keep their stored MIME
+type; other downloads use `application/octet-stream`. A deleted file returns
+`404`, including requests with a matching `If-None-Match`.
+
+Transcript messages expose `files` with each file's ID, name, MIME type, and
+size, or `{ "id": "...", "deleted": true }`. Legacy attachments appear as
+deleted files. The bot attachment endpoint remains only for desktop screenshots;
+the group attachment endpoint is removed.
+
+## Transcript and display fields
+
+Transcript messages expose `blocks` as an array discriminated by `type`. The
+server normalizes provider content before returning it. Image blocks contain
+metadata. Use file download routes for library files and the bot attachment
+endpoint for desktop screenshots.
+
+`TranscriptBlock` and `JobHistoryItem` are named OpenAPI schemas with named
+variants. Event schemas reference the same block definitions through `$defs`.
+Client generators reuse these names across HTTP and event responses. Use the
+generated types directly, adding presentation helpers and local UI state where needed.
+
+Assistant messages can include `presentation`, containing display text and
+`citations` with `href`, `title`, and `site`. Render these fields directly.
+The server associates sources with each reply and extracts citation chips outside
+code. The original `content` remains available for transcript exports.
+
+Coding and desktop job history responses include `items`, ordered for display.
+Each item's `kind` identifies a task, reply, or tool step. Steps include a display
+label, an icon identifier, an optional subject, and their result when available.
+Render these items instead of deriving steps from provider blocks.
+
+Bot chat snapshots include `working`, which identifies the bot's current activity.
+Use this field for activity indicators instead of interpreting tool calls.
+
+Schedule responses include `description` for their timing and `timing` for the
+same text with a `Paused · ` prefix when disabled. These fields include event
+source names and use the schedule's time zone. Render them directly for saved
+automations; keep editable recurrence inputs separate.
+`nextRunLabel` supplies the saved schedule's next-run display text. Refresh
+schedule responses while displaying relative labels to keep them current.
+
+`POST /v1/schedules/preview` returns a draft schedule's description, preview
+text, problem status, and next run. Editors use this response for cron wording,
+validation feedback, and next-run calculations. The request does not save a schedule.
+
+`POST /v1/reasoning/preview` accepts a provider, model, and requested thinking
+level. It returns labeled options and the effective level. Editors and composers
+use these fields without duplicating model support or clamping rules. The request
+does not change a bot.
 
 ## Event Streams
 

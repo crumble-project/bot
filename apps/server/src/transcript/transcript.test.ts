@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { JsonValue } from "@earendil-works/chord";
 import { latestMessagePreview, readTranscript } from "./transcript";
 import type { Cursor, Harness } from "@earendil-works/pi-durable";
 
@@ -15,10 +16,15 @@ type FakeEntry = {
   id: number;
   conversationId: number;
   kind: string;
-  model?: { role: string; content: string }[];
+  model?: {
+    role: string;
+    content: string | Record<string, JsonValue>[];
+    toolName?: string;
+    details?: JsonValue;
+  }[];
   data?:
     | { content?: string; communication?: FakeCommunication }
-    | Record<string, string | number>;
+    | Record<string, JsonValue>;
 };
 
 type FakeQuery = {
@@ -57,6 +63,80 @@ const user = (id: number, text: string, kind = "pi.user") => ({
 });
 
 describe("durable transcript helpers", () => {
+  test("marks legacy attachment metadata deleted", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          ...user(1, "hello", "crumble.message"),
+          data: {
+            text: "hello",
+            attachments: [
+              {
+                name: "old.png",
+                mimeType: "image/png",
+                size: 4,
+                kind: "image",
+              },
+            ],
+          },
+        },
+      ]),
+      "a",
+    );
+
+    expect(page.messages[0]?.files).toEqual([
+      { id: "legacy:a:1:0", deleted: true },
+    ]);
+  });
+
+  test("normalizes provider blocks and removes private fields", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          id: 2,
+          conversationId: 1,
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: [
+                { type: "text", text: "hello", textSignature: "private" },
+                {
+                  type: "thinking",
+                  thinking: "hmm",
+                  thinkingSignature: "private",
+                },
+                { type: "image", mimeType: "image/png", data: "secret" },
+                {
+                  type: "toolCall",
+                  id: "call",
+                  name: "bash",
+                  arguments: { command: "pwd" },
+                  thoughtSignature: "private",
+                },
+              ],
+            },
+          ],
+        },
+        user(1, "task"),
+      ]),
+      "a",
+    );
+
+    expect(page.messages[0]?.blocks).toEqual([{ type: "text", text: "task" }]);
+    expect(page.messages[1]?.blocks).toEqual([
+      { type: "text", text: "hello" },
+      { type: "thinking", thinking: "hmm" },
+      { type: "image", mimeType: "image/png" },
+      {
+        type: "toolCall",
+        id: "call",
+        name: "bash",
+        arguments: { command: "pwd" },
+      },
+    ]);
+  });
+
   test("chooses the latest visible text and skips structural output", () => {
     expect(
       latestMessagePreview([
@@ -78,17 +158,17 @@ describe("durable transcript helpers", () => {
           entryId: "a:4",
           role: "user",
           content: "",
-          attachments: [
+          files: [
             {
+              id: "file-id",
               name: "brief.pdf",
               mimeType: "application/pdf",
               size: 12,
-              kind: "text",
             },
           ],
         },
       ]),
-    ).toBe("Attachment: brief.pdf");
+    ).toBe("File: brief.pdf");
     expect(
       latestMessagePreview([
         {
@@ -139,6 +219,49 @@ describe("durable transcript helpers", () => {
     });
 
     expect(older.messages.map((m) => m.content)).toEqual(["one"]);
+  });
+
+  test("projects citations from earlier entries without expanding the page", async () => {
+    const page = await readTranscript(
+      fakeHarness([
+        {
+          id: 3,
+          conversationId: 1,
+          kind: "pi.assistant",
+          model: [
+            {
+              role: "assistant",
+              content: "Answer [source](https://example.com)",
+            },
+          ],
+        },
+        {
+          id: 2,
+          conversationId: 1,
+          kind: "pi.toolResult",
+          model: [
+            {
+              role: "toolResult",
+              content: "result",
+              toolName: "web_search",
+              details: [{ url: "https://example.com", title: "Example" }],
+            },
+          ],
+        },
+        user(1, "search"),
+      ]),
+      "a",
+      { limit: 1 },
+    );
+
+    expect(page.messages).toHaveLength(1);
+    expect(page.messages[0]?.presentation).toEqual({
+      text: "Answer",
+      citations: [
+        { href: "https://example.com", title: "Example", site: "example.com" },
+      ],
+    });
+    expect(page.hasMore).toBe(true);
   });
 
   test("normalizes bot communication cards and ignores malformed or model-less entries", async () => {

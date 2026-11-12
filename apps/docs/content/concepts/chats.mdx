@@ -46,10 +46,30 @@ flowchart LR
 **Compaction never deletes anything you can see.** It only changes what the
 bot reads on its next turn.
 
-## Images
+## Files
 
-Attach images to a message, and a bot whose model reads images sees them as
-they are. A bot whose model can't read images refuses a message with an image,
+In the web client, attach any file up to 100 MB, with at most eight files per
+message. Attaching uploads the file to that chat's library immediately.
+Removing it from the composer removes it from the draft, not the library.
+Uploading the same content again reuses the entry in that library.
+
+Open **Library** from a bot's details or a group chat to browse files newest
+first, download them, or delete them. Each bot and each group chat has its own
+library. Files sent on Discord don't reach the bot or its library.
+
+The bot receives small UTF-8 text files inline, up to 32 KB of text. Crumble
+extracts PDF text at upload and uses the same inline limit. Longer text and
+other formats arrive as references with a name, type, size, and file ID.
+If PDF extraction fails or finds no text, the reference says so.
+
+The bot's library tool can list files, read text in parts, and search within a
+file. In a group chat it reaches the group library and its own library, not
+another member's. Coding and desktop jobs reach their bot's library. A bot
+with a workspace can copy a file there to inspect other formats.
+
+PNG, JPEG, GIF, and WebP images up to 5 MB reach the model as images; larger
+images arrive as references. A bot whose model reads images sees them as they
+are. A bot whose model can't read images refuses a message with an inline image,
 unless the account has a [vision model](/getting-started/providers#vision-model).
 
 With a vision model set, the vision model reads each image and describes it,
@@ -60,6 +80,15 @@ receipt?", so the first description needn't hold every detail.
 
 If the vision model can't read an image, the bot gets a note saying so in its
 place and answers anyway. The next turn tries the image again.
+
+Deleting a library file stops future downloads and changes its transcript
+entry to **File deleted**. A queued message still arrives, with a deleted-file
+note. What the bot already read stays in its working context until compaction.
+Deleting the bot or group chat also removes its library.
+
+Files attached before the library update aren't migrated: their transcript
+entries show **File deleted**. Older native clients need an update before they
+can send files again.
 
 ## Bringing Back an Earlier Message
 

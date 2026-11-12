@@ -7,7 +7,7 @@ import type {
 } from "../contract/skill-install";
 import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
-import { GitHubUnavailable } from "../github-apps/github-api";
+import type { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
 import { type Skill, type SkillInput } from "../contract/skills";
 import { skillNameKey, type SkillDocument } from "./skill-repository";

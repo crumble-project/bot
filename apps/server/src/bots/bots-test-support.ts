@@ -12,6 +12,7 @@ import type { CallNotes } from "../bot-ports/call-notes";
 import type { ConversationRepository } from "../bot-store/conversation-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime, type AgentRuntime } from "./runtime";
+import type { Library } from "../files/library";
 
 type StandaloneServices =
   | Bots
@@ -25,7 +26,8 @@ type StandaloneServices =
   | BotNotices
   | CallNotes
   | BotDeletion
-  | ProductDatabase;
+  | ProductDatabase
+  | Library;
 
 type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
 

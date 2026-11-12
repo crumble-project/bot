@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
-import { toUploads } from "./composer";
+import { safeBlob } from "@/features/library/api";
 
-test("image previews reuse attachment data without an object URL", async () => {
-  const { uploads } = await toUploads([
-    new File(["image"], "image.png", { type: "image/png" }),
-  ]);
-
-  expect(uploads[0]?.preview).toBe("data:image/png;base64,aW1hZ2U=");
+test("safe blobs preserve only supported image types", () => {
+  const bytes = new Blob(["<script>bad()</script>"], { type: "text/html" });
+  expect(safeBlob(bytes, "text/html").type).toBe("application/octet-stream");
+  expect(safeBlob(bytes, "image/png").type).toBe("image/png");
 });

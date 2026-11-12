@@ -98,6 +98,93 @@ const post = (
 ) => req(app, path, { method: "POST", body: JSON.stringify(body) });
 
 describe("group chat API", () => {
+  test("group messages use library files and the old attachment route is gone", async () => {
+    const { app, ids, close } = setup();
+    try {
+      const group = groupChatResponse.parse(
+        await (
+          await post(app, "/v1/group-chats", {
+            name: "Trip",
+            memberIds: [ids[0]!, ids[1]!],
+          })
+        ).json(),
+      );
+      const upload = await req(app, `/v1/group-chats/${group.id}/files`, {
+        method: "POST",
+        headers: { "content-type": "text/plain", "x-file-name": "notes.txt" },
+        body: "notes",
+      });
+      expect(upload.status).toBe(201);
+      const { file } = await upload.json();
+      const requestId = crypto.randomUUID();
+      const unknown = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "Read",
+        requestId: crypto.randomUUID(),
+        files: [crypto.randomUUID()],
+      });
+      expect(unknown.status).toBe(400);
+      const sent = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "Read",
+        requestId,
+        files: [file.id],
+      });
+      expect(sent.status).toBe(201);
+      const receipt = groupMessageReceiptResponse.parse(await sent.json());
+      const history = historyResponse.parse(
+        await (await req(app, `/v1/group-chats/${group.id}/history`)).json(),
+      );
+      expect(history.messages[0]?.files).toEqual([
+        { id: file.id, name: "notes.txt", mimeType: "text/plain", size: 5 },
+      ]);
+      expect(
+        (
+          await req(
+            app,
+            `/v1/group-chats/${group.id}/attachments/${receipt.entryId}/0`,
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await req(app, `/v1/group-chats/${group.id}/files/${file.id}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(204);
+      const deleted = historyResponse.parse(
+        await (await req(app, `/v1/group-chats/${group.id}/history`)).json(),
+      );
+      expect(deleted.messages[0]?.files).toEqual([
+        { id: file.id, deleted: true },
+      ]);
+      expect(
+        (
+          await post(app, `/v1/group-chats/${group.id}/messages`, {
+            content: "Read",
+            requestId,
+            files: [file.id],
+          })
+        ).status,
+      ).toBe(201);
+      const rejected = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "Read",
+        requestId: crypto.randomUUID(),
+        files: [file.id],
+      });
+      expect(rejected.status).toBe(400);
+      expect(JSON.stringify(await rejected.json())).toContain(
+        "notes.txt was deleted from the library",
+      );
+      const conflict = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "Changed",
+        requestId,
+        files: [file.id],
+      });
+      expect(conflict.status).toBe(409);
+    } finally {
+      await close();
+    }
+  });
   test("creates, lists, renames, and deletes group chats", async () => {
     const { app, ids, close } = setup();
 
@@ -295,7 +382,7 @@ describe("group chat API", () => {
     }
   });
 
-  test("accepts attachments and serves their bytes", async () => {
+  test("rejects legacy base64 attachments and empty messages", async () => {
     const { app, ids, close } = setup();
 
     const png =
@@ -317,23 +404,7 @@ describe("group chat API", () => {
         attachments: [{ name: "map.png", mimeType: "image/png", data: png }],
       });
 
-      expect(sent.status).toBe(201);
-      const { entryId } = groupMessageReceiptResponse.parse(await sent.json());
-
-      const file = await req(
-        app,
-        `/v1/group-chats/${group.id}/attachments/${entryId}/0`,
-      );
-
-      expect(file.status).toBe(200);
-      expect(file.headers.get("content-type")).toBe("image/png");
-      expect(Buffer.from(await file.arrayBuffer()).toString("base64")).toBe(
-        png,
-      );
-      expect(
-        (await req(app, `/v1/group-chats/${group.id}/attachments/${entryId}/1`))
-          .status,
-      ).toBe(404);
+      expect(sent.status).toBe(400);
 
       const empty = await post(app, `/v1/group-chats/${group.id}/messages`, {
         content: " ",

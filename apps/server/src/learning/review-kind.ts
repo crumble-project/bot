@@ -41,7 +41,7 @@ function reviewExtension() {
     beforeRequest: async (request, api, context) => {
       const review = await reviewOf(api, api.conversationId, context);
 
-      if (!review?.budgetChars) return undefined;
+      if (!review?.budgetChars) return;
       const key = String(api.conversationId);
       const used = spent.get(key) ?? 0;
       const next = used + JSON.stringify(request.messages).length;
@@ -53,7 +53,7 @@ function reviewExtension() {
 
       spent.set(key, next);
 
-      return undefined;
+      return;
     },
   });
 
@@ -75,7 +75,7 @@ export function reviewConversations(): ConversationKind {
     recognize: async (reader, conversationId, context) => {
       const review = await reviewOf(reader, conversationId, context);
 
-      if (!review) return undefined;
+      if (!review) return;
 
       return {
         tools: (parts) => [

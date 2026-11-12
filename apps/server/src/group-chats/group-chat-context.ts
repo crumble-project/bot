@@ -1,5 +1,9 @@
 import { Effect, FiberSet, Semaphore, type Fiber, type Scope } from "effect";
-import { keyedListeners, keyedLocks } from "../shared/keyed";
+import {
+  keyedListeners,
+  keyedLocks,
+  type KeyedListeners,
+} from "../shared/keyed";
 import type { AgentRepository } from "../bot-store/agent-repository";
 import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bot-store/conversation-repository";
@@ -9,6 +13,7 @@ import type { GroupChat } from "./group-chat-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
+import type { Library } from "../files/library";
 
 export type GroupChatServices = {
   readonly groups: GroupChatRepository["Service"];
@@ -18,6 +23,7 @@ export type GroupChatServices = {
   readonly transcripts: GroupTranscripts;
   readonly bots: Bots["Service"];
   readonly runtime: BotRuntime["Service"];
+  readonly library: Library["Service"];
 };
 
 export type GroupChatFork = <A, E>(
@@ -25,7 +31,7 @@ export type GroupChatFork = <A, E>(
 ) => Fiber.Fiber<A, E>;
 
 export type GroupChatState = {
-  readonly listeners: ReturnType<typeof keyedListeners>;
+  readonly listeners: KeyedListeners;
   readonly summarizing: Set<string>;
   // Bumped by each queueing, by `memberKey`, so a turn that was starting meanwhile leaves the new follow-up queued.
   readonly pendingVersions: Map<string, symbol>;

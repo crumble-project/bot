@@ -1,3 +1,4 @@
+import { workingOf } from "./working";
 import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
@@ -64,29 +65,24 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     Effect.gen(function* () {
       const source = turnSource(execution);
 
-      switch (source.kind) {
-        case "event":
-          return yield* eventOrigin(source);
+      if (source.kind === "event") return yield* eventOrigin(source);
 
-        case "task":
-        case "script":
-          return yield* scheduleOrigin(source);
-        case "bot": {
-          const bot = yield* agents.get(source.agentId);
+      if (source.kind === "task" || source.kind === "script")
+        return yield* scheduleOrigin(source);
 
-          return {
-            kind: "bot",
-            agentId: source.agentId,
-            name: bot?.name ?? UNKNOWN_BOT_NAME,
-          };
-        }
+      if (source.kind === "bot") {
+        const bot = yield* agents.get(source.agentId);
 
-        case "callee":
-          return yield* calleeOrigin(execution);
-
-        default:
-          return source;
+        return {
+          kind: "bot",
+          agentId: source.agentId,
+          name: bot?.name ?? UNKNOWN_BOT_NAME,
+        };
       }
+
+      if (source.kind === "callee") return yield* calleeOrigin(execution);
+
+      return source;
     });
 
   const snapshot = Effect.fn("Bots.snapshot")(function* (
@@ -106,6 +102,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       ...read,
       agentId: owner.id,
       conversation: found,
+      working: workingOf(read.status, read.partial, read.messages),
       error: latest?.status === "failed" ? latest.error : null,
     };
   });

@@ -35,6 +35,9 @@ const schedule: Schedule = {
   eventSourceId: null,
   enabled: true,
   nextRunAt: null,
+  nextRunLabel: "—",
+  description: "Every day (UTC)",
+  timing: "Every day (UTC)",
   createdAt: "2026-11-01T00:00:00.000Z",
   createdByAgentId: null,
 };

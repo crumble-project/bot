@@ -6,8 +6,8 @@ import * as limits from "../shared/limits";
 export const {
   attachmentKind,
   MAX_ATTACHMENTS,
+  MAX_FILE_BYTES,
   MAX_IMAGE_BYTES,
-  MAX_TEXT_BYTES,
 } = attachments;
 
 export const {

@@ -41,10 +41,14 @@ import { BotMessage, ARRIVAL } from "@/features/chat/transcript";
 import type { CardChat } from "@/features/chat/message-card";
 import { EventMessage, ToolResultRow, shownInChat } from "./chat-cards";
 import { Composer } from "@/features/chat/composer";
-import type { Sources } from "@/lib/sources";
-import { sourcesOf } from "@/features/chat/sources";
 import { MobileSidebarTrigger } from "@/components/page";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
+
+const replyToOf = (replyTo: Message | null, botName: string) => {
+  if (!replyTo) return;
+
+  return replyTo.role === "user" ? "You" : botName;
+};
 
 const DETAILS_KEY = "crumble.details";
 
@@ -176,16 +180,14 @@ function ChatHeader({
 function ChatMessage({
   message,
   chat,
-  sources,
   onReply,
 }: {
   message: Message;
   chat: CardChat;
-  sources: Sources | undefined;
   onReply: (message: Message) => void;
 }) {
   if (message.role === "assistant")
-    return <BotMessage message={message} sources={sources} onReply={onReply} />;
+    return <BotMessage message={message} onReply={onReply} />;
 
   if (message.role === "event")
     return <EventMessage message={message} chat={chat} />;
@@ -231,8 +233,6 @@ function ChatTranscript({
   onOpenJob: (job: JobRef) => void;
   onOpenCall: (requestId: string) => void;
 }) {
-  const sources = sourcesOf(conversation.messages);
-
   const chat: CardChat = {
     botId: bot.id,
     botName: bot.name,
@@ -260,7 +260,6 @@ function ChatTranscript({
           <ChatMessage
             message={message}
             chat={chat}
-            sources={sources.get(message.id)}
             onReply={conversation.sending.setReplyTo}
           />
         )}
@@ -311,6 +310,7 @@ function ChatComposer({
       <Composer
         key={bot.id}
         draftKey={draftKey}
+        uploadPath={`/v1/agents/${encodeURIComponent(bot.id)}/files`}
         placeholder={
           bot.enabled
             ? `Message ${bot.name}`
@@ -318,9 +318,7 @@ function ChatComposer({
         }
         disabled={!bot.enabled}
         running={running}
-        replyingTo={
-          replyTo ? (replyTo.role === "user" ? "You" : bot.name) : undefined
-        }
+        replyingTo={replyToOf(replyTo, bot.name)}
         onCancelReply={() => setReplyTo(null)}
         mentionable={mentionableBots(bot, bots)}
         actions={<BotReasoning bot={bot} />}

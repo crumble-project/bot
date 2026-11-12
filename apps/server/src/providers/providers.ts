@@ -27,7 +27,7 @@ export const accountModels = (
 ) =>
   catalog(credentials, contributions, {
     authContext: {
-      env: async () => undefined,
+      env: async () => {},
       fileExists: async () => false,
     },
   });

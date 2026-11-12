@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -288,6 +289,14 @@ export function SectionError({ children }: { children: ReactNode }) {
     <div className="p-3">
       <FieldError>{children}</FieldError>
     </div>
+  );
+}
+
+export function ErrorAlert({ children }: { children: ReactNode }) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 

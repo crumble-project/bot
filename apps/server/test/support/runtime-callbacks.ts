@@ -5,6 +5,8 @@ import { callConversations } from "../../src/voice-gateway/call-conversation";
 import { hostModels } from "../../src/providers/providers";
 import type { RuntimeCallbacks } from "../../src/bots/runtime";
 import type { BotSkills } from "../../src/skills/skills";
+import { InvalidInput, NotFound } from "../../src/shared/errors";
+import type { Library } from "../../src/files/library";
 
 const unsupported = () =>
   Effect.die(new Error("no skill library in this test"));
@@ -23,18 +25,37 @@ const noSkills: BotSkills["Service"] = {
   transaction: (effect) => effect,
 };
 
+const noLibrary: Library["Service"] = {
+  upload: () => Effect.die(new Error("No file library in this test")),
+  list: () => Effect.succeed([]),
+  download: () => Effect.fail(new NotFound({ message: "File not found" })),
+  remove: () => Effect.fail(new NotFound({ message: "File not found" })),
+  entries: () => Effect.succeed(new Map()),
+  text: () => Effect.succeed(null),
+  validate: () => Effect.fail(new InvalidInput({ message: "File not found" })),
+  removeLibrary: () => Effect.void,
+};
+
 export const runtimeCallbacks = (
   overrides: Partial<RuntimeCallbacks> = {},
 ): RuntimeCallbacks => ({
   models: hostModels(undefined, []),
   currentAgent: (agent) => agent,
-  ownerTimezone: () => undefined,
+  ownerTimezone: () => {},
   listMemory: () => [],
   createMemory: noMemoryStore,
   updateMemory: noMemoryStore,
   deleteMemory: noMemoryStore,
   skillLibrary: noSkills,
-  visionModel: () => undefined,
+  library: noLibrary,
+  validateFiles: (_agentId, ids) =>
+    ids.length
+      ? Effect.fail(new InvalidInput({ message: "File not found" }))
+      : Effect.void,
+  resolveFiles: (_agentId, ids) =>
+    Effect.succeed(ids.map((id) => ({ file: { id, deleted: true as const } }))),
+  existingFiles: () => Effect.succeed(new Set()),
+  visionModel: () => {},
   extensions: () => [],
   jobExtensions: () => [],
   conversationKinds: () => [
@@ -42,6 +63,6 @@ export const runtimeCallbacks = (
     reviewConversations(),
     callConversations(),
   ],
-  env: () => undefined,
+  env: () => {},
   ...overrides,
 });

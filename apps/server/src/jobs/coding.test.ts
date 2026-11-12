@@ -33,6 +33,7 @@ import { AgentRuntime, type RuntimeCallbacks } from "../bots/runtime";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
+import { Library } from "../files/library";
 import type { AvailableSkill } from "../skills/skill-library";
 import type { BotSkills } from "../skills/skills";
 import type { Workspaces } from "../workspaces/workspace";
@@ -229,7 +230,7 @@ function open(
   steps: FauxResponseFactory,
   agent: Agent,
   callbacks: Partial<
-    Pick<RuntimeCallbacks, "listMemory" | "skillLibrary">
+    Pick<RuntimeCallbacks, "listMemory" | "skillLibrary" | "library">
   > = {},
   plugin = codingPlugin(workspaces, () => 900_000, inertCredentials),
 ) {
@@ -312,6 +313,7 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
 
   expect(offered.get("bot")).toEqual([
     "skill_manage",
+    "library",
     "read",
     "write",
     "edit",
@@ -323,10 +325,60 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
     "ask_owner",
     "bash",
     "edit",
+    "library",
     "read",
     "skill",
     "write",
   ]);
+});
+
+test("a coding job reads its bot's library", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "coding-library-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const { agent, store } = setup(dir);
+  const library = store.run(Library);
+  const uploaded = await Effect.runPromise(
+    library.upload(
+      { kind: "bot", agentId: agent.id },
+      {
+        name: "requirements.txt",
+        mimeType: "text/plain",
+        body: new Blob(["Use the library requirements."]).stream(),
+      },
+    ),
+  );
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+  let read = "";
+  const steps: FauxResponseFactory = (context) => {
+    const tools = context.messages.flatMap((message) =>
+      message.role === "system"
+        ? (message.toolsAdded ?? []).map((tool) => tool.name)
+        : [],
+    );
+    const last = context.messages.findLast(
+      (message) => message.role !== "system",
+    )!;
+    if (tools.includes("ask_owner")) {
+      if (last.role === "user")
+        return call("library", { action: "read", id: uploaded.file.id });
+      read = messageText(last);
+      return fauxAssistantMessage("Read the requirements.");
+    }
+    return botReply(last, messageText(last));
+  };
+  const { runtime } = open(
+    dir,
+    new DirectoryWorkspaces(workspace),
+    steps,
+    agent,
+    { library },
+  );
+  cleanups.push(() => runtime.close());
+  const chat = await runtime.openChat(agent);
+  await runtime.submit(agent, chat, "Read the requirements", "library-job");
+  await until(async () => (await reports(runtime, agent, chat)).length === 1);
+  expect(read).toContain("Use the library requirements.");
 });
 
 test("a bot's extensions are built once, so a later turn can still wake what a question held", () => {
@@ -522,7 +574,7 @@ test("a bot without the coding tool is offered none", async () => {
     ),
   );
 
-  expect(offered.get("bot")).toEqual(["skill_manage"]);
+  expect(offered.get("bot")).toEqual(["skill_manage", "library"]);
   expect(workspaces.envs).toBe(0);
   expect(existsSync(join(dir, "workspace"))).toBe(false);
 });
@@ -600,6 +652,7 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   expect(workspaces.synced).toEqual([agent.id]);
   expect(offered.at(-1)).toEqual([
     "skill_manage",
+    "library",
     "read",
     "write",
     "edit",
@@ -616,6 +669,7 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   expect(workspaces.synced).toEqual([agent.id, agent.id]);
   expect(offered.at(-1)).toEqual([
     "skill_manage",
+    "library",
     "read",
     "write",
     "edit",

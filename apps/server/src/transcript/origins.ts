@@ -18,6 +18,7 @@ export type InputOrigin =
   | { kind: "script"; name: string }
   | { kind: "bot"; agentId: string; name: string }
   | { kind: "credential"; name: string }
+  | { kind: "files" }
   | { kind: "bot_request" }
   | { kind: "review" }
   | { kind: "call" }
@@ -47,6 +48,7 @@ const REQUEST_SOURCES: Record<
   script: undefined,
   bot: undefined,
   credential: undefined,
+  files: undefined,
   bot_request: undefined,
   review: undefined,
   call: undefined,
@@ -74,6 +76,7 @@ export type TurnSource =
   | { kind: "script"; scheduleId: string }
   // Origins document no login kind, and clients label a login like a credential.
   | { kind: "credential"; name: string }
+  | { kind: "files" }
   | { kind: "bot_request" }
   | { kind: "call" }
   | { kind: "callee" }
@@ -96,24 +99,26 @@ export function turnSource({
 
   if (asking) return { kind: "bot", agentId: asking };
 
-  switch (request.kind) {
-    case "script":
-      return { kind: "script", scheduleId: request.scheduleId };
-    case "notice":
-      return { kind: "credential", name: request.name };
-    case "bot-request":
-      return { kind: "bot_request" };
-    case "gateway":
-      return { kind: "owner", via: request.adapterId };
-    case "voice":
-      return { kind: "owner", via: VOICE_VIA };
-    case "voice-call":
-      return { kind: "call" };
-    case "outside-call":
-      return { kind: "callee" };
-    case "call-request":
-      return { kind: "call_request" };
-    default:
-      return { kind: "owner" };
-  }
+  if (request.kind === "script")
+    return { kind: "script", scheduleId: request.scheduleId };
+
+  if (request.kind === "notice")
+    return request.notice === "files"
+      ? { kind: "files" }
+      : { kind: "credential", name: request.name };
+
+  if (request.kind === "bot-request") return { kind: "bot_request" };
+
+  if (request.kind === "gateway")
+    return { kind: "owner", via: request.adapterId };
+
+  if (request.kind === "voice") return { kind: "owner", via: VOICE_VIA };
+
+  if (request.kind === "voice-call") return { kind: "call" };
+
+  if (request.kind === "outside-call") return { kind: "callee" };
+
+  if (request.kind === "call-request") return { kind: "call_request" };
+
+  return { kind: "owner" };
 }

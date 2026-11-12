@@ -18,8 +18,8 @@ const BOT_HOLDS = {
 export const inertControl: DesktopControlAccess = {
   get: () => BOT_HOLDS,
   set: () => BOT_HOLDS,
-  subscribe: () => () => undefined,
-  subscribeAll: () => () => undefined,
+  subscribe: () => () => {},
+  subscribeAll: () => () => {},
   untilBot: async () => BOT_HOLDS,
 };
 
@@ -28,15 +28,15 @@ export const inertLogins: DesktopLogins = {
     list: () => [],
     requests: () => [],
     request: nothingToSave,
-    decline: async () => undefined,
-    get: () => undefined,
+    decline: async () => {},
+    get: () => {},
     save: nothingToSave,
-    delete: async () => undefined,
+    delete: async () => {},
     uses: () => [],
     read: async () => ({ missing: "No logins" }),
-    recordUse: () => undefined,
+    recordUse: () => {},
   },
-  fills: () => ({ list: async () => [], add: async () => undefined }),
+  fills: () => ({ list: async () => [], add: async () => {} }),
 };
 
 export const inertIntent: DesktopIntent = {
@@ -55,13 +55,13 @@ export const inertIntent: DesktopIntent = {
 export const inertCredentials: CredentialsAccess = {
   list: () => ({ credentials: [], requests: [] }),
   request: nothingToSave,
-  decline: async () => undefined,
+  decline: async () => {},
   save: nothingToSave,
-  delete: async () => undefined,
+  delete: async () => {},
   uses: () => [],
   env: () => ({}),
-  workspaceSection: () => undefined,
+  workspaceSection: () => {},
   grants: () => [],
   value: () => Promise.reject(new Error("No credentials")),
-  recordUse: () => undefined,
+  recordUse: () => {},
 };

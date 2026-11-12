@@ -252,7 +252,8 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       const summary = turn.first ? member.summary : null;
       const requestId = groupTurnRequest(group.id, agent.id, turn.through);
 
-      const { attachments, omitted } = yield* input.turnAttachments(
+      const { files, omitted } = yield* input.turnAttachments(
+        group.id,
         agent,
         unseen,
       );
@@ -275,7 +276,7 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
           requestId,
         )) ??
         (yield* context.bots
-          .send(turn.conversationId, prompt, requestId, { attachments })
+          .send(turn.conversationId, prompt, requestId, { files })
           .pipe(
             Effect.catchCause((cause) =>
               context.executions

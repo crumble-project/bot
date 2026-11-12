@@ -38,15 +38,14 @@ function actorLabel(change: Change, botName: string | null) {
   }
 }
 
-export function changeSummary(change: Change, botName: string | null) {
-  const target =
-    change.target === "skill"
-      ? "a skill"
-      : change.agentId
-        ? "a memory"
-        : "a shared memory";
+const targetLabel = (change: Change) => {
+  if (change.target === "skill") return "a skill";
 
-  return `${actorLabel(change, botName)} ${VERBS[change.action]} ${target}`;
+  return change.agentId ? "a memory" : "a shared memory";
+};
+
+export function changeSummary(change: Change, botName: string | null) {
+  return `${actorLabel(change, botName)} ${VERBS[change.action]} ${targetLabel(change)}`;
 }
 
 export function changeTitle(change: Change) {

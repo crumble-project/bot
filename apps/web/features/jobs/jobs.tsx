@@ -28,20 +28,12 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { type Job, jobPath, useJobs } from "./api";
 import { JobStatus } from "./job-card";
-import {
-  type HistoryPage,
-  type Message,
-  historyPage,
-} from "@/features/chat/api";
+import { type Message, historyPage } from "@/features/chat/api";
 import { api } from "@/lib/api";
 import { JOB_KINDS } from "./kinds";
 import { type JobRef } from "./api";
 import { Reply } from "@/components/markdown";
-import {
-  type ContentBlock,
-  usageDocument,
-} from "@crumble/server/contract/tool-details";
-import { COMPUTER_USE_TOOL_NAME } from "@crumble/server/contract/tools";
+import { usageDocument } from "@crumble/server/contract/tool-details";
 import { blocksOf } from "@/features/chat/tool-details";
 
 /** A job's cost over its models. Subscription providers such as Claude Code report zero, which says nothing. */
@@ -55,85 +47,20 @@ export function costLine(usage: Job["usage"]) {
   return cost > 0 ? `$${cost.toFixed(4)}` : null;
 }
 
-const STEPS = new Map([
-  ["bash", { verb: "Ran", icon: IconTerminal2 }],
-  ["read", { verb: "Read", icon: IconFileText }],
-  ["write", { verb: "Wrote", icon: IconPencil }],
-  ["edit", { verb: "Edited", icon: IconPencil }],
-  [COMPUTER_USE_TOOL_NAME, { verb: "Used the bot desktop", icon: IconPointer }],
-]);
+const STEP_ICONS = {
+  terminal: IconTerminal2,
+  file: IconFileText,
+  pencil: IconPencil,
+  pointer: IconPointer,
+  tool: IconTool,
+};
 
-type Item =
-  | { kind: "task"; id: string; text: string }
-  | { kind: "reply"; id: string; text: string }
-  | {
-      kind: "step";
-      id: string;
-      tool: string;
-      subject?: string | undefined;
-      result?: Message;
-    };
+type Item = JobHistoryPage["items"][number];
 
 type StepItem = Extract<Item, { kind: "step" }>;
 
-function stepOf(message: Message, block: ContentBlock, index: number) {
-  return {
-    kind: "step" as const,
-    id: block.id ?? `${message.id}:${index}`,
-    tool: block.name ?? "",
-    subject: block.arguments?.command ?? block.arguments?.path,
-  };
-}
-
-function assistantItems(message: Message, steps: Map<string, StepItem>) {
-  const items: Item[] = [];
-
-  for (const [index, block] of blocksOf(message).entries()) {
-    if (block.type === "text" && block.text?.trim())
-      items.push({
-        kind: "reply",
-        id: `${message.id}:${index}`,
-        text: block.text,
-      });
-
-    if (block.type === "toolCall" && block.name) {
-      const step = stepOf(message, block, index);
-
-      steps.set(step.id, step);
-      items.push(step);
-    }
-  }
-
-  return items;
-}
-
-function itemsOf(messages: Message[]) {
-  const items: Item[] = [];
-  const steps = new Map<string, StepItem>();
-
-  for (const message of messages) {
-    if (message.role === "user" && message.content.trim())
-      items.push({ kind: "task", id: message.id, text: message.content });
-
-    if (message.role === "assistant")
-      items.push(...assistantItems(message, steps));
-
-    if (message.role === "toolResult" && message.toolCallId) {
-      const step = steps.get(message.toolCallId);
-
-      if (step) step.result = message;
-    }
-  }
-
-  return items;
-}
-
-function verbOf(tool: string) {
-  return STEPS.get(tool)?.verb ?? tool.charAt(0).toUpperCase() + tool.slice(1);
-}
-
 function StepIcon({ item }: { item: StepItem }) {
-  const Icon = STEPS.get(item.tool)?.icon ?? IconTool;
+  const Icon = STEP_ICONS[item.icon];
 
   return item.result ? (
     <Icon className="size-4 shrink-0 text-muted-foreground" />
@@ -148,7 +75,7 @@ function StepSummary({ item, open }: { item: StepItem; open: boolean }) {
   return (
     <>
       <StepIcon item={item} />
-      <span className="shrink-0 font-medium">{verbOf(item.tool)}</span>
+      <span className="shrink-0 font-medium">{item.label}</span>
       {item.subject && (
         <code className="truncate font-mono text-xs text-muted-foreground">
           {item.subject}
@@ -229,6 +156,8 @@ const STEP_REFRESH_MS = 3_000;
 
 type JobHistoryRoute = "codingJobHistory" | "desktopJobHistory";
 
+type JobHistoryPage = Awaited<ReturnType<typeof api<JobHistoryRoute>>>;
+
 function useJobHistory(botId: string, job: JobRef, status?: string) {
   const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
 
@@ -243,11 +172,11 @@ function useJobHistory(botId: string, job: JobRef, status?: string) {
     refetchInterval: status === "working" ? STEP_REFRESH_MS : false,
   });
 
-  const messages = (history.data?.pages ?? [])
+  const items = (history.data?.pages ?? [])
     .toReversed()
-    .flatMap((page) => page.messages);
+    .flatMap((page) => page.items);
 
-  return { history, items: itemsOf(messages) };
+  return { history, items };
 }
 
 function JobHistoryBody({
@@ -343,11 +272,11 @@ function messageMarkdown(message: Message) {
 async function fullHistory(botId: string, job: JobRef) {
   const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
 
-  const pages: HistoryPage[] = [];
+  const pages: JobHistoryPage[] = [];
   let before: string | null = null;
 
   do {
-    const page: HistoryPage = await api<JobHistoryRoute>(
+    const page: JobHistoryPage = await api<JobHistoryRoute>(
       historyPage(base, 200, before),
     );
 

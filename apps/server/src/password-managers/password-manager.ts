@@ -1,11 +1,10 @@
+import type { Redacted, Result } from "effect";
 import {
   Context,
   Deferred,
   Effect,
   Layer,
   Option,
-  Redacted,
-  Result,
   Schema,
   type Scope,
 } from "effect";

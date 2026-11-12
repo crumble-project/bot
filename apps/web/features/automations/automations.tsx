@@ -17,7 +17,6 @@ import {
   IconTrash,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,9 +44,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BotAvatar } from "@/components/bot-avatar";
-import { ConfirmDeleteContent, Page } from "@/components/page";
+import { ErrorAlert, ConfirmDeleteContent, Page } from "@/components/page";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import { eventSourcesQuery } from "@/features/event-sources/api";
 import { call, queryClient, send } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
@@ -61,15 +59,8 @@ import {
 } from "./api";
 import { AutomationDialog, type Editing } from "./editor";
 import { RunsBody } from "./runs";
-import { Heading, TableFrame } from "./table-frame";
-import {
-  type Status,
-  describeTiming,
-  finished,
-  listed,
-  nextRunLabel,
-  statusOf,
-} from "./timing";
+import { Heading, TableFrame } from "@/components/table-frame";
+import { type Status, finished, listed, statusOf } from "./timing";
 
 const STATUS = {
   active: {
@@ -132,8 +123,6 @@ function AutomationTable({
   byId: Map<string, Bot>;
   onEdit: (schedule: Schedule) => void;
 }) {
-  const now = new Date();
-
   return (
     <TableFrame>
       <TableHeader>
@@ -160,7 +149,6 @@ function AutomationTable({
                   ? byId.get(schedule.createdByAgentId)
                   : undefined
               }
-              now={now}
               onEdit={() => onEdit(schedule)}
             />
           ) : null;
@@ -189,11 +177,7 @@ function AutomationsBody({
     return <Skeleton className="h-40 rounded-xl" />;
 
   if (schedules.isError)
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>{schedules.error.message}</AlertDescription>
-      </Alert>
-    );
+    return <ErrorAlert>{schedules.error.message}</ErrorAlert>;
 
   if (!shown.length)
     return <AutomationsEmpty firstBot={firstBot} onCreate={onCreate} />;
@@ -351,8 +335,6 @@ function AutomationName({
   creator?: Bot | undefined;
   failure?: Error | null;
 }) {
-  const sources = useQuery(eventSourcesQuery).data;
-
   return (
     <div className="flex min-w-0 items-center gap-3">
       <BotAvatar
@@ -372,10 +354,7 @@ function AutomationName({
         <span className="truncate text-muted-foreground">
           {bot.name}
           {creator && ` · by ${creator.name}`}
-          <span className="md:hidden">
-            {" "}
-            · {describeTiming(schedule, sources)}
-          </span>
+          <span className="md:hidden"> · {schedule.description}</span>
         </span>
         {failure && (
           <span className="truncate text-xs text-destructive">
@@ -455,18 +434,15 @@ function AutomationRow({
   schedule,
   bot,
   creator,
-  now,
   onEdit,
 }: {
   schedule: Schedule;
   bot: Bot;
   creator?: Bot | undefined;
-  now: Date;
   onEdit: () => void;
 }) {
   const actions = useAutomationActions(schedule);
   const { toggle, run, remove } = actions;
-  const sources = useQuery(eventSourcesQuery).data;
   const [deleting, setDeleting] = useState(false);
 
   return (
@@ -480,10 +456,10 @@ function AutomationRow({
         />
       </TableCell>
       <TableCell className="hidden w-1/3 max-w-0 truncate text-muted-foreground md:table-cell">
-        {describeTiming(schedule, sources)}
+        {schedule.description}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
-        {nextRunLabel(schedule, now)}
+        {schedule.nextRunLabel}
       </TableCell>
       <TableCell>
         <StatusLabel status={statusOf(schedule)} />

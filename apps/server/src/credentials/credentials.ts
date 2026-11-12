@@ -12,11 +12,8 @@ import {
   secretRequestTool,
   useFailure,
 } from "../bot-secrets/bot-secret-lifecycle";
-import {
-  credentialName,
-  credentialHosts,
-  credentialSaveInput,
-} from "../contract/secrets";
+import type { credentialSaveInput } from "../contract/secrets";
+import { credentialName, credentialHosts } from "../contract/secrets";
 import { type CredentialTarget } from "../shared/domain";
 import type {
   AgentCredential,
@@ -306,7 +303,7 @@ function workspaceCredentialSection(
   credentials: readonly AgentCredential[],
   sourceLines: readonly string[],
 ) {
-  if (!credentials.length && !sourceLines.length) return undefined;
+  if (!credentials.length && !sourceLines.length) return;
 
   return [
     ...(credentials.length

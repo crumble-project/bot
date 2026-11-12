@@ -46,7 +46,7 @@ export function groupConversations(): ConversationKind {
   return {
     extension,
     recognize: async (reader, conversationId, context) => {
-      if (!(await groupOf(reader, conversationId, context))) return undefined;
+      if (!(await groupOf(reader, conversationId, context))) return;
 
       return {
         tools: (parts) =>
@@ -56,6 +56,7 @@ export function groupConversations(): ConversationKind {
         extensions: (parts) => [
           parts.memoryExtension,
           parts.skillExtension,
+          parts.libraryExtension,
           ...parts.offered.filter(inGroupTurns),
           extension,
           parts.visionExtension,

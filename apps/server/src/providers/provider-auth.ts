@@ -365,7 +365,7 @@ class SignInSessions {
         failureCode(error instanceof Error ? error : undefined),
       );
 
-      return undefined;
+      return;
     }
   }
 

@@ -1,5 +1,9 @@
-import { Effect, Layer } from "effect";
-import { CallNotes, type CallLine } from "../bot-ports/call-notes";
+import { Effect, Layer, Option } from "effect";
+import {
+  CallNotes,
+  type CallLine,
+  type OutsideCallNote,
+} from "../bot-ports/call-notes";
 import { Bots } from "../bots/bots";
 import { BotRuntime } from "../bots/runtime";
 import type { CallRequest } from "../contract/voice-gateway";
@@ -175,20 +179,20 @@ export const outsideCalls = Layer.effectDiscard(
       Effect.gen(function* () {
         const request = yield* requests.byCall(callId);
 
-        if (request?.agentId !== agentId) return undefined;
+        if (request?.agentId !== agentId) return Option.none<OutsideCallNote>();
         const about = { callee: request.callee, goal: request.goal };
 
         if (request.outcome !== "answered")
-          return { ...about, kind: "missed" as const };
+          return Option.some({ ...about, kind: "missed" as const });
 
         if (yield* requests.objected(request))
-          return { ...about, kind: "objected" as const };
+          return Option.some({ ...about, kind: "objected" as const });
 
-        return {
+        return Option.some({
           ...about,
           kind: "ended" as const,
           transcript: yield* transcript(request),
-        };
+        });
       }),
     );
   }),

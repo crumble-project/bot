@@ -1,6 +1,7 @@
 import type { Context as PiContext } from "@earendil-works/chord";
 import { Context, Deferred, Effect, Layer } from "effect";
 import type { CONTROL_HOLDERS } from "../shared/domain";
+import { keyedListeners } from "../shared/keyed";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { DesktopControlRepository } from "./desktop-control-repository";
@@ -41,7 +42,7 @@ export class DesktopControl extends Context.Service<
     DesktopControl,
     Effect.gen(function* () {
       const repository = yield* DesktopControlRepository;
-      const listeners = new Map<string, Set<Listener>>();
+      const listeners = keyedListeners<ControlState>();
 
       const everyBot = new Set<
         (agentId: string, state: ControlState) => void
@@ -67,21 +68,12 @@ export class DesktopControl extends Context.Service<
 
         yield* repository.set(agentId, next);
 
-        for (const listener of listeners.get(agentId) ?? []) listener(next);
+        listeners.notify(agentId, next);
 
         for (const listener of everyBot) listener(agentId, next);
 
         return next;
       });
-
-      const subscribe = (agentId: string, listener: Listener) => {
-        const set = listeners.get(agentId) ?? new Set<Listener>();
-
-        set.add(listener);
-        listeners.set(agentId, set);
-
-        return () => void set.delete(listener);
-      };
 
       const subscribeAll = (
         listener: (agentId: string, state: ControlState) => void,
@@ -97,7 +89,7 @@ export class DesktopControl extends Context.Service<
         const handedBack = yield* Deferred.make<ControlState>();
 
         // Listening before reading, so a hand-back between the two is not missed.
-        const stop = subscribe(agentId, (state) => {
+        const stop = listeners.add(agentId, (state) => {
           if (state.holder === "bot")
             Deferred.doneUnsafe(handedBack, Effect.succeed(state));
         });
@@ -115,7 +107,13 @@ export class DesktopControl extends Context.Service<
         );
       });
 
-      return DesktopControl.of({ get, set, subscribe, subscribeAll, untilBot });
+      return DesktopControl.of({
+        get,
+        set,
+        subscribe: listeners.add,
+        subscribeAll,
+        untilBot,
+      });
     }),
   );
 }

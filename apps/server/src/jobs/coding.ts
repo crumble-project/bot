@@ -131,13 +131,12 @@ const jobExtension = (
     hooks: [
       hook(ToolTask, {
         afterTool: async (call, _result, api, context) => {
-          if (!(await coding.isJob(api, api.conversationId, context)))
-            return undefined;
+          if (!(await coding.isJob(api, api.conversationId, context))) return;
 
           wake();
           await syncAfter(workspaces, agentId, call.name);
 
-          return undefined;
+          return;
         },
       }),
     ],
@@ -159,7 +158,7 @@ const workspaceExtension = (
         afterTool: async (call) => {
           await syncAfter(workspaces, agentId, call.name);
 
-          return undefined;
+          return;
         },
       }),
     ],

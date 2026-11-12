@@ -146,12 +146,11 @@ export async function applyBulkAction(
   const assigner = (skill: SelectableSkill) =>
     assignBots(skill, bots, action === "assign", messages);
 
-  const apply =
-    action === "update"
-      ? updater(await checkUpdates(), messages)
-      : action === "delete"
-        ? deleteSkill
-        : assigner;
+  let apply = assigner;
+
+  if (action === "delete") apply = deleteSkill;
+
+  if (action === "update") apply = updater(await checkUpdates(), messages);
 
   // Skills run in order, so two operations never race on one bot's assignments.
   for (const skill of picked) {

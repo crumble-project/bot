@@ -2,7 +2,6 @@ import {
   type ComponentProps,
   isValidElement,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -10,7 +9,8 @@ import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import { PELE_PREFIX } from "@crumble/server/contract/ui-modules";
 import type * as Pele from "pele/lazy";
 import type { MarkdownExtension } from "@tanstack/markdown";
-import { type Sources, splitSources } from "@/lib/sources";
+import type { z } from "zod";
+import type { citation } from "@crumble/server/contract/api-responses";
 
 const PELE = `${PELE_PREFIX}/lazy.js`;
 
@@ -73,8 +73,6 @@ const link = (props: ComponentProps<"a">) => (
   <a {...props} target="_blank" rel="noopener noreferrer" />
 );
 
-const siteOf = (href: string) => new URL(href).hostname.replace(/^www\./, "");
-
 const components = {
   a: link,
   pre: (props: ComponentProps<"pre"> & { "data-lang"?: string }) => {
@@ -114,7 +112,7 @@ const autolinks: MarkdownExtension = {
   inlineParser: {
     markers: "h<",
     parse: ({ source, index, inLink }) => {
-      if (inLink) return undefined;
+      if (inLink) return;
 
       const rest = source.slice(index);
       const angle = ANGLE_URL.exec(rest);
@@ -129,8 +127,7 @@ const autolinks: MarkdownExtension = {
           length: angle[0].length,
         };
 
-      if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!))
-        return undefined;
+      if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!)) return;
 
       const bare = BARE_URL.exec(rest);
       const url = bare ? trimUrl(bare[0]) : "";
@@ -153,25 +150,19 @@ const extensions = [autolinks];
 
 export function Reply({
   source,
-  sources,
+  citations = [],
 }: {
   source: string;
-  sources?: Sources | undefined;
+  citations?: z.infer<typeof citation>[] | undefined;
 }) {
-  const { text, chips } = useMemo(
-    () =>
-      sources ? splitSources(source, sources) : { text: source, chips: [] },
-    [source, sources],
-  );
-
   return (
     <div className="markdown">
       <Markdown components={components} extensions={extensions}>
-        {text}
+        {source}
       </Markdown>
-      {chips.length > 0 && (
+      {citations.length > 0 && (
         <div className="source-chips">
-          {chips.map((chip) => (
+          {citations.map((chip) => (
             <a
               key={chip.href}
               href={chip.href}
@@ -180,7 +171,7 @@ export function Reply({
               rel="noopener noreferrer"
               className="source-chip"
             >
-              {siteOf(chip.href)}
+              {chip.site}
             </a>
           ))}
         </div>

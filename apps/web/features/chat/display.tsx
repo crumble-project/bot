@@ -183,7 +183,7 @@ function commonProps(node: Node, id: string) {
     strokeWidth: node.strokeWidth,
     strokeLinecap: node.lineCap,
     // SAFETY: The server normalizes every line join to miter, round, or bevel.
-    strokeLinejoin: node.lineJoin as "miter" | "round" | "bevel" | undefined,
+    strokeLinejoin: node.lineJoin,
     strokeDasharray: node.dash?.join(" "),
     opacity: node.opacity,
     clipPath: node.clip ? `url(#${id})` : undefined,

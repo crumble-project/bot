@@ -28,7 +28,7 @@ const agent = store.createAgent(
     description: "",
     instructions: "",
     // SAFETY: The faux provider is registered in the test model registry above.
-    provider: "faux" as any,
+    provider: "faux",
     model: "crash-model",
     enabled: true,
     tools: [],

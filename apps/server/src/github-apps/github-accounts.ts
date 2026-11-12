@@ -238,7 +238,7 @@ export class GitHubAccounts extends Context.Service<
           .where(eq(githubAccountBots.agentId, agentId))
           .pipe(Effect.orDie);
 
-        if (!found) return undefined;
+        if (!found) return;
         const key = yield* privateKey(found.account.id);
 
         return {

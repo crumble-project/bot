@@ -16,6 +16,22 @@ import { type Job, jobPath, invalidateJobs } from "./api";
 
 export type Question = NonNullable<Job["question"]>;
 
+const markOf = ({
+  sending,
+  multiple,
+  picked,
+}: {
+  sending: boolean;
+  multiple: boolean;
+  picked: boolean;
+}) => {
+  if (sending) return Spinner;
+
+  if (!multiple) return IconCircle;
+
+  return picked ? IconSquareCheckFilled : IconSquare;
+};
+
 function OptionRow({
   option,
   multiple,
@@ -31,13 +47,7 @@ function OptionRow({
   disabled: boolean;
   onPick: () => void;
 }) {
-  const Mark = sending
-    ? Spinner
-    : multiple
-      ? picked
-        ? IconSquareCheckFilled
-        : IconSquare
-      : IconCircle;
+  const Mark = markOf({ sending, multiple, picked });
 
   return (
     <button

@@ -16,24 +16,19 @@ import {
   schedulesQuery,
   toggleScheduleOptions,
 } from "@/features/automations/api";
-import { eventSourcesQuery } from "@/features/event-sources/api";
 import { LiveBotAvatar } from "./avatar";
 import { DesktopPreview } from "@/features/bot-desktop/desktop";
-import { automationTiming, finished } from "@/features/automations/timing";
+import { finished } from "@/features/automations/timing";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 
 function Automation({ schedule }: { schedule: Schedule }) {
-  const sources = useQuery(eventSourcesQuery).data;
-
   const toggle = useMutation(toggleScheduleOptions(schedule.id));
 
   return (
     <div className="flex items-start gap-3">
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{schedule.name}</span>
-        <span className="text-xs text-muted-foreground">
-          {automationTiming(schedule, sources)}
-        </span>
+        <span className="text-xs text-muted-foreground">{schedule.timing}</span>
       </div>
       <Switch
         size="sm"
@@ -102,6 +97,14 @@ function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <ProfileSummary bot={bot} onClose={onClose} />
+      <Button
+        variant="outline"
+        render={<Link to="/bots/$botId/library" params={{ botId: bot.id }} />}
+        nativeButton={false}
+        onClick={onClose}
+      >
+        Library
+      </Button>
       {bot.tools.includes(BOT_TOOL.desktop) && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>

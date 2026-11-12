@@ -28,7 +28,12 @@ import { EventRepository, type RelayEvent } from "./event-repository";
 
 export const RELAY_URL_SETTING = "event-relay:url";
 
-export const RELAY_TOKEN_KEY = pluginSettingKey(DOORSTEP_PLUGIN_ID, "token");
+export const DOORSTEP_TOKEN_SETTING = "token";
+
+export const RELAY_TOKEN_KEY = pluginSettingKey(
+  DOORSTEP_PLUGIN_ID,
+  DOORSTEP_TOKEN_SETTING,
+);
 
 export const EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 

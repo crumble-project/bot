@@ -52,6 +52,9 @@ import type { ScriptRun } from "../automations/script-run-repository";
 import type { MessageOrigin } from "../transcript/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import { until } from "../../test/support/until";
+import { Library } from "../files/library";
+import { FileStore } from "../files/file-store";
+import { resolveMessageFiles } from "../files/message-files";
 
 // Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
@@ -72,6 +75,7 @@ type RequestBody = {
   content?: string;
   requestId?: string;
   attachments?: { name: string; mimeType: string; data: string }[];
+  files?: string[];
 };
 
 const agentInput = (name: string, enabled = true) => ({
@@ -129,6 +133,12 @@ function setup(options: TestServices = {}) {
   };
 
   const store = new Store(dir);
+  const library = store.runtime.runSync(Library);
+  const fileStore = store.runtime.runSync(FileStore);
+  runtime.validateFiles = (agentId: string, ids: string[]) =>
+    library.validate({ kind: "bot", agentId }, ids);
+  runtime.resolveFiles = (agentId: string, ids: string[]) =>
+    resolveMessageFiles(library, fileStore, { kind: "bot", agentId }, ids);
   const service = standaloneBots(store, runtime);
 
   const scheduler = standaloneScheduler(
@@ -658,7 +668,7 @@ describe("HTTP API for bots, chats, and activity", () => {
     store.close();
   });
 
-  test("accepts attachments on messages only, within their limits", async () => {
+  test("bot messages accept library IDs and reject legacy attachments", async () => {
     const { app } = setup();
 
     const agent = await req(app, "/v1/agents", {
@@ -672,41 +682,59 @@ describe("HTTP API for bots, chats, and activity", () => {
         body: JSON.stringify(body),
       });
 
-    const image = Buffer.alloc(2 * 1024 * 1024, 7).toString("base64");
+    const id = crypto.randomUUID();
+    expect(
+      (await send({ content: "", requestId: crypto.randomUUID(), files: [id] }))
+        .status,
+    ).toBe(400);
     expect(
       (
         await send({
-          content: "",
+          content: "read",
           requestId: crypto.randomUUID(),
-          attachments: [
-            { name: "big.png", mimeType: "image/png", data: image },
-          ],
+          attachments: [{ name: "x", mimeType: "text/plain", data: "YQ==" }],
         })
       ).status,
-    ).toBe(202);
-    expect(
-      (await send({ content: " ", requestId: crypto.randomUUID() })).status,
     ).toBe(400);
 
-    const pdf = await send({
-      content: "read",
-      requestId: crypto.randomUUID(),
-      attachments: [
-        { name: "doc.pdf", mimeType: "application/pdf", data: "AAAA" },
-      ],
-    });
-
-    expect(pdf.status).toBe(400);
-    expect((await pdf.json()).error).toBe(
-      "doc.pdf: only images (PNG, JPEG, GIF, WebP) and text files can be attached",
-    );
-
-    const memory = await req(app, `/v1/agents/${agent.id}/memories`, {
+    const upload = await app.request(`/v1/agents/${agent.id}/files`, {
       method: "POST",
-      body: JSON.stringify({ content: "x".repeat(2 * 1024 * 1024) }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-File-Name": "notes.txt",
+        "Content-Type": "text/plain",
+      },
+      body: "hello",
     });
 
-    expect(memory.status).toBe(413);
+    expect(upload.status).toBe(201);
+    const { file } = await upload.json();
+    const requestId = crypto.randomUUID();
+    const body = { content: "", requestId, files: [file.id] };
+    const first = await send(body);
+    expect(first.status).toBe(202);
+    const execution = await first.json();
+    expect(
+      (
+        await req(app, `/v1/agents/${agent.id}/files/${file.id}`, {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(204);
+    const retry = await send(body);
+    expect(retry.status).toBe(202);
+    expect((await retry.json()).id).toBe(execution.id);
+
+    const rejected = await send({
+      content: "again",
+      requestId: crypto.randomUUID(),
+      files: [file.id],
+    });
+
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain(
+      "notes.txt was deleted from the library",
+    );
   });
 
   test("streams server-wide activity", async () => {
@@ -1685,6 +1713,17 @@ describe("HTTP API for script tasks and schedules", () => {
       body: JSON.stringify(agentInput("Scheduled")),
     }).then((r: Response) => r.json());
 
+    const preview = await req(app, "/v1/schedules/preview", {
+      method: "POST",
+      body: JSON.stringify({ cron: "0 9 * * *", timezone: "UTC" }),
+    });
+
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({
+      description: "At 09:00 (UTC)",
+      isProblem: false,
+    });
+
     const schedule = await req(app, "/v1/schedules", {
       method: "POST",
       body: JSON.stringify({
@@ -1700,6 +1739,24 @@ describe("HTTP API for script tasks and schedules", () => {
 
     expect(schedule.status).toBe(201);
     const value = await schedule.json();
+    expect(value.description).toStartWith("Once,");
+    expect(value.timing).toBe(value.description);
+    const listed = await (await req(app, "/v1/schedules")).json();
+    expect(listed).toContainEqual(value);
+
+    const updated = await (
+      await req(app, `/v1/schedules/${value.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false }),
+      })
+    ).json();
+
+    expect(updated.description).toBe(value.description);
+    expect(updated.timing).toBe(`Paused · ${value.description}`);
+    await req(app, `/v1/schedules/${value.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: true }),
+    });
 
     const ran = await req(app, `/v1/schedules/${value.id}/run`, {
       method: "POST",

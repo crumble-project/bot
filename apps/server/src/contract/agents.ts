@@ -45,6 +45,9 @@ export const judgeModelInput = z.object({ judgeModel: modelRef.nullable() });
 /** The account's vision model, which reads images for bots whose model can't; null turns it off. */
 export const visionModelInput = z.object({ visionModel: modelRef.nullable() });
 
+export const DEFAULT_BOT_INSTRUCTIONS =
+  "You are a thoughtful, capable personal assistant.";
+
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(MAX_BOT_NAME_CHARS),
   avatar: avatarDefinitionSchema.optional(),
@@ -52,7 +55,7 @@ export const agentInput = z.object({
   instructions: z
     .string()
     .max(MAX_INSTRUCTIONS_CHARS)
-    .default("You are a thoughtful, capable personal assistant."),
+    .default(DEFAULT_BOT_INSTRUCTIONS),
   provider: providerId.default("openai"),
   model: modelId.default("gpt-4.1"),
   webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),

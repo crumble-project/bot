@@ -31,6 +31,15 @@ type McpServerSecrets = z.infer<typeof mcpServerResponse>;
 
 type McpServerStatus = z.infer<typeof describedMcpServerResponse>;
 
+const authOf = (
+  hasTokens: boolean,
+  hasTokenSecret: boolean,
+): McpServerStatus["auth"] => {
+  if (hasTokens) return "oauth";
+
+  return hasTokenSecret ? "token" : "none";
+};
+
 export class McpServers extends Context.Service<
   McpServers,
   {
@@ -97,11 +106,10 @@ export class McpServers extends Context.Service<
       const describe = Effect.fnUntraced(function* (server: MCPServer) {
         const described = yield* withSecrets(server);
 
-        const auth = hasOAuthTokens(storage, server.id)
-          ? "oauth"
-          : described.token.configured
-            ? "token"
-            : "none";
+        const auth = authOf(
+          hasOAuthTokens(storage, server.id),
+          described.token.configured,
+        );
 
         return {
           ...described,

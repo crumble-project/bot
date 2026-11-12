@@ -3,7 +3,6 @@ import {
   PASSWORD_MANAGER_IDS,
   WEB_SEARCH_PROVIDER_IDS,
 } from "../shared/vendors";
-import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
 import {
   ACTIVITY_KINDS,
   CHANGE_ACTIONS,
@@ -18,6 +17,7 @@ import {
   SIGN_IN_METHODS,
 } from "../shared/domain";
 import { agentInput, THINKING_LEVELS } from "./agents";
+import { PLUGIN_CONTRIBUTIONS } from "./plugins";
 import { loginFieldInput } from "./secrets";
 import { SCHEDULE_KINDS } from "./schedules";
 import { SKILL_STATES } from "./skills";
@@ -54,6 +54,20 @@ const inference = z.object({
   temperature: z.number().optional(),
   maxOutputTokens: z.number().optional(),
 });
+
+export const libraryFileResponse = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    mimeType: z.string(),
+    size: z.number().int(),
+    createdAt: z.string(),
+  })
+  .openapi("LibraryFile");
+
+export const uploadFileResponse = z
+  .object({ file: libraryFileResponse, existed: z.boolean() })
+  .openapi("UploadFile");
 
 export const healthResponse = z
   .object({ status: z.literal("ok"), apiVersion: z.literal(1) })
@@ -183,14 +197,46 @@ export const botCommunication = z
 
 export type BotCommunication = z.infer<typeof botCommunication>;
 
-const attachment = z
-  .object({
-    name: z.string(),
-    mimeType: z.string(),
-    size: z.number(),
-    kind: z.enum(ATTACHMENT_KINDS),
-  })
-  .openapi("AttachmentInfo");
+export const transcriptBlock = z
+  .discriminatedUnion("type", [
+    z
+      .object({ type: z.literal("text"), text: z.string() })
+      .openapi("TranscriptTextBlock")
+      .register(z.globalRegistry, { id: "TranscriptTextBlock" }),
+    z
+      .object({
+        type: z.literal("thinking"),
+        thinking: z.string(),
+        redacted: z.boolean().optional(),
+      })
+      .openapi("TranscriptThinkingBlock")
+      .register(z.globalRegistry, { id: "TranscriptThinkingBlock" }),
+    z
+      .object({ type: z.literal("image"), mimeType: z.string() })
+      .openapi("TranscriptImageBlock")
+      .register(z.globalRegistry, { id: "TranscriptImageBlock" }),
+    z
+      .object({
+        type: z.literal("toolCall"),
+        id: z.string(),
+        name: z.string(),
+        arguments: z.record(z.string(), z.unknown()),
+      })
+      .openapi("TranscriptToolCallBlock")
+      .register(z.globalRegistry, { id: "TranscriptToolCallBlock" }),
+  ])
+  .openapi("TranscriptBlock")
+  .register(z.globalRegistry, { id: "TranscriptBlock" });
+
+export const citation = z
+  .object({ href: z.string(), title: z.string(), site: z.string() })
+  .openapi("Citation")
+  .register(z.globalRegistry, { id: "Citation" });
+
+export const messagePresentation = z
+  .object({ text: z.string(), citations: z.array(citation) })
+  .openapi("MessagePresentation")
+  .register(z.globalRegistry, { id: "MessagePresentation" });
 
 const message = z
   .object({
@@ -199,9 +245,7 @@ const message = z
     requestId: z.string().optional(),
     role: z.string(),
     content: z.string(),
-    blocks: z.unknown().optional().openapi({
-      description: "Provider content blocks, with inline image bytes removed.",
-    }),
+    blocks: z.array(transcriptBlock).optional(),
     stopReason: z.string().optional(),
     timestamp: z.number().optional(),
     kind: z.string().optional().openapi({
@@ -248,7 +292,19 @@ const message = z
       .openapi({
         description: "On a `call-started` or `call-ended` event: the call.",
       }),
-    attachments: z.array(attachment).optional(),
+    files: z
+      .array(
+        z.union([
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            mimeType: z.string(),
+            size: z.number(),
+          }),
+          z.object({ id: z.string(), deleted: z.literal(true) }),
+        ]),
+      )
+      .optional(),
     toolCallId: z.string().optional(),
     toolName: z.string().optional(),
     isError: z.boolean().optional(),
@@ -256,6 +312,7 @@ const message = z
       description:
         "Provider-specific tool details, including nested code-mode calls. A successful `desktop_screenshot` result has `{ mimeType, size }`; read its image from `GET /v1/agents/{id}/attachments/{entryId}/0`.",
     }),
+    presentation: messagePresentation.optional(),
     sources: z
       .array(z.object({ url: z.string(), title: z.string() }))
       .optional()
@@ -273,6 +330,36 @@ export const historyResponse = z
     oldestEntryId: z.string().nullable(),
   })
   .openapi("TranscriptPage");
+
+export const jobHistoryItem = z
+  .discriminatedUnion("kind", [
+    z
+      .object({ kind: z.literal("task"), id: z.string(), text: z.string() })
+      .openapi("JobTaskItem")
+      .register(z.globalRegistry, { id: "JobTaskItem" }),
+    z
+      .object({ kind: z.literal("reply"), id: z.string(), text: z.string() })
+      .openapi("JobReplyItem")
+      .register(z.globalRegistry, { id: "JobReplyItem" }),
+    z
+      .object({
+        kind: z.literal("step"),
+        id: z.string(),
+        tool: z.string(),
+        label: z.string(),
+        icon: z.enum(["terminal", "file", "pencil", "pointer", "tool"]),
+        subject: z.string().optional(),
+        result: message.optional(),
+      })
+      .openapi("JobStepItem")
+      .register(z.globalRegistry, { id: "JobStepItem" }),
+  ])
+  .openapi("JobHistoryItem")
+  .register(z.globalRegistry, { id: "JobHistoryItem" });
+
+export const jobHistoryResponse = historyResponse
+  .extend({ items: z.array(jobHistoryItem) })
+  .openapi("JobHistoryPage");
 
 const jobsResponse = (kind: "Coding" | "Desktop") =>
   z
@@ -376,6 +463,16 @@ export const chatSnapshotResponse = historyResponse
       .optional()
       .openapi({ description: "Pi Durable usage document." }),
     status: z.enum(["idle", "running", "failed"]),
+    working: z.enum([
+      "idle",
+      "thinking",
+      "writing",
+      "searching",
+      "remembering",
+      "tinkering",
+      "struggling",
+      "failed",
+    ]),
     updatedAt: z.number(),
     error: z.string().nullable(),
   })
@@ -850,6 +947,9 @@ export const scheduleResponse = z
     }),
     enabled: z.boolean(),
     nextRunAt: z.string().nullable(),
+    nextRunLabel: z.string(),
+    description: z.string(),
+    timing: z.string(),
     createdAt: z.string(),
     createdByAgentId: z.string().nullable(),
   })
@@ -1042,19 +1142,10 @@ export const pluginSettingsResponse = z
     plugins: z.array(
       z.object({
         id: z.string(),
-        contributes: z
-          .array(
-            z.enum([
-              "providers",
-              "jobKinds",
-              "webSearchProviders",
-              "chatAdapters",
-            ]),
-          )
-          .openapi({
-            description:
-              "What the plugin adds to the server, so a client can show its settings where those are chosen.",
-          }),
+        contributes: z.array(z.enum(PLUGIN_CONTRIBUTIONS)).openapi({
+          description:
+            "What the plugin adds to the server, so a client can show its settings where those are chosen.",
+        }),
         settings: z.array(pluginSettingResponse),
       }),
     ),

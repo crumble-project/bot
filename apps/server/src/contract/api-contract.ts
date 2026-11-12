@@ -12,10 +12,15 @@ import {
   passwordManagerIdInput,
   secretInput,
 } from "./secrets";
+import { reasoningPreviewInput, reasoningPreviewResponse } from "./reasoning";
 import { groupChatInput } from "./group-chats";
 import { scheduleInput } from "./schedules";
+import {
+  schedulePreviewInput,
+  schedulePreviewResponse,
+} from "./schedule-preview";
 import { skillInput, skillLifecycleInput } from "./skills";
-import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
+import { MAX_ATTACHMENTS } from "../shared/attachment-rules";
 import {
   MAX_MEMORY_CHARS,
   MAX_MESSAGE_CHARS,
@@ -84,6 +89,34 @@ export const memoryInput = z.object({
   content: z.string().trim().min(1).max(MAX_MEMORY_CHARS),
 });
 
+const filePageInput = z.object({
+  before: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+const fileHeaders = z.object({
+  "x-file-name": z.string().min(1),
+  "content-type": z.string().min(1),
+});
+
+const rawFileBody = {
+  required: true,
+  content: {
+    "*/*": {
+      schema: z.string().openapi({ format: "binary" }),
+    },
+  },
+};
+
+const fileBytes = {
+  description: "File bytes with safe download headers",
+  content: {
+    "application/octet-stream": {
+      schema: z.string().openapi({ format: "binary" }),
+    },
+  },
+};
+
 export const snapshotInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -122,25 +155,26 @@ const messageFields = z.object({
   content: z.string().trim().max(MAX_MESSAGE_CHARS),
   requestId: z.uuid(),
   replyTo: z.string().min(1).max(200).optional(),
-  attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+  files: z.array(z.uuid()).max(MAX_ATTACHMENTS).default([]),
 });
 
-const hasContent = <T extends z.infer<typeof messageFields>>(
-  schema: z.ZodType<T>,
-) =>
-  schema.refine((value) => value.content || value.attachments.length, {
+export const messageInput = messageFields
+  .extend({
+    timezone: z.string().min(1).max(100).optional(),
+  })
+  .strict()
+  .refine((value) => value.content || value.files.length, {
     message: "Write a message or attach a file",
     path: ["content"],
   });
 
-export const messageInput = hasContent(
-  messageFields.extend({
-    timezone: z.string().min(1).max(100).optional(),
-  }),
-);
-
 /** `replyTo` names a message in the same group; replying to a bot's message also wakes that bot. */
-export const groupMessageInput = hasContent(messageFields);
+export const groupMessageInput = messageFields
+  .strict()
+  .refine((value) => value.content || value.files.length, {
+    message: "Write a message or attach a file",
+    path: ["content"],
+  });
 
 export const credentialUsesInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -749,7 +783,7 @@ export const routes = {
     path: "/v1/agents/{id}/coding-jobs/{name}/history",
     operationId: "getCodingJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(response.jobHistoryResponse) },
   }),
   desktopJobs: define({
     method: "get",
@@ -813,7 +847,7 @@ export const routes = {
     path: "/v1/agents/{id}/desktop-jobs/{name}/history",
     operationId: "getDesktopJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(response.jobHistoryResponse) },
   }),
   sendMessage: define({
     method: "post",
@@ -821,6 +855,62 @@ export const routes = {
     operationId: "sendMessage",
     request: { params: id, body: body(messageInput) },
     responses: { 202: json(response.executionResponse) },
+  }),
+  uploadFile: define({
+    method: "post",
+    path: "/v1/agents/{id}/files",
+    operationId: "uploadFile",
+    request: { params: id, headers: fileHeaders, body: rawFileBody },
+    responses: { 201: json(response.uploadFileResponse) },
+  }),
+  listFiles: define({
+    method: "get",
+    path: "/v1/agents/{id}/files",
+    operationId: "listFiles",
+    request: { params: id, query: filePageInput },
+    responses: { 200: json(z.array(response.libraryFileResponse)) },
+  }),
+  getFile: define({
+    method: "get",
+    path: "/v1/agents/{id}/files/{fileId}",
+    operationId: "getFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 200: fileBytes },
+  }),
+  deleteFile: define({
+    method: "delete",
+    path: "/v1/agents/{id}/files/{fileId}",
+    operationId: "deleteFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 204: empty },
+  }),
+  uploadGroupFile: define({
+    method: "post",
+    path: "/v1/group-chats/{id}/files",
+    operationId: "uploadGroupFile",
+    request: { params: id, headers: fileHeaders, body: rawFileBody },
+    responses: { 201: json(response.uploadFileResponse) },
+  }),
+  listGroupFiles: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/files",
+    operationId: "listGroupFiles",
+    request: { params: id, query: filePageInput },
+    responses: { 200: json(z.array(response.libraryFileResponse)) },
+  }),
+  getGroupFile: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/files/{fileId}",
+    operationId: "getGroupFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 200: fileBytes },
+  }),
+  deleteGroupFile: define({
+    method: "delete",
+    path: "/v1/group-chats/{id}/files/{fileId}",
+    operationId: "deleteGroupFile",
+    request: { params: id.extend({ fileId: z.uuid() }) },
+    responses: { 204: empty },
   }),
   attachment: define({
     method: "get",
@@ -959,34 +1049,6 @@ export const routes = {
     operationId: "sendGroupMessage",
     request: { params: id, body: body(groupMessageInput) },
     responses: { 201: json(response.groupMessageReceiptResponse) },
-  }),
-  groupAttachment: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/attachments/{entryId}/{index}",
-    operationId: "getGroupAttachment",
-    request: {
-      params: id.extend({
-        entryId: z.string(),
-        index: attachmentIndex.openapi({
-          param: { name: "index", in: "path", required: true },
-        }),
-      }),
-    },
-    responses: {
-      200: {
-        description:
-          "Attachment bytes; Content-Type identifies the image or text format",
-        content: {
-          "*/*": { schema: z.string().openapi({ format: "binary" }) },
-        },
-        headers: {
-          "Cache-Control": {
-            schema: { type: "string" },
-            description: "private, max-age=31536000, immutable",
-          },
-        },
-      },
-    },
   }),
   stopGroupChat: define({
     method: "post",
@@ -1435,6 +1497,13 @@ export const routes = {
     request: { query: z.object({ agentId: z.string().optional() }) },
     responses: { 200: json(z.array(response.scheduleResponse)) },
   }),
+  previewSchedule: define({
+    method: "post",
+    path: "/v1/schedules/preview",
+    operationId: "previewSchedule",
+    request: { body: body(schedulePreviewInput) },
+    responses: { 200: json(schedulePreviewResponse) },
+  }),
   createSchedule: define({
     method: "post",
     path: "/v1/schedules",
@@ -1508,6 +1577,13 @@ export const routes = {
     path: "/v1/providers",
     operationId: "listProviders",
     responses: { 200: json(z.array(response.providerResponse)) },
+  }),
+  previewReasoning: define({
+    method: "post",
+    path: "/v1/reasoning/preview",
+    operationId: "previewReasoning",
+    request: { body: body(reasoningPreviewInput) },
+    responses: { 200: json(reasoningPreviewResponse) },
   }),
   models: define({
     method: "get",

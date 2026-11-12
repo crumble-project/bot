@@ -258,19 +258,23 @@ async function actAndReport(
 
   const { text: summary, error } = verdict(acted);
 
-  const after =
-    !args.capture_after || error
-      ? []
-      : ref === undefined
-        ? await captureWindow(
-            state,
-            await targetWindow(state, args.window_id, context),
-            "ax",
-            false,
-            undefined,
-            context,
-          )
-        : (await readPage(state, {}, window, context)).content;
+  const afterOf = async () => {
+    if (!args.capture_after || error) return [];
+
+    if (ref !== undefined)
+      return (await readPage(state, {}, window, context)).content;
+
+    return captureWindow(
+      state,
+      await targetWindow(state, args.window_id, context),
+      "ax",
+      false,
+      undefined,
+      context,
+    );
+  };
+
+  const after = await afterOf();
 
   return {
     content: [{ type: "text", text: summary }, ...after],

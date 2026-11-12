@@ -30,7 +30,7 @@ import {
   type GroupChatSnapshot,
   groupChatQuery,
   groupPath,
-  groupsQuery,
+  invalidateGroups,
   membersOf,
 } from "./api";
 import type { Message } from "@/features/chat/api";
@@ -54,7 +54,6 @@ import {
   hasContent,
 } from "@/features/chat/transcript";
 import { Composer } from "@/features/chat/composer";
-import { groupSourcesOf } from "@/features/chat/sources";
 import {
   MAX_GROUP_MEMBERS,
   MAX_GROUP_NAME_CHARS,
@@ -67,7 +66,7 @@ function senderBot(message: Message, byId: Map<string, Bot>) {
 }
 
 function replyLabel(replyTo: Message | null) {
-  if (!replyTo) return undefined;
+  if (!replyTo) return;
 
   return replyTo.role === "user" ? "You" : (replyTo.origin?.name ?? "a bot");
 }
@@ -96,8 +95,7 @@ const groupConversation = (
     sendContext: () => ({}),
     stop: () => send<"stopGroupChat">(`${path}/stop`, "POST"),
     followsAfterView: () => false,
-    refreshList: () =>
-      queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey }),
+    refreshList: invalidateGroups,
   };
 };
 
@@ -139,9 +137,16 @@ function GroupHeader({
       </div>
       <Button
         variant="ghost"
+        className="ml-auto"
+        render={<Link to="/groups/$groupId/library" params={{ groupId }} />}
+        nativeButton={false}
+      >
+        Library
+      </Button>
+      <Button
+        variant="ghost"
         size="icon-sm"
         title="Edit group chat"
-        className="ml-auto"
         render={<Link to="/groups/$groupId/edit" params={{ groupId }} />}
         nativeButton={false}
       >
@@ -290,7 +295,6 @@ export function GroupChatView({ groupId }: { groupId: string }) {
               sender={<GroupSender message={message} byId={byId} />}
               color={colorOf(message, byId)}
               reactions={conversation.reactions.get(message.entryId)}
-              sources={groupSourcesOf(message)}
               onReply={setReplyTo}
             />
           )}
@@ -301,6 +305,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       <Composer
         key={groupId}
         draftKey={target.key}
+        uploadPath={`${target.path}/files`}
         placeholder={`Message ${groupChat.name}`}
         running={isRunning(activity)}
         replyingTo={replyLabel(replyTo)}
@@ -404,7 +409,7 @@ function useGroupForm(group: GroupChat | undefined) {
         : call<"createGroupChat">("/v1/group-chats", "POST", input);
     },
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
+      await invalidateGroups();
       await queryClient.invalidateQueries({
         queryKey: groupChatQuery(saved.id).queryKey,
       });
@@ -416,7 +421,7 @@ function useGroupForm(group: GroupChat | undefined) {
     mutationFn: (id: string) =>
       send<"deleteGroupChat">(groupPath(id), "DELETE"),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
+      await invalidateGroups();
       await navigate({ to: "/" });
     },
   });

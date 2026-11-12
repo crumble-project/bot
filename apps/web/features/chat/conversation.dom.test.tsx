@@ -317,6 +317,7 @@ test("a deleted bot's open chat leaves for the home page", async () => {
         Response.json({
           ...page,
           status: "idle",
+          working: "idle",
           error: null,
           partial: "",
         }),
@@ -335,6 +336,7 @@ const chatSnapshot = (status: string, messages: unknown[] = page.messages) => ({
   ...page,
   messages,
   status,
+  working: status === "running" ? "thinking" : "idle",
   error: null,
   partial: "",
 });
@@ -368,7 +370,7 @@ test("a bot left while it works stays followed until it finishes", async () => {
       await act(async () => {
         queryClient.setQueryData(
           chatQuery("bot").queryKey,
-          // SAFETY: only the status of this partial snapshot is read.
+          // SAFETY: only working state of this partial snapshot is read.
           chatSnapshot("idle") as ChatSnapshot,
         );
       });

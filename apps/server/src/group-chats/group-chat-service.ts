@@ -6,7 +6,7 @@ import { NotFound, type AppError } from "../shared/errors";
 import { type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { groupChatPost } from "./group-chat-post";
-import type { PageOptions } from "../transcript/transcript";
+import type { PageOptions, TranscriptPage } from "../transcript/transcript";
 import type { GroupMemberActivity } from "./group-chat-types";
 import type { GroupTurnEngine } from "./group-turn-engine";
 
@@ -73,7 +73,10 @@ export const groupChatsService = (
             yield* context.conversations.setArchived(conversationId, true);
         }
 
-        yield* context.groups.delete(groupId);
+        yield* context.library.removeLibrary(
+          { kind: "group", groupId },
+          context.groups.delete(groupId),
+        );
         yield* context.changed(groupId);
       }),
     );
@@ -115,14 +118,16 @@ export const groupChatsService = (
             ? yield* context.executions.get(latest.executionId)
             : null;
 
-          const status: GroupMemberActivity["status"] =
-            !(yield* context.enabled(agentId))
-              ? "disabled"
-              : (yield* context.groups.activeTurn(groupId, agentId))
-                ? "running"
-                : member?.pending
-                  ? "queued"
-                  : "idle";
+          const statusOf = Effect.fnUntraced(function* () {
+            if (!(yield* context.enabled(agentId))) return "disabled" as const;
+
+            if (yield* context.groups.activeTurn(groupId, agentId))
+              return "running" as const;
+
+            return member?.pending ? ("queued" as const) : ("idle" as const);
+          });
+
+          const status: GroupMemberActivity["status"] = yield* statusOf();
 
           return {
             agentId,
@@ -134,16 +139,34 @@ export const groupChatsService = (
     };
   });
 
-  const attachment = Effect.fn("GroupChats.attachment")(function* (
+  const currentFiles = Effect.fnUntraced(function* (
     groupId: string,
-    entryId: string,
-    index: number,
+    page: TranscriptPage,
   ) {
-    yield* context.get(groupId);
-
-    return yield* pi(() =>
-      context.transcripts.attachment(groupId, entryId, index),
+    const ids = page.messages.flatMap((message) =>
+      (message.files ?? []).map((file) => file.id),
     );
+
+    const entries = yield* context.library.entries(
+      { kind: "group", groupId },
+      ids,
+    );
+
+    return {
+      ...page,
+      messages: page.messages.map((message) =>
+        message.files
+          ? {
+              ...message,
+              files: message.files.map((file) =>
+                "deleted" in file || entries.has(file.id)
+                  ? file
+                  : { id: file.id, deleted: true as const },
+              ),
+            }
+          : message,
+      ),
+    };
   });
 
   const forMember = Effect.fn("GroupChats.forMember")(function* (
@@ -189,7 +212,10 @@ export const groupChatsService = (
         new NotFound({ message: "Group chat not found" }),
       );
 
-    return yield* pi(() => context.transcripts.history(groupId, options));
+    return yield* currentFiles(
+      groupId,
+      yield* pi(() => context.transcripts.history(groupId, options)),
+    );
   });
 
   const history = Effect.fn("GroupChats.history")(function* (
@@ -198,7 +224,10 @@ export const groupChatsService = (
   ) {
     yield* context.get(groupId);
 
-    return yield* pi(() => context.transcripts.history(groupId, options));
+    return yield* currentFiles(
+      groupId,
+      yield* pi(() => context.transcripts.history(groupId, options)),
+    );
   });
 
   const snapshot = Effect.fn("GroupChats.snapshot")(function* (
@@ -206,7 +235,11 @@ export const groupChatsService = (
     options: { limit?: number | undefined },
   ) {
     const groupChat = yield* context.get(groupId);
-    const page = yield* pi(() => context.transcripts.history(groupId, options));
+
+    const page = yield* currentFiles(
+      groupId,
+      yield* pi(() => context.transcripts.history(groupId, options)),
+    );
 
     return {
       ...page,
@@ -243,7 +276,6 @@ export const groupChatsService = (
     post: groupChatPost({ context, members, turns: engine }),
     stop,
     activity,
-    attachment,
     forMember,
     readAsMember,
     history,

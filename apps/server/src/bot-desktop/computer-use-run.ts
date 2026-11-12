@@ -72,7 +72,7 @@ async function withCommand<T extends { action: ProposedAction }>(
 
   const line = await terminalText(state, window, context).then(
     (text) => text.split("\n").at(-1) ?? "",
-    () => undefined,
+    () => {},
   );
 
   if (line === undefined) return proposal;

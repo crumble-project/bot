@@ -79,7 +79,7 @@ export function callConversations(): ConversationKind {
     recognize: async (reader, conversationId, context) => {
       const call = await outsideCallOf(reader, conversationId, context);
 
-      if (!call) return undefined;
+      if (!call) return;
 
       return {
         tools: (parts) =>

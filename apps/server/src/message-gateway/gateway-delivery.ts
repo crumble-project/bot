@@ -266,7 +266,7 @@ export const receiptDelivery = Effect.fnUntraced(function* (
   ) {
     const token = yield* connections
       .readToken(adapter)
-      .pipe(Effect.orElseSucceed(() => undefined));
+      .pipe(Effect.orElseSucceed(() => {}));
 
     if (token !== expected) return false;
     const current = yield* connections.config(adapter.id);

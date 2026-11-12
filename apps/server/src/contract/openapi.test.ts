@@ -1,8 +1,87 @@
 import { describe, expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
+import { z } from "zod";
 import { openAPIDocument } from "./api-contract";
+import { chatSnapshotResponse } from "./api-responses";
 
 describe("exported response and parameter schemas", () => {
+  test("HTTP and event transcripts reference the same named block contract", () => {
+    const document = openAPIDocument();
+    const snapshot = z.toJSONSchema(chatSnapshotResponse);
+
+    expect(document.components?.schemas?.["TranscriptMessage"]).toMatchObject({
+      properties: {
+        blocks: { items: { $ref: "#/components/schemas/TranscriptBlock" } },
+      },
+    });
+    expect(snapshot).toMatchObject({
+      properties: {
+        messages: {
+          items: {
+            properties: {
+              blocks: { items: { $ref: "#/$defs/TranscriptBlock" } },
+            },
+          },
+        },
+      },
+    });
+
+    const ajv = new Ajv2020({ strict: false, validateFormats: false });
+
+    ajv.addSchema(document, "contract");
+    ajv.addSchema(snapshot, "snapshot");
+
+    const http = ajv.compile({
+      $ref: "contract#/components/schemas/TranscriptBlock",
+    });
+
+    const event = ajv.compile({ $ref: "snapshot#/$defs/TranscriptBlock" });
+
+    for (const [block, accepted] of [
+      [{ type: "text", text: "hello" }, true],
+      [{ type: "thinking", thinking: "hmm", redacted: true }, true],
+      [{ type: "image", mimeType: "image/png" }, true],
+      [
+        {
+          type: "toolCall",
+          id: "call",
+          name: "bash",
+          arguments: { command: "pwd" },
+        },
+        true,
+      ],
+      [{ type: "text" }, false],
+      [{ type: "toolCall", id: "call", name: 42, arguments: {} }, false],
+    ] as const) {
+      expect(http(block)).toBe(accepted);
+      expect(event(block)).toBe(accepted);
+    }
+  });
+
+  test("job history references reusable item schemas", () => {
+    const schemas = openAPIDocument().components?.schemas;
+
+    expect(schemas?.["JobHistoryPage"]).toMatchObject({
+      allOf: expect.arrayContaining([
+        expect.objectContaining({
+          properties: {
+            items: {
+              type: "array",
+              items: { $ref: "#/components/schemas/JobHistoryItem" },
+            },
+          },
+        }),
+      ]),
+    });
+    expect(schemas?.["JobHistoryItem"]).toMatchObject({
+      oneOf: [
+        { $ref: "#/components/schemas/JobTaskItem" },
+        { $ref: "#/components/schemas/JobReplyItem" },
+        { $ref: "#/components/schemas/JobStepItem" },
+      ],
+    });
+  });
+
   test("nullable resource responses accept null", () => {
     const document = openAPIDocument();
     const ajv = new Ajv2020({ strict: false, validateFormats: false });

@@ -302,10 +302,8 @@ function registrationHint(
   return `Sign in from ${web}, or from the Mac or iOS app, if it supports client metadata documents; otherwise add the server with a token`;
 }
 
-const ownerSecret = (storage: SecretStorage, server: MCPServer) =>
-  server.oauthClientId
-    ? storage.clientSecret(server.id)
-    : Promise.resolve(undefined);
+const ownerSecret = async (storage: SecretStorage, server: MCPServer) =>
+  server.oauthClientId ? storage.clientSecret(server.id) : undefined;
 
 /** A registration names its redirect URL and server, so a change of either starts over. */
 function restartIfChanged(

@@ -79,7 +79,8 @@ async function errorMessage(response: Response) {
 async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
 
-  if (init.body) headers.set("Content-Type", "application/json");
+  if (init.body && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
 
   const response = await fetch(path, {
     ...init,
@@ -95,11 +96,18 @@ async function request(path: string, init: RequestInit = {}) {
   return response;
 }
 
+async function bodyOf<N extends RouteName>(
+  response: Response,
+): Promise<ResponseBody<N>> {
+  // SAFETY: the server answers in the shape its route's OpenAPI schema describes.
+  return (await response.json()) as ResponseBody<N>;
+}
+
 export async function api<N extends RouteName>(
   path: RoutePath<N>,
   init?: RequestInit,
 ): Promise<ResponseBody<N>> {
-  return (await request(path, init)).json();
+  return bodyOf<N>(await request(path, init));
 }
 
 function withBody<Body>(method: string, body: Body): RequestInit {
@@ -114,7 +122,7 @@ export async function call<N extends RouteName>(
   method: Method<N>,
   ...[body]: BodyArgument<N>
 ): Promise<ResponseBody<N>> {
-  return (await request(path, withBody(method, body))).json();
+  return bodyOf<N>(await request(path, withBody(method, body)));
 }
 
 export async function send<N extends RouteName>(
@@ -123,6 +131,10 @@ export async function send<N extends RouteName>(
   ...[body]: BodyArgument<N>
 ) {
   await request(path, withBody(method, body));
+}
+
+export async function apiRaw(path: string, init?: RequestInit) {
+  return request(path, init);
 }
 
 export async function apiBlob(path: string, signal?: AbortSignal) {

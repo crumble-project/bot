@@ -17,10 +17,12 @@
     ".windsurf/**",
     "tools/oxlint/anti-slop/**",
     "apps/web/components/ui/**",
-    "apps/web/hooks/**"
+    "apps/web/hooks/**",
+    "**/*.test.ts"
   ],
   "jsPlugins": [
-    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }
+    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" },
+    { "name": "effect", "specifier": "oxlint-plugin-effect/plugin" }
   ],
   "overrides": [
     {
@@ -45,6 +47,22 @@
     }
   ],
   "rules": {
+    "no-nested-ternary": "error",
+    "complexity": ["warn", 15],
+    "max-depth": ["warn", 4],
+    "no-else-return": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    //"typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "unicorn/no-useless-undefined": [
+      "error",
+      { "checkArguments": false, "checkArrowFunctionBody": false }
+    ],
+    "effect/noManagedRuntimeInEffect": "error",
+    //"effect/noNewPromise": "warn",
+    //"effect/noTryCatch": "warn",
     "typescript/no-deprecated": "warn",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",

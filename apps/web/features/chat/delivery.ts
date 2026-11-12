@@ -82,11 +82,7 @@ export async function deliver(
       requestId: message.requestId,
       ...(message.replyTo && { replyTo: message.replyTo }),
       ...(message.uploads.length > 0 && {
-        attachments: message.uploads.map(({ name, mimeType, data }) => ({
-          name,
-          mimeType,
-          data,
-        })),
+        files: message.uploads.flatMap(({ id }) => (id ? [id] : [])),
       }),
       ...extra,
     });

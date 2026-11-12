@@ -5,6 +5,7 @@ import { Bots } from "../bots/bots";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "../bots/runtime";
+import { Library } from "../files/library";
 import {
   groupChatContext,
   groupChatState,
@@ -56,6 +57,7 @@ export class GroupChats extends Context.Service<
         transcripts: yield* GroupTranscriptStore,
         bots: yield* Bots,
         runtime: yield* BotRuntime,
+        library: yield* Library,
       };
 
       const context = groupChatContext(services, yield* groupChatState);

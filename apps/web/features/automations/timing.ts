@@ -1,62 +1,6 @@
-import cronstrue from "cronstrue";
-import { hasBareWeekdayStep } from "@crumble/server/contract/cron";
-import type { EventSource } from "@/features/event-sources/api";
-import { relativeTime } from "@/lib/time";
 import type { Schedule } from "./api";
 
 export const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-export function describeCron(cron: string, timezone: string) {
-  const zone = timezone !== LOCAL_ZONE ? ` (${timezone})` : "";
-  const plain = `${cron}${zone}`;
-  const fields = cron.trim().split(/\s+/);
-
-  const days =
-    fields.length === 6 ? [fields[3], fields[5]] : [fields[2], fields[4]];
-
-  if (
-    (fields.length === 5 || fields.length === 6) &&
-    days.every((day) => day !== "*" && day !== "?")
-  )
-    return plain;
-
-  if (hasBareWeekdayStep(cron)) return plain;
-
-  try {
-    return `${cronstrue.toString(cron, { use24HourTimeFormat: true })}${zone}`;
-  } catch {
-    return plain;
-  }
-}
-
-export function describeTiming(schedule: Schedule, sources?: EventSource[]) {
-  if (schedule.eventSourceId) {
-    const source = sources?.find((each) => each.id === schedule.eventSourceId);
-
-    return source ? `On event · ${source.name}` : "On event";
-  }
-
-  if (schedule.cron) return describeCron(schedule.cron, schedule.timezone);
-
-  if (!schedule.runAt) return "Once";
-
-  const date = new Date(schedule.runAt);
-
-  const text = date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: schedule.timezone,
-  });
-
-  return date.getTime() < Date.now() && !schedule.nextRunAt
-    ? `Ran ${text}`
-    : `Once, ${text}`;
-}
-
-/** An automation's timing as the Mac app shows it, prefixed "Paused · " when disabled. */
-export function automationTiming(schedule: Schedule, sources?: EventSource[]) {
-  return `${schedule.enabled ? "" : "Paused · "}${describeTiming(schedule, sources)}`;
-}
 
 export function wallClock(date: Date, zone: string) {
   const parts = Object.fromEntries(
@@ -130,56 +74,4 @@ export function listed(schedules: Schedule[]) {
 
       return nextTime(a) < nextTime(b) ? -1 : 1;
     });
-}
-
-function soon(date: Date, now: Date) {
-  const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
-
-  if (minutes < 60) return relativeTime.format(Math.max(minutes, 0), "minute");
-
-  return relativeTime.format(Math.round(minutes / 60), "hour");
-}
-
-export function nextRunLabel(schedule: Schedule, now: Date) {
-  if (!schedule.enabled || !schedule.nextRunAt) return "—";
-
-  const next = new Date(schedule.nextRunAt);
-
-  if (next.getTime() - now.getTime() < 86_400_000) return soon(next, now);
-
-  return next.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export function humanRun(date: Date, zone: string, now: Date) {
-  const day = (value: Date) => Date.parse(wallClock(value, zone).slice(0, 10));
-  const days = Math.round((day(date) - day(now)) / 86_400_000);
-
-  const time = date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: zone,
-  });
-
-  const on =
-    days >= 0 && days < 2
-      ? relativeTime.format(days, "day")
-      : date.toLocaleDateString(
-          undefined,
-          days > 0 && days < 7
-            ? { weekday: "long", timeZone: zone }
-            : {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-                timeZone: zone,
-              },
-        );
-
-  return `${on} at ${time}`;
 }

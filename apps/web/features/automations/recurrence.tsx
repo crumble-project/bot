@@ -127,16 +127,13 @@ export function switchedTo(
 
   const { hour, minute } = kept;
 
-  switch (kind) {
-    case "hourly":
-      return { kind, minute };
-    case "weekly":
-      return { kind, days: kept.days, hour, minute };
-    case "monthly":
-      return { kind, day: kept.day, hour, minute };
-    default:
-      return { kind, hour, minute };
-  }
+  if (kind === "hourly") return { kind, minute };
+
+  if (kind === "weekly") return { kind, days: kept.days, hour, minute };
+
+  if (kind === "monthly") return { kind, day: kept.day, hour, minute };
+
+  return { kind, hour, minute };
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");

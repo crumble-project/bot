@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { ActivityEvent } from "@/features/activity/api";
 import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
-import { groupsQuery } from "@/features/group-chats/api";
+import { invalidateGroups } from "@/features/group-chats/api";
 import { follow, queryClient } from "@/lib/api";
 import { type ChatLinks, notifyReply } from "@/lib/notifications";
 import { onSessionReset } from "@/lib/session";
@@ -66,9 +66,7 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
         // Bots and groups may have changed while the stream was down.
         if (connections++ > 0) {
           void invalidateBots();
-          void queryClient.invalidateQueries({
-            queryKey: groupsQuery.queryKey,
-          });
+          void invalidateGroups();
         }
       },
       onEvent: (name, data) => {

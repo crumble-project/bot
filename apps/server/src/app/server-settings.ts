@@ -5,7 +5,8 @@ import type {
 } from "better-auth";
 import { Schema } from "effect";
 import type { z } from "@hono/zod-openapi";
-import { serverSettingsInput, serverSettingsSchema } from "../contract/admin";
+import type { serverSettingsInput } from "../contract/admin";
+import { serverSettingsSchema } from "../contract/admin";
 
 export type ServerSettings = z.infer<typeof serverSettingsSchema>;
 
@@ -84,7 +85,6 @@ function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
 export type ServerSettingsStore = {
   get(): ServerSettings;
   update(patch: ServerSettingsPatch): Promise<ServerSettings>;
-  subscribe(listener: (settings: ServerSettings) => void): () => void;
 };
 
 export async function serverSettingsStore<O extends BetterAuthOptions>(
@@ -95,8 +95,6 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
   );
 
   let current = decodeSettings(rows);
-
-  const listeners = new Set<(settings: ServerSettings) => void>();
 
   return {
     get: () => current,
@@ -123,14 +121,7 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
 
       current = next;
 
-      for (const listener of listeners) listener(current);
-
       return current;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-
-      return () => listeners.delete(listener);
     },
   };
 }

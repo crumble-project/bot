@@ -50,8 +50,7 @@ import { CAPABILITIES } from "./capabilities";
 import {
   type ThinkingLevel,
   ReasoningSelect,
-  clampLevel,
-  levelsOf,
+  useReasoningPreview,
 } from "./reasoning";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 import {
@@ -59,7 +58,7 @@ import {
   MAX_BOT_NAME_CHARS,
   MAX_INSTRUCTIONS_CHARS,
 } from "@crumble/server/contract/limits";
-import { agentInput } from "@crumble/server/contract/agents";
+import { DEFAULT_BOT_INSTRUCTIONS } from "@crumble/server/contract/agents";
 
 const DEFAULT_TOOLS: string[] = [
   BOT_TOOL.memory,
@@ -67,7 +66,14 @@ const DEFAULT_TOOLS: string[] = [
   BOT_TOOL.delegate,
 ];
 
-const DEFAULT_INSTRUCTIONS = agentInput.shape.instructions.parse(undefined);
+const DEFAULT_INSTRUCTIONS = DEFAULT_BOT_INSTRUCTIONS;
+
+const modelsHint = (configured: boolean, modelCount: number) => {
+  if (!configured)
+    return "Add an API key or sign in for this provider in Settings to load its models.";
+
+  return modelCount ? `${modelCount} models available.` : "Type a model ID.";
+};
 
 const webProviderItems = [
   { label: "Account default", value: "default" },
@@ -136,11 +142,7 @@ function ModelField({
     enabled: provider !== "",
   });
 
-  const hint = !configured
-    ? "Add an API key or sign in for this provider in Settings to load its models."
-    : models.data?.length
-      ? `${models.data.length} models available.`
-      : "Type a model ID.";
+  const hint = modelsHint(configured, models.data?.length ?? 0);
 
   return (
     <>
@@ -291,21 +293,19 @@ function useBotModel(initial: BotInput | undefined, providers: Provider[]) {
     initial?.inference?.thinkingLevel ?? "off",
   );
 
-  const models = useQuery({
-    ...modelsQuery(provider),
-    enabled: provider !== "",
-  }).data;
-
-  const levels = levelsOf(models?.find((each) => each.id === model.trim()));
-  const level = clampLevel(thinkingLevel, levels);
+  const { options, level, previewReady, previewError, retryPreview } =
+    useReasoningPreview(provider, model, thinkingLevel);
 
   return {
     provider,
     setProvider,
     model,
     setModel,
-    levels,
+    options,
     level,
+    previewReady,
+    previewError,
+    retryPreview,
     setThinkingLevel,
   };
 }
@@ -577,8 +577,17 @@ function ModelSettings({
   providers: Provider[];
   selection: ReturnType<typeof useBotModel>;
 }) {
-  const { provider, model, setModel, levels, level, setThinkingLevel } =
-    selection;
+  const {
+    provider,
+    model,
+    setModel,
+    options,
+    level,
+    setThinkingLevel,
+    previewReady,
+    previewError,
+    retryPreview,
+  } = selection;
 
   return (
     <FieldSet>
@@ -586,7 +595,7 @@ function ModelSettings({
       <FieldGroup
         className={cn(
           "grid gap-4",
-          levels.length > 1 ? "sm:grid-cols-[1fr_1fr_9rem]" : "sm:grid-cols-2",
+          options.length > 1 ? "sm:grid-cols-[1fr_1fr_9rem]" : "sm:grid-cols-2",
         )}
       >
         <ProviderField providers={providers} selection={selection} />
@@ -600,18 +609,36 @@ function ModelSettings({
             onChange={setModel}
           />
         </Field>
-        {levels.length > 1 && (
+        {options.length > 1 && (
           <Field>
             <FieldLabel htmlFor="thinking-level">Reasoning</FieldLabel>
             <ReasoningSelect
               id="thinking-level"
-              levels={levels}
+              options={options}
               value={level}
               onChange={setThinkingLevel}
             />
           </Field>
         )}
       </FieldGroup>
+      {provider && model.trim() && !previewReady && (
+        <FieldDescription role={previewError ? "alert" : "status"}>
+          {previewError ? (
+            <>
+              Could not load reasoning options.{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={retryPreview}
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            "Loading reasoning options…"
+          )}
+        </FieldDescription>
+      )}
     </FieldSet>
   );
 }
@@ -866,7 +893,10 @@ export function useBotFields(initial?: BotInput, botId?: string) {
   const access = useBotAccess(initial);
 
   const invalid =
-    !details.name.trim() || !selection.provider || !selection.model.trim();
+    !details.name.trim() ||
+    !selection.provider ||
+    !selection.model.trim() ||
+    !selection.previewReady;
 
   return { initial, botId, providers, details, selection, access, invalid };
 }

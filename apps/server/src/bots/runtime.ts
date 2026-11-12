@@ -1,3 +1,4 @@
+import { projectJobPage } from "./job-history";
 import {
   BOT_MESSAGE_ENTRY,
   CALL_ENTRY,
@@ -66,8 +67,16 @@ import {
 import { SkillReads, skillTool } from "../skills/skill-library";
 import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
-import type { AttachmentInput } from "../shared/attachment-rules";
-import { prepareAttachments } from "../shared/attachments";
+import type { LibraryRef } from "../files/library-repository";
+import { FileStore } from "../files/file-store";
+import { Library } from "../files/library";
+import { libraryExtension } from "../files/library-tool";
+import {
+  modelBlocks,
+  resolveMessageFiles,
+  type MessageFile,
+  type ResolvedFile,
+} from "../files/message-files";
 import { BOT_TOOL } from "../contract/tools";
 import {
   prepareReply,
@@ -96,6 +105,20 @@ export type RuntimeCallbacks = MemoryStore & {
   currentAgent: (agent: Agent) => Agent | null;
   ownerTimezone: () => string | undefined;
   skillLibrary: BotSkills["Service"];
+  library: Library["Service"];
+  validateFiles: (
+    agentId: string,
+    ids: readonly string[],
+  ) => Effect.Effect<void, InvalidInput>;
+  resolveFiles: (
+    agentId: string,
+    ids: readonly string[],
+    library?: LibraryRef,
+  ) => Effect.Effect<ResolvedFile[]>;
+  existingFiles: (
+    agentId: string,
+    ids: readonly string[],
+  ) => Effect.Effect<Set<string>>;
   visionModel: () => VisionModelRef | undefined;
   extensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
   jobExtensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
@@ -138,8 +161,10 @@ type HarnessRecord = {
   memory: BotTool;
   skill: BotTool;
   skillManage: BotTool;
+  library: BotTool;
   memoryExtension: Extension;
   skillExtension: Extension;
+  libraryExtension: Extension;
   visionExtension: Extension;
   askAboutImage: BotTool;
   kinds: ConversationKind[];
@@ -180,13 +205,13 @@ function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
 type EntryMetadata = {
   requestId?: string;
   origin?: InputOrigin;
-  attachments?: Array<{ kind: string; [key: string]: JsonValue }>;
+  files?: MessageFile[];
 };
 
 function entryMetadata(
   requestId: string | undefined,
   origin: InputOrigin | undefined,
-  attachments: Array<{ kind: string; [key: string]: JsonValue }>,
+  files: MessageFile[],
 ) {
   const metadata: EntryMetadata = {};
 
@@ -194,7 +219,7 @@ function entryMetadata(
 
   if (origin) metadata.origin = origin;
 
-  if (attachments.length) metadata.attachments = attachments;
+  if (files.length) metadata.files = files;
 
   return metadata;
 }
@@ -291,18 +316,18 @@ async function ensureModel(
     await models.refresh({ providers: [choice.provider] });
 }
 
-type PreparedAttachments = ReturnType<typeof prepareAttachments>;
+type ModelBlocks = ReturnType<typeof modelBlocks>;
 
 // Catalogs that list no modalities are trusted; the provider reports anything it refuses. With a vision model set,
 // the vision extension describes images for a model that can't read them.
 function assertImageSupport(
   agent: Agent,
   model: { input?: readonly string[] } | undefined,
-  info: PreparedAttachments["info"],
+  blocks: ModelBlocks,
   vision: VisionModelRef | undefined,
 ) {
   if (
-    info.some((item) => item.kind === "image") &&
+    blocks.some((item) => item.type === "image") &&
     !readsImages(model) &&
     !vision
   )
@@ -311,7 +336,7 @@ function assertImageSupport(
     });
 }
 
-function inputContent(text: string, blocks: PreparedAttachments["blocks"]) {
+function inputContent(text: string, blocks: ModelBlocks) {
   if (!blocks.length) return text;
 
   return [...(text.trim() ? [{ type: "text" as const, text }] : []), ...blocks];
@@ -365,6 +390,41 @@ export class AgentRuntime {
     this.records = new HarnessFiles(dataDir, "Runtime is closed");
   }
 
+  validateFiles(agentId: string, ids: readonly string[]) {
+    return this.callbacks.validateFiles(agentId, ids);
+  }
+
+  resolveFiles(agentId: string, ids: readonly string[], library?: LibraryRef) {
+    return this.callbacks.resolveFiles(agentId, ids, library);
+  }
+
+  private async currentFiles(agentId: string, messages: TranscriptMessage[]) {
+    const ids = messages.flatMap((message) =>
+      (message.files ?? [])
+        .filter((file) => !("deleted" in file))
+        .map((file) => file.id),
+    );
+
+    if (!ids.length) return messages;
+
+    const existing = await Effect.runPromise(
+      this.callbacks.existingFiles(agentId, ids),
+    );
+
+    return messages.map((message) =>
+      message.files
+        ? {
+            ...message,
+            files: message.files.map((file) =>
+              "deleted" in file || existing.has(file.id)
+                ? file
+                : { id: file.id, deleted: true as const },
+            ),
+          }
+        : message,
+    );
+  }
+
   private open(agent: Agent) {
     return this.records.get(agent.id, (storage) =>
       this.openRecord(agent, storage),
@@ -412,6 +472,23 @@ export class AgentRuntime {
     return { next, installed };
   }
 
+  private libraryTools(agent: Agent, ownOnly = false) {
+    return libraryExtension({
+      agent,
+      library: this.callbacks.library,
+      libraries: ({ groupId }) =>
+        groupId && !ownOnly
+          ? [
+              { kind: "group", groupId },
+              { kind: "bot", agentId: agent.id },
+            ]
+          : [{ kind: "bot", agentId: agent.id }],
+      workspace:
+        agent.tools.includes(BOT_TOOL.coding) ||
+        agent.tools.includes(BOT_TOOL.desktop),
+    });
+  }
+
   private toolExtensions(agent: Agent) {
     const { tool: memory, extension: memoryTools } = memoryExtension(
       agent,
@@ -430,6 +507,11 @@ export class AgentRuntime {
 
     registry.install(memoryTools);
     registry.install(skillExtension);
+    const library = this.libraryTools(agent);
+    const libraryTool = library.tools?.[0];
+
+    if (!libraryTool) throw new Error("Library tool is missing");
+    registry.install(library);
 
     return {
       memory,
@@ -437,6 +519,8 @@ export class AgentRuntime {
       skillManage,
       memoryExtension: memoryTools,
       skillExtension,
+      library: libraryTool,
+      libraryExtension: library,
       registry,
     };
   }
@@ -447,7 +531,7 @@ export class AgentRuntime {
   ) {
     return defineExtension({
       name: JOB_KNOWLEDGE_EXTENSION,
-      tools: [skill],
+      tools: [skill, ...(this.libraryTools(choices.agent, true).tools ?? [])],
       sections: [
         {
           key: "bot_knowledge",
@@ -570,11 +654,13 @@ export class AgentRuntime {
       memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
       skill: skillCount > 0 ? [record.skill] : [],
       skillManage: record.skillManage,
+      library: record.library,
       vision: this.describesImagesFor(record, agent)
         ? [record.askAboutImage]
         : [],
       memoryExtension: record.memoryExtension,
       skillExtension: record.skillExtension,
+      libraryExtension: record.libraryExtension,
       visionExtension: record.visionExtension,
       offered,
     };
@@ -713,7 +799,7 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!status?.entry || !conversation) return undefined;
+    if (!status?.entry || !conversation) return;
 
     return { conversation, entry: Number(status.entry) };
   }
@@ -791,30 +877,30 @@ export class AgentRuntime {
     options: {
       input?: PreparedInput | undefined;
       origin?: InputOrigin;
-      attachments?: AttachmentInput[] | undefined;
+      files?: ResolvedFile[] | undefined;
     } = {},
   ): Promise<string> {
     const record = await this.open(agent);
-    const attached = prepareAttachments(options.attachments ?? []);
+    const files = options.files ?? [];
+    const blocks = modelBlocks(files);
     const prepared = options.input ?? { modelContent: text, data: { text } };
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
 
-    assertImageSupport(
-      agent,
-      model,
-      attached.info,
-      this.callbacks.visionModel(),
-    );
+    assertImageSupport(agent, model, blocks, this.callbacks.visionModel());
 
     const draft = {
       type: "input" as const,
-      content: inputContent(prepared.modelContent, attached.blocks),
+      content: inputContent(prepared.modelContent, blocks),
       entry: {
         kind: MESSAGE_ENTRY,
         data: {
           ...prepared.data,
-          ...entryMetadata(requestId, options.origin, attached.info),
+          ...entryMetadata(
+            requestId,
+            options.origin,
+            files.map((item) => item.file),
+          ),
         },
       },
     };
@@ -933,7 +1019,7 @@ export class AgentRuntime {
       return {
         conversationId,
         ...transcript,
-        messages,
+        messages: await this.currentFiles(agent.id, messages),
         live: publicLive(live),
         partial: options.partial
           ? contentText(live?.generation?.message?.content)
@@ -950,9 +1036,14 @@ export class AgentRuntime {
   async history(agent: Agent, options: HistoryOptions = {}) {
     const { harness } = await this.open(agent);
 
-    return this.visible(harness, options, () =>
+    const page = await this.visible(harness, options, () =>
       readTranscript(harness, agent.id, options),
     );
+
+    return {
+      ...page,
+      messages: await this.currentFiles(agent.id, page.messages),
+    };
   }
 
   async jobs(agent: Agent, kind: JobKindName) {
@@ -1020,7 +1111,7 @@ export class AgentRuntime {
         message: `${jobKindTitle(JOB_KINDS[kind])} not found`,
       });
 
-    return this.visible(
+    const page = await this.visible(
       harness,
       options,
       () =>
@@ -1031,6 +1122,19 @@ export class AgentRuntime {
           options,
         ),
       false,
+    );
+
+    return projectJobPage(page, options.before, (before) =>
+      this.visible(
+        harness,
+        {},
+        () =>
+          readConversationTranscript(harness, agent.id, job.conversationId, {
+            limit: 200,
+            before,
+          }),
+        false,
+      ),
     );
   }
 
@@ -1158,6 +1262,8 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
         const extensions = yield* BotExtensions;
         const models = yield* ProviderModels;
         const skillLibrary = yield* BotSkills;
+        const library = yield* Library;
+        const fileStore = yield* FileStore;
 
         return yield* Effect.acquireRelease(
           Effect.sync(
@@ -1166,6 +1272,20 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
                 ...options,
                 models,
                 skillLibrary,
+                library,
+                validateFiles: (agentId, ids) =>
+                  library.validate({ kind: "bot", agentId }, ids),
+                resolveFiles: (agentId, ids, ref) =>
+                  resolveMessageFiles(
+                    library,
+                    fileStore,
+                    ref ?? { kind: "bot", agentId },
+                    ids,
+                  ),
+                existingFiles: (agentId, ids) =>
+                  library
+                    .entries({ kind: "bot", agentId }, ids)
+                    .pipe(Effect.map((entries) => new Set(entries.keys()))),
                 currentAgent: (agent) => Effect.runSync(agents.get(agent.id)),
                 ownerTimezone: () => {
                   const timezone = Effect.runSync(settings.get(OWNER_TIMEZONE));

@@ -261,7 +261,7 @@ export class GroupChatRepository extends Context.Service<
           .from(groupMembers)
           .where(membership(groupId, agentId));
 
-        if (!row) return undefined;
+        if (!row) return;
 
         const state: GroupMember = {
           groupId: row.groupId,

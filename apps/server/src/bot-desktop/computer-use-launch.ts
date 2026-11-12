@@ -72,7 +72,7 @@ async function commandFor(
     (each) => each.name.toLowerCase() === key,
   );
 
-  if (!entry?.launch_path) return undefined;
+  if (!entry?.launch_path) return;
 
   return path ? `${entry.launch_path} ${shellQuote(path)}` : entry.launch_path;
 }

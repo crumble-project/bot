@@ -157,6 +157,7 @@ export function useConversation<S extends HistoryPage>(
     byEntry: new Map(messages.map((message) => [message.entryId, message])),
     attachmentPath: (entryId: string, index: number) =>
       `${target.path}/attachments/${encodeURIComponent(entryId)}/${index}`,
+    filePath: (id: string) => `${target.path}/files/${encodeURIComponent(id)}`,
   };
 }
 
@@ -248,7 +249,7 @@ function ConversationRows({
   byEntry,
   reactions,
   onReply,
-  attachmentPath,
+  filePath,
   renderMessage,
   renderNotice,
 }: {
@@ -257,10 +258,34 @@ function ConversationRows({
   byEntry: Map<string, Message>;
   reactions: Map<string, Reaction[]>;
   onReply: (message: Message) => void;
-  attachmentPath: (entryId: string, index: number) => string;
+  filePath: (id: string) => string;
   renderMessage: (message: Message) => ReactNode;
   renderNotice: (message: Message, row: ReactNode) => ReactNode;
 }) {
+  const contentOf = (message: Message) => {
+    if (isNotice(message))
+      return renderNotice(
+        message,
+        <NoticeRow
+          message={message}
+          reactions={reactions.get(message.entryId)}
+        />,
+      );
+
+    if (message.role === "user")
+      return (
+        <OwnerMessage
+          message={message}
+          quote={quoteOf(message, byEntry)}
+          reactions={reactions.get(message.entryId)}
+          onReply={onReply}
+          filePath={filePath}
+        />
+      );
+
+    return renderMessage(message);
+  };
+
   return withTimeMarkers(messages).map((row) =>
     row.kind === "time" ? (
       <MessageScrollerItem key={row.key} messageId={row.key}>
@@ -272,25 +297,7 @@ function ConversationRows({
         messageId={row.message.id}
         className={arrival(row.message)}
       >
-        {isNotice(row.message) ? (
-          renderNotice(
-            row.message,
-            <NoticeRow
-              message={row.message}
-              reactions={reactions.get(row.message.entryId)}
-            />,
-          )
-        ) : row.message.role === "user" ? (
-          <OwnerMessage
-            message={row.message}
-            quote={quoteOf(row.message, byEntry)}
-            reactions={reactions.get(row.message.entryId)}
-            onReply={onReply}
-            attachmentPath={attachmentPath}
-          />
-        ) : (
-          renderMessage(row.message)
-        )}
+        {contentOf(row.message)}
       </MessageScrollerItem>
     ),
   );
@@ -303,7 +310,7 @@ function OutgoingRow({
   message: Outgoing;
   conversation: Conversation;
 }) {
-  const { byEntry, attachmentPath, sending } = conversation;
+  const { byEntry, filePath, sending } = conversation;
 
   return (
     <MessageScrollerItem messageId={message.requestId} className={ARRIVAL}>
@@ -322,7 +329,7 @@ function OutgoingRow({
             message.replyTo,
           )
         }
-        attachmentPath={attachmentPath}
+        filePath={filePath}
       />
     </MessageScrollerItem>
   );
@@ -357,7 +364,7 @@ export function ConversationMessages({
         byEntry={conversation.byEntry}
         reactions={conversation.reactions}
         onReply={conversation.sending.setReplyTo}
-        attachmentPath={conversation.attachmentPath}
+        filePath={conversation.filePath}
         renderMessage={renderMessage}
         renderNotice={renderNotice}
       />

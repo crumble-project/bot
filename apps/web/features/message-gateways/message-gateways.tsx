@@ -7,9 +7,7 @@ import {
   IconChevronRight,
   IconHash,
   IconMessage,
-  IconPlus,
   IconRobot,
-  IconTrash,
   IconUser,
 } from "@tabler/icons-react";
 import {
@@ -24,10 +22,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { SelectOptions } from "@/components/form-fields";
+import {
+  AddRowButton,
+  QueryState,
+  RemoveRowButton,
+  SaveBar,
+} from "@/components/config-editor";
 import {
   RowTile,
   Section,
@@ -36,6 +37,7 @@ import {
   Page,
 } from "@/components/page";
 import { type Bot, botsQuery } from "@/features/bots/api";
+import { BotSelect } from "@/features/bots/bot-select";
 import {
   type GatewayConfig,
   type MessageGateway,
@@ -108,53 +110,6 @@ function GatewayStatus({ gateway }: { gateway: MessageGateway }) {
         }[gateway.status]
       }
     </Badge>
-  );
-}
-
-export function BotSelect({
-  id,
-  label,
-  bots,
-  value,
-  invalid,
-  optional = false,
-  onChange,
-}: {
-  id?: string;
-  label: string;
-  bots: Bot[];
-  value: string | null;
-  invalid?: boolean;
-  optional?: boolean;
-  onChange: (value: string | null) => void;
-}) {
-  const items = [
-    { value: "", label: optional ? "None" : "Choose a bot" },
-    ...bots.map((bot) => ({
-      value: bot.id,
-      label: bot.enabled ? bot.name : `${bot.name} (disabled)`,
-    })),
-    ...(value && !bots.some((bot) => bot.id === value)
-      ? [{ value, label: "Deleted bot" }]
-      : []),
-  ];
-
-  return (
-    <Select
-      items={items}
-      value={value ?? ""}
-      onValueChange={(next) => onChange(next || null)}
-    >
-      <SelectTrigger
-        id={id}
-        aria-label={label}
-        aria-invalid={invalid || undefined}
-        className="w-48"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectOptions items={items} />
-    </Select>
   );
 }
 
@@ -262,49 +217,6 @@ function ConnectionSection({
         onChange={refresh}
       />
     </Section>
-  );
-}
-
-export function AddRowButton({
-  label,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <IconPlus data-icon="inline-start" />
-      {label}
-    </Button>
-  );
-}
-
-export function RemoveRowButton({
-  title,
-  onClick,
-}: {
-  title: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      title={title}
-      onClick={onClick}
-    >
-      <IconTrash />
-    </Button>
   );
 }
 
@@ -592,53 +504,6 @@ function AccessSection({
   );
 }
 
-type SaveState = {
-  isPending: boolean;
-  isSuccess: boolean;
-  error: Error | null;
-};
-
-function saveStatus(dirty: boolean, save: SaveState) {
-  if (save.isPending) return "Saving…";
-
-  if (dirty) return "Unsaved changes";
-
-  return save.isSuccess ? "Saved" : "";
-}
-
-export function SaveBar({
-  dirty,
-  save,
-  onReset,
-}: {
-  dirty: boolean;
-  save: SaveState;
-  onReset: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-end gap-2">
-      <span className="mr-auto text-sm text-muted-foreground" role="status">
-        {save.error ? (
-          <FieldError>{save.error.message}</FieldError>
-        ) : (
-          saveStatus(dirty, save)
-        )}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={!dirty || save.isPending}
-        onClick={onReset}
-      >
-        Reset
-      </Button>
-      <Button type="submit" disabled={!dirty || save.isPending}>
-        Save
-      </Button>
-    </div>
-  );
-}
-
 function useGatewayEditor(gateway: MessageGateway, bots: Bot[]) {
   const [draft, setDraft] = useState(() => draftOf(gateway.config));
   const [attempted, setAttempted] = useState(false);
@@ -733,18 +598,6 @@ function GatewayRow({ gateway }: { gateway: MessageGateway }) {
       <IconChevronRight className="size-4 text-muted-foreground" />
     </Link>
   );
-}
-
-export function QueryState({
-  pending,
-  error,
-}: {
-  pending: boolean;
-  error: Error | null;
-}) {
-  if (error) return <FieldError>{error.message}</FieldError>;
-
-  return pending ? <Skeleton className="h-64 w-full rounded-xl" /> : null;
 }
 
 export function MessageGatewaysPage() {

@@ -6,6 +6,7 @@ import type { OwnerMessage } from "../jobs/owner-request";
 import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { HELD_ACTION_STATUSES, OWNER_MESSAGE_SOURCES } from "../shared/domain";
+import { keyedListeners } from "../shared/keyed";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { heldActions } from "./schema";
@@ -35,8 +36,6 @@ export type HoldDecision =
   | { status: "approved" }
   | { status: "declined"; reason: string | null }
   | { status: "expired" };
-
-type Listener = (decision: HoldDecision) => void;
 
 const LISTED = 50;
 
@@ -85,7 +84,7 @@ export class HeldActions extends Context.Service<
     HeldActions,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-      const listeners = new Map<string, Set<Listener>>();
+      const listeners = keyedListeners<HoldDecision>();
       const heldListeners = new Set<(held: HeldAction) => void>();
 
       // No wait outlives the process: a job's tool call ends with it.
@@ -104,10 +103,6 @@ export class HeldActions extends Context.Service<
 
         return found;
       });
-
-      const announce = (id: string, decision: HoldDecision) => {
-        for (const listener of listeners.get(id) ?? []) listener(decision);
-      };
 
       const hold = Effect.fn("HeldActions.hold")(function* (input: HoldInput) {
         const values = {
@@ -167,7 +162,7 @@ export class HeldActions extends Context.Service<
         const [decided] = changed;
 
         if (decided) {
-          announce(id, decision);
+          listeners.notify(id, decision);
 
           return heldOf(decided);
         }
@@ -189,7 +184,7 @@ export class HeldActions extends Context.Service<
           .returning({ id: heldActions.id })
           .pipe(Effect.orDie);
 
-        if (changed.length) announce(id, { status: "expired" });
+        if (changed.length) listeners.notify(id, { status: "expired" });
       });
 
       const decisionOf = (
@@ -208,20 +203,13 @@ export class HeldActions extends Context.Service<
         id: string,
       ) {
         const decided = yield* Deferred.make<HoldDecision>();
-        const set = listeners.get(id) ?? new Set<Listener>();
 
         // Listening before reading, so a decision between the two is not missed.
-        const listener: Listener = (decision) =>
-          Deferred.doneUnsafe(decided, Effect.succeed(decision));
-
-        set.add(listener);
-        listeners.set(id, set);
-
-        const stop = Effect.sync(() => {
-          set.delete(listener);
-
-          if (!set.size) listeners.delete(id);
-        });
+        const stop = Effect.sync(
+          listeners.add(id, (decision) =>
+            Deferred.doneUnsafe(decided, Effect.succeed(decision)),
+          ),
+        );
 
         const earlier = decisionOf(yield* row(id));
 

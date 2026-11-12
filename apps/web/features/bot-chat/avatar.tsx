@@ -1,6 +1,19 @@
-import { type AvatarBot, BotAvatar } from "@/components/bot-avatar";
+import {
+  type AvatarBot,
+  type BotState,
+  BotAvatar,
+} from "@/components/bot-avatar";
 import type { Bot } from "@/features/bots/api";
 import { isBusy, useWorking } from "./working";
+
+const avatarState = (
+  enabled: boolean,
+  working: ReturnType<typeof useWorking>,
+): BotState => {
+  if (!enabled) return "sleeping";
+
+  return isBusy(working) ? "working" : "idle";
+};
 
 export function LiveBotAvatar({
   bot,
@@ -13,11 +26,7 @@ export function LiveBotAvatar({
 }) {
   const working = useWorking(bot.id);
 
-  const state = !bot.enabled
-    ? "sleeping"
-    : isBusy(working)
-      ? "working"
-      : "idle";
+  const state = avatarState(bot.enabled, working);
 
   return (
     <BotAvatar

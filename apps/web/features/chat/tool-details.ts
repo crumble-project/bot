@@ -1,9 +1,7 @@
-import { z } from "zod";
-import { contentBlocks } from "@crumble/server/contract/tool-details";
+import type { z } from "zod";
 import type { Message } from "./api";
 
-export const blocksOf = (message: Message) =>
-  contentBlocks.safeParse(message.blocks).data ?? [];
+export const blocksOf = (message: Message) => message.blocks ?? [];
 
 export function toolDetailsOf<S extends z.ZodType>(
   message: Message,

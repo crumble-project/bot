@@ -34,7 +34,7 @@ const refresh = () =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: eventRelayQuery.queryKey }),
     queryClient.invalidateQueries({ queryKey: eventSourcesQuery.queryKey }),
-  ]).then(() => undefined);
+  ]).then(() => {});
 
 const STATUS_LABELS: Record<RelayStatus["status"], string> = {
   disconnected: "Not set up",

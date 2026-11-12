@@ -37,8 +37,12 @@ export function useFreshRequest<D>(
   const known = state.data !== undefined && conclusive(state.data);
   const fresh = state.isSuccess && state.isFetchedAfterMount;
 
-  const reading =
-    known || fresh ? null : state.isError ? "Unavailable" : "Loading…";
+  const trusted = known || fresh;
+
+  const readingOf = (query: typeof state) =>
+    query.isError ? "Unavailable" : "Loading…";
+
+  const reading = trusted ? null : readingOf(state);
 
   return { data: state.data, reading };
 }

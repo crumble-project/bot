@@ -54,11 +54,10 @@ export const CALL_OUTCOMES: Record<
   failed: "Failed",
 };
 
-export const callStateOf = (request: CallRequest) =>
-  request.status === "declined"
-    ? "Declined"
-    : request.status === "calling"
-      ? "Calling"
-      : request.outcome
-        ? CALL_OUTCOMES[request.outcome]
-        : "Ended";
+export const callStateOf = (request: CallRequest) => {
+  if (request.status === "declined") return "Declined";
+
+  if (request.status === "calling") return "Calling";
+
+  return request.outcome ? CALL_OUTCOMES[request.outcome] : "Ended";
+};

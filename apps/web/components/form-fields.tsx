@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ErrorAlert } from "@/components/page";
 import { cn } from "@/lib/utils";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -134,11 +134,7 @@ export function EditorSheet({
           <ScrollArea className="min-h-0 flex-1">
             <FieldGroup className="p-4">
               {children}
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+              {error && <ErrorAlert>{error}</ErrorAlert>}
             </FieldGroup>
           </ScrollArea>
           <SheetFooter className="flex-row justify-end border-t">

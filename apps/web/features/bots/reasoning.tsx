@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Select,
@@ -15,66 +16,94 @@ import {
   type BotInput,
   invalidateBots,
 } from "./api";
-import { type Model, modelsQuery } from "@/features/providers/api";
-import { queryClient, send } from "@/lib/api";
-import { THINKING_LEVELS } from "@crumble/server/contract/agents";
+import { call, queryClient, send, type ResponseBody } from "@/lib/api";
 
-export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+export type ThinkingLevel = ResponseBody<"previewReasoning">["effectiveLevel"];
 
-const LEVEL_LABELS: Record<ThinkingLevel, string> = {
-  off: "Off",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Maximum",
-};
+type ReasoningOption = ResponseBody<"previewReasoning">["options"][number];
 
-const LEVELS = THINKING_LEVELS.map((value) => ({
-  value,
-  label: LEVEL_LABELS[value],
-}));
+export function matchingReasoningPreview(
+  provider?: string,
+  model?: string,
+  previous?: ResponseBody<"previewReasoning">,
+  query?: { queryKey: readonly unknown[] },
+) {
+  return query !== undefined &&
+    query.queryKey[1] === provider &&
+    query.queryKey[2] === model
+    ? previous
+    : undefined;
+}
 
-export const levelsOf = (model?: Model): readonly ThinkingLevel[] =>
-  model?.thinkingLevels ?? THINKING_LEVELS;
+export function reasoningQuery(
+  provider: string,
+  model: string,
+  thinkingLevel: ThinkingLevel,
+) {
+  return {
+    queryKey: ["reasoning-preview", provider, model, thinkingLevel] as const,
+    placeholderData: (
+      previous: ResponseBody<"previewReasoning"> | undefined,
+      query: { queryKey: readonly unknown[] } | undefined,
+    ) => matchingReasoningPreview(provider, model, previous, query),
+    queryFn: () =>
+      call<"previewReasoning">("/v1/reasoning/preview", "POST", {
+        provider,
+        model,
+        thinkingLevel,
+      }),
+  };
+}
 
-/** The level a turn runs at, the nearest supported one preferring higher, as Pi AI's `clampThinkingLevel`. */
-export function clampLevel(
-  level: ThinkingLevel,
-  levels: readonly ThinkingLevel[],
-): ThinkingLevel {
-  const supported = new Set(levels);
+export function useReasoningPreview(
+  provider: string,
+  model: string,
+  thinkingLevel: ThinkingLevel,
+) {
+  const [debouncedModel, setDebouncedModel] = useState(() => model.trim());
 
-  if (supported.has(level)) return level;
-  const index = THINKING_LEVELS.indexOf(level);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedModel(model.trim()), 250);
 
-  return (
-    THINKING_LEVELS.slice(index + 1).find((each) => supported.has(each)) ??
-    THINKING_LEVELS.slice(0, index)
-      .toReversed()
-      .find((each) => supported.has(each)) ??
-    levels[0] ??
-    "off"
-  );
+    return () => clearTimeout(timer);
+  }, [model]);
+
+  const preview = useQuery({
+    ...reasoningQuery(provider, debouncedModel, thinkingLevel),
+    enabled: debouncedModel === model.trim(),
+  });
+
+  const current = debouncedModel === model.trim() ? preview.data : undefined;
+
+  return {
+    options: current?.options ?? [],
+    level: preview.isPlaceholderData
+      ? thinkingLevel
+      : (current?.effectiveLevel ?? thinkingLevel),
+    previewReady: Boolean(current) && !preview.isPlaceholderData,
+    previewError: debouncedModel === model.trim() && preview.isError,
+    retryPreview: () => {
+      void preview.refetch();
+    },
+  };
 }
 
 export function ReasoningSelect({
   id,
-  levels,
+  options,
   value,
   onChange,
   compact,
   disabled,
 }: {
   id?: string;
-  levels: readonly ThinkingLevel[];
+  options: ReasoningOption[];
   value: ThinkingLevel;
   onChange: (level: ThinkingLevel) => void;
   compact?: boolean;
   disabled?: boolean;
 }) {
-  const items = LEVELS.filter((level) => levels.includes(level.value));
+  const items = options;
 
   return (
     <Select
@@ -111,9 +140,13 @@ export function ReasoningSelect({
 }
 
 export function BotReasoning({ bot }: { bot: Bot }) {
-  const models = useQuery(modelsQuery(bot.provider)).data;
-  const levels = levelsOf(models?.find((model) => model.id === bot.model));
-  const value = clampLevel(bot.inference?.thinkingLevel ?? "off", levels);
+  const preview = useQuery(
+    reasoningQuery(
+      bot.provider,
+      bot.model,
+      bot.inference?.thinkingLevel ?? "off",
+    ),
+  );
 
   const save = useMutation({
     mutationFn: (thinkingLevel: ThinkingLevel) =>
@@ -131,13 +164,17 @@ export function BotReasoning({ bot }: { bot: Bot }) {
     onSettled: () => invalidateBots(),
   });
 
-  if (levels.length < 2) return null;
+  if (!preview.data || preview.data.options.length < 2) return null;
 
   return (
     <ReasoningSelect
       compact
-      levels={levels}
-      value={value}
+      options={preview.data.options}
+      value={
+        preview.isPlaceholderData
+          ? (bot.inference?.thinkingLevel ?? "off")
+          : preview.data.effectiveLevel
+      }
       disabled={save.isPending}
       onChange={(level) => save.mutate(level)}
     />

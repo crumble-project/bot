@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Predicate } from "effect";
 import { Sandbox as MicrosandboxSandbox } from "microsandbox";
 import { Sandbox as RailwaySandbox } from "railway";
 import type { MachineWorkspaces } from "../../src/workspaces/machine-workspaces";
@@ -53,7 +54,7 @@ const microsandbox: WorkspaceBackend = {
         "running",
     };
   },
-  cleanup: async () => undefined,
+  cleanup: async () => {},
 };
 
 const railwayDataDir = mkdtempSync(path.join(tmpdir(), "crumble-railway-"));
@@ -61,9 +62,13 @@ const railwayRecords = path.join(railwayDataDir, "workspaces", "railway");
 
 const railwaySandboxId = (agentId: string): string | undefined => {
   try {
-    return JSON.parse(
+    const record: unknown = JSON.parse(
       readFileSync(path.join(railwayRecords, `${agentId}.json`), "utf8"),
-    ).sandboxId;
+    );
+
+    return Predicate.isObject(record) && Predicate.isString(record["sandboxId"])
+      ? record["sandboxId"]
+      : undefined;
   } catch {
     return undefined;
   }
@@ -78,7 +83,7 @@ const destroyRecordedSandboxes = async () => {
     if (id)
       await RailwaySandbox.connect(id)
         .then((sandbox) => sandbox.destroy())
-        .catch(() => undefined);
+        .catch(() => {});
   }
 };
 

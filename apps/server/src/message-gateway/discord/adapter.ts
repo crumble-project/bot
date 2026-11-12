@@ -23,7 +23,13 @@ import type { ConnectionStatus } from "../../shared/domain";
 
 export const DISCORD_PLUGIN_ID = "discord";
 
-const DISCORD_SECRET_KEY = pluginSettingKey(DISCORD_PLUGIN_ID, "token");
+export const DISCORD_TOKEN_SETTING = "token";
+
+const DISCORD_SECRET_KEY = pluginSettingKey(
+  DISCORD_PLUGIN_ID,
+  DISCORD_TOKEN_SETTING,
+);
+
 const SEND_TIMEOUT_MS = 10_000;
 const sentMessageSchema = z.object({ id: z.string().min(1) });
 

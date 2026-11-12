@@ -175,12 +175,11 @@ const screenshotMode = async (
   state: ComputerUseState,
   mode: string,
   context: Context,
-) =>
-  mode !== "vision"
-    ? "none"
-    : (await passwordMayShow(state, context))
-      ? "withheld"
-      : "taken";
+) => {
+  if (mode !== "vision") return "none";
+
+  return (await passwordMayShow(state, context)) ? "withheld" : "taken";
+};
 
 export async function captureWindow(
   state: ComputerUseState,

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref, type Scope } from "effect";
+import { Context, Effect, Layer, Option, Ref, type Scope } from "effect";
 
 export type CallLine = { speaker: "bot" | "callee"; text: string };
 
@@ -15,7 +15,7 @@ export type OutsideCallNote = { callee: string; goal: string } & (
 export type CallNoteSource = (
   agentId: string,
   callId: string,
-) => Effect.Effect<OutsideCallNote | undefined>;
+) => Effect.Effect<Option.Option<OutsideCallNote>>;
 
 /**
  * Outside calls' notes for the turn their end starts: the voice gateway, which depends on the bot chat, provides the
@@ -24,7 +24,7 @@ export type CallNoteSource = (
 export class CallNotes extends Context.Service<
   CallNotes,
   {
-    /** Undefined for a call with the owner, and while nothing provides notes. */
+    /** None for a call with the owner, and while nothing provides notes. */
     readonly note: CallNoteSource;
     readonly provide: (
       source: CallNoteSource,
@@ -34,16 +34,21 @@ export class CallNotes extends Context.Service<
   static readonly layer = Layer.effect(
     CallNotes,
     Effect.gen(function* () {
-      const current = yield* Ref.make<CallNoteSource | undefined>(undefined);
+      const current = yield* Ref.make<Option.Option<CallNoteSource>>(
+        Option.none(),
+      );
 
       const note: CallNoteSource = (agentId, callId) =>
         Effect.flatMap(Ref.get(current), (source) =>
-          source ? source(agentId, callId) : Effect.succeed(undefined),
+          Option.match(source, {
+            onNone: () => Effect.succeed(Option.none()),
+            onSome: (provided) => provided(agentId, callId),
+          }),
         );
 
       const provide = (source: CallNoteSource) =>
-        Effect.acquireRelease(Ref.set(current, source), () =>
-          Ref.set(current, undefined),
+        Effect.acquireRelease(Ref.set(current, Option.some(source)), () =>
+          Ref.set(current, Option.none()),
         );
 
       return CallNotes.of({ note, provide });

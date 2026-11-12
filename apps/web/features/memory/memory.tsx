@@ -13,7 +13,6 @@ import {
   IconUsersGroup,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
@@ -47,6 +46,7 @@ import {
   PageToolbar,
   SectionEmpty,
   Page,
+  ErrorAlert,
 } from "@/components/page";
 import { MAX_MEMORY_CHARS } from "@crumble/server/contract/limits";
 import { allPill, botPill, sharedPill } from "@/features/bots/bot-pills";
@@ -407,11 +407,7 @@ export function MemoryPage() {
         </PageToolbar>
         <OwnerPills owners={owners} scope={scope} onScope={setScope} />
       </div>
-      {remove.isError && (
-        <Alert variant="destructive">
-          <AlertDescription>{remove.error.message}</AlertDescription>
-        </Alert>
-      )}
+      {remove.isError && <ErrorAlert>{remove.error.message}</ErrorAlert>}
       {bots.isPending || shared.isPending ? (
         <Skeleton className="h-40 rounded-xl" />
       ) : (

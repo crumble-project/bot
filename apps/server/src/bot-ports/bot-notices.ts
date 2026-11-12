@@ -1,6 +1,6 @@
 import { logged } from "../shared/app-errors";
 import { noticeRequest, type NoticeKind } from "../shared/request-ids";
-import { Context, Effect, Layer, Ref, type Scope } from "effect";
+import { Context, Effect, Layer, Option, Ref, type Scope } from "effect";
 
 export type NoticeHandler = (
   agentId: string,
@@ -25,18 +25,22 @@ export class BotNotices extends Context.Service<
   static readonly layer = Layer.effect(
     BotNotices,
     Effect.gen(function* () {
-      const current = yield* Ref.make<NoticeHandler | undefined>(undefined);
+      const current = yield* Ref.make<Option.Option<NoticeHandler>>(
+        Option.none(),
+      );
 
       const notice: NoticeHandler = (agentId, text, requestId) =>
         Effect.flatMap(Ref.get(current), (handler) =>
-          handler
-            ? handler(agentId, text, requestId)
-            : Effect.fail(new Error("No chat takes bot notices yet")),
+          Option.match(handler, {
+            onNone: () =>
+              Effect.fail(new Error("No chat takes bot notices yet")),
+            onSome: (takes) => takes(agentId, text, requestId),
+          }),
         );
 
       const handle = (handler: NoticeHandler) =>
-        Effect.acquireRelease(Ref.set(current, handler), () =>
-          Ref.set(current, undefined),
+        Effect.acquireRelease(Ref.set(current, Option.some(handler)), () =>
+          Ref.set(current, Option.none()),
         );
 
       return BotNotices.of({ notice, handle });

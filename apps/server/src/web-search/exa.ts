@@ -145,7 +145,9 @@ const exaProvider = (
 
 export const EXA_PLUGIN_ID = "web-search-exa";
 
-export const EXA_KEY = pluginSettingKey(EXA_PLUGIN_ID, "api-key");
+const EXA_KEY_SETTING = "api-key";
+
+export const EXA_KEY = pluginSettingKey(EXA_PLUGIN_ID, EXA_KEY_SETTING);
 
 export const exaPlugin = (
   secret: (key: string) => Effect.Effect<string | undefined, SecretUnavailable>,
@@ -153,7 +155,7 @@ export const exaPlugin = (
   id: EXA_PLUGIN_ID,
   settings: [
     {
-      key: "api-key",
+      key: EXA_KEY_SETTING,
       kind: "secret",
       label: "Exa API key",
       whenMissing: "Needed for Exa",

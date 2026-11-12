@@ -652,14 +652,21 @@ export class GitHubApps extends Context.Service<
             `!f() { echo username=x-access-token; echo "password=$${GITHUB_TOKEN_CREDENTIAL}"; }; f`,
           ]);
 
-        return Object.fromEntries([
-          ...(trailer ? [["CRUMBLE_COMMIT_TRAILER", trailer]] : []),
+        const config: [string, string][] = [
+          ...(trailer
+            ? ([["CRUMBLE_COMMIT_TRAILER", trailer]] satisfies [
+                string,
+                string,
+              ][])
+            : []),
           ["GIT_CONFIG_COUNT", String(entries.length)],
-          ...entries.flatMap(([key, value], index) => [
+          ...entries.flatMap(([key, value], index): [string, string][] => [
             [`GIT_CONFIG_KEY_${index}`, key],
             [`GIT_CONFIG_VALUE_${index}`, value],
           ]),
-        ]);
+        ];
+
+        return Object.fromEntries(config);
       });
 
       return GitHubApps.of({

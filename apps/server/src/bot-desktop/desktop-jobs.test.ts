@@ -327,9 +327,10 @@ test("a desktop job operates the bot desktop and reports to the bot's chat", asy
   const { runtime, agent, chat, offered, calls } = await open();
   const messages = (await runtime.snapshot(agent, chat)).messages;
 
-  expect(offered.get("job")).toEqual(["computer_use", "skill"]);
+  expect(offered.get("job")).toEqual(["computer_use", "skill", "library"]);
   expect(offered.get("bot")).toEqual([
     "skill_manage",
+    "library",
     "desktop",
     "request_login",
   ]);

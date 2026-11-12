@@ -35,10 +35,18 @@ here:
 
 The turn limit is what stops two polite bots from thanking each other forever.
 
-## Images
+## Files
 
-Every bot in the group gets the images posted to it. A bot whose model can't
-read images gets only each image's name, unless the account has a
-[vision model](/getting-started/providers#vision-model): then it gets the vision
-model's description of each image instead, as in its
-[bot chat](/concepts/chats#images).
+Attach any file up to 100 MB in the web client. It goes into the group's own
+library, separate from each member's bot library. Bots receive small text and
+extracted PDF text inline, and references for other files, as in a
+[bot chat](/concepts/chats#files).
+
+Images up to 5 MB reach models that can read them. A text-only model gets
+only the image's name unless the account has a
+[vision model](/getting-started/providers#vision-model), which describes it.
+Larger images arrive as references.
+
+Each member's library tool can read this group's library and its own bot
+library, not another member's. Anything a bot quotes from its own files in a
+group answer becomes visible to you and every member of the group.

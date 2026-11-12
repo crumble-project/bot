@@ -9,6 +9,7 @@ import { BotRequests } from "../../src/bot-requests/bot-requests";
 import type { BotsAccess } from "../../src/bots/bots";
 import type { AgentRuntime } from "../../src/bots/runtime";
 import { EventSources } from "../../src/event-sources/event-sources";
+import { Library } from "../../src/files/library";
 import { GroupChats } from "../../src/group-chats/group-chats";
 import { McpIntegrations } from "../../src/integrations/integrations";
 import { mcpServersOver } from "../../src/integrations/integrations-test-support";
@@ -37,6 +38,7 @@ import { CallRequests } from "../../src/voice-gateway/call-requests";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
 export type TestServices = {
+  library?: Library["Service"];
   scheduler?: { service: Scheduler["Service"] };
   groupChats?: { service: GroupChats["Service"] };
   push?: Runner<Push>;
@@ -102,6 +104,7 @@ function testServices(
   const core = bots.core.runSync(Effect.context<CoreServices>());
 
   const context = core.pipe(
+    Context.add(Library, services.library ?? Context.get(core, Library)),
     Context.add(McpServers, mcpServersOver(core, noIntegrations)),
     Context.add(Scheduler, scheduler.service),
     Context.add(ScriptRuns, services.scriptRuns ?? noScriptRuns),

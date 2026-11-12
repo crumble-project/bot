@@ -188,16 +188,19 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
       throw new NotFound({ message: "Spoken message not found" });
     await spokenOn(username, execution, hash(c.req.raw));
 
-    const reply =
-      execution.status !== "done"
-        ? null
-        : execution.submissionId
-          ? await runtime.response(
-              service.agent(line.botId),
-              execution.conversationId,
-              execution.submissionId,
-            )
-          : [];
+    const replyOf = async () => {
+      if (execution.status !== "done") return null;
+
+      if (!execution.submissionId) return [];
+
+      return runtime.response(
+        service.agent(line.botId),
+        execution.conversationId,
+        execution.submissionId,
+      );
+    };
+
+    const reply = await replyOf();
 
     const hangUp = await run.runPromise(gateway.hangingUp(username));
 

@@ -5,6 +5,8 @@ import { z } from "zod";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
+import { MAX_FILE_BYTES } from "../files/library";
+import { fileName, fileTooLarge } from "../files/files-api";
 
 const requiredBody = (definition: RouteConfig) => {
   const body = definition.request?.body;
@@ -57,14 +59,41 @@ const messagePaths = [routes.sendMessage, routes.sendGroupMessage].map(
     new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
 );
 
+const uploadPaths = [routes.uploadFile, routes.uploadGroupFile].map(
+  (route) =>
+    new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
+);
+
 export const limitBodies = <E extends Env>(app: OpenAPIHono<E>) => {
+  const uploadLimit = bodyLimit({
+    maxSize: MAX_FILE_BYTES,
+    onError: (c) =>
+      c.text(
+        fileTooLarge(fileName(c.req.header("x-file-name")), MAX_FILE_BYTES),
+        413,
+      ),
+  });
+
   const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
 
-  app.use("*", (c, next) =>
-    c.req.method === "POST" &&
-    messagePaths.some((path) => path.test(c.req.path))
+  app.use("*", (c, next) => {
+    if (
+      c.req.method === "POST" &&
+      uploadPaths.some((path) => path.test(c.req.path))
+    ) {
+      const length = c.req.header("content-length");
+
+      return length &&
+        /^\d+$/.test(length) &&
+        !c.req.header("transfer-encoding")
+        ? uploadLimit(c, next)
+        : next();
+    }
+
+    return c.req.method === "POST" &&
+      messagePaths.some((path) => path.test(c.req.path))
       ? messageBodyLimit(c, next)
-      : defaultBodyLimit(c, next),
-  );
+      : defaultBodyLimit(c, next);
+  });
 };

@@ -21,4 +21,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
+      # The site has its own lockfile; type-aware lint needs its packages.
+      - run: bun install --frozen-lockfile
+        working-directory: apps/site
       - run: bun run check
