@@ -60,7 +60,7 @@ export function useReasoningPreview(
   model: string,
   thinkingLevel: ThinkingLevel,
 ) {
-  const [debouncedModel, setDebouncedModel] = useState(model.trim());
+  const [debouncedModel, setDebouncedModel] = useState(() => model.trim());
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedModel(model.trim()), 250);

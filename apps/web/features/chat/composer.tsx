@@ -59,7 +59,9 @@ function useAttachments(path: string) {
 
   const uploadsRef = useRef(state.uploads);
 
-  uploadsRef.current = state.uploads;
+  useEffect(() => {
+    uploadsRef.current = state.uploads;
+  }, [state.uploads]);
 
   const setUploads = (update: (uploads: Upload[]) => Upload[]) =>
     setState((current) => ({ ...current, uploads: update(current.uploads) }));
