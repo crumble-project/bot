@@ -1,7 +1,7 @@
 # Lint pass 1: findings that need a design decision
 
 Date: 2026-11-11
-Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 367 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
+Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 336 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
 
 ## 1. `effect/noThrowStatement` is off (287 findings, decided)
 
@@ -39,9 +39,13 @@ The unit of work is a vertical slice (module plus its callers), because the cost
 
 Two boundaries keep `throw` legitimately and should stay documented rather than fixed: pi-ai tool `execute` bodies (a promise contract) and the `try:` callback of `Effect.try`/`Effect.tryPromise` (a throw is how it becomes a typed failure).
 
-## 2. `effect/noModuleMocks` (31 findings, all in `apps/web/**/*.test.tsx`)
+## 2. `effect/noModuleMocks` is off (31 findings, decided)
 
-`composer.dom.test.tsx` (8), `message-gateways.dom.test.tsx` (4), and five more tests replace whole modules with `mock.module(...)`. Passing this rule means giving those components injectable dependencies (a props/seam for `send`, the API client, `useQuery`), which is a testability refactor of the component layer, not a lint fix. It may also be the point where the rule is declared "for tests, mocks are the design" and turned off for `**/*.test.*`.
+The rule is not in `.oxlintrc.json`, for the same reason as `noThrowStatement`: it cannot see the code it is meant for.
+
+`ignorePatterns` excludes `**/*.test.ts`, so the rule never runs on server tests, which is where this repository's Effect code is tested. All 31 hits were in `apps/web/**/*.test.tsx` plus one server test-support fixture, and every one was `spyOn`, not `mock.module`: 27 on `globalThis.fetch`, 2 on `crypto.randomUUID`, 1 on `console.error`, 1 on `window.removeEventListener`. Replacing a platform global is the only seam a browser DOM test has; the app has no Effect services to layer.
+
+The two real `mock.module` uses are in files the ignore pattern hides: `web-search/mixed.test.ts:15` (replaces `./vendors`) and `password-managers/bitwarden.test.ts:26` (replaces the `@bitwarden/sdk-napi` SDK). If the rule is wanted, the order is: fix those two with seam services, then un-ignore `**/*.test.ts`, which also surfaces the rest of the test suite to the other rules (about 90 findings today).
 
 ## 3. Untyped boundaries: `no-unsafe-assignment` (54 left)
 
@@ -68,5 +72,5 @@ Options, in increasing order of churn:
 
 ## 5. Rule configuration observations
 
-- `ignorePatterns` lists `**/*.test.ts` but not `**/*.test.tsx`: 93 findings (30 of the 31 `noModuleMocks`) come from web tests that are linted where server tests are not. Either that asymmetry is intended (browser tests do exercise more) or the pattern should be `**/*.test.{ts,tsx}`.
+- `ignorePatterns` lists `**/*.test.ts` but not `**/*.test.tsx`: the web tests are linted and the server tests are not, which is the wrong way round for a repository whose Effect code lives behind server tests. This is why `noModuleMocks` had no valid target (section 2). If the asymmetry is unintended, the pattern should read `**/*.test.{ts,tsx}`, which surfaces about 90 findings today.
 - `oxlint --fix` on this tree is currently unsafe: it strips required `undefined` arguments (see the pass-1 log). Anyone running `bun run fix` (which is `oxlint --fix`) will get 47 type errors until `unicorn/no-useless-undefined` is either configured as above or fixed by hand.
