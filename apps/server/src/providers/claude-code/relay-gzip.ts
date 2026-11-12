@@ -52,7 +52,11 @@ const invalidJsonEnvelope = ({ type, error }: z.infer<typeof anthropicError>) =>
   error.type !== undefined &&
   INVALID_JSON_MESSAGES.some((prefix) => error.message?.startsWith(prefix));
 
-function originBadJson(raw: z.input<typeof anthropicError>) {
+const jsonValue = z.json();
+
+type JsonValue = z.infer<typeof jsonValue>;
+
+function originBadJson(raw: JsonValue) {
   const go = goError.safeParse(raw);
 
   if (go.success) return GO_BAD_JSON.test(go.data.error);
@@ -61,7 +65,7 @@ function originBadJson(raw: z.input<typeof anthropicError>) {
   return parsed.success && invalidJsonEnvelope(parsed.data);
 }
 
-const encodingUnsupported = (raw: z.input<typeof anthropicError>) => {
+const encodingUnsupported = (raw: JsonValue) => {
   const parsed = anthropicError.safeParse(raw);
 
   return (
@@ -86,7 +90,7 @@ function headerRejection(status: number, headers: Headers) {
 const badJsonText = (text: string) =>
   GO_BAD_JSON.test(text.trimEnd()) ? "invalid_json_at_origin" : undefined;
 
-function originRejection(raw: z.input<typeof anthropicError>) {
+function originRejection(raw: JsonValue) {
   if (!goError.safeParse(raw).success && encodingUnsupported(raw))
     return "unsupported_encoding";
 
@@ -94,10 +98,10 @@ function originRejection(raw: z.input<typeof anthropicError>) {
 }
 
 function bodyRejection(text: string) {
-  let raw: z.input<typeof anthropicError>;
+  let raw: JsonValue;
 
   try {
-    raw = JSON.parse(text);
+    raw = jsonValue.parse(JSON.parse(text));
   } catch {
     return badJsonText(text);
   }

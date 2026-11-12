@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { play } from "cuelume";
+import { z } from "zod";
 import type { ReplyEvent } from "@crumble/server/contract/reply-event";
 import { isJobKind } from "@crumble/server/contract/tools";
 import { onSessionReset } from "@/lib/session";
@@ -26,7 +27,9 @@ export const notifications = {
 };
 
 function firstNotice(key: string) {
-  const seen: string[] = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]");
+  const seen = z
+    .array(z.string())
+    .parse(JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]"));
 
   if (seen.includes(key)) return false;
   localStorage.setItem(SEEN_KEY, JSON.stringify([...seen, key].slice(-512)));

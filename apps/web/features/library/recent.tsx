@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiRaw } from "@/lib/api";
+import { apiRaw, bodyOf } from "@/lib/api";
 import { agentPath } from "@/features/bots/api";
-import { useFileDownload, type LibraryFile } from "./api";
+import { useFileDownload } from "./api";
 import { fileIcon } from "./file-icon";
 
 const RECENT_COUNT = 5;
@@ -24,9 +24,8 @@ export function RecentFiles({
     queryFn: async ({ signal }) => {
       const query = new URLSearchParams({ limit: String(RECENT_COUNT) });
       const response = await apiRaw(`${path}?${query}`, { signal });
-      const page: LibraryFile[] = await response.json();
 
-      return page;
+      return bodyOf<"listFiles">(response);
     },
   });
 

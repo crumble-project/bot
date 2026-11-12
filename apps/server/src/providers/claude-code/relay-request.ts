@@ -41,16 +41,16 @@ type Position = { message: number; index: number; block: Block };
 
 /** The native request, validated; the parsed object itself is returned so its key order survives re-encoding. */
 function decode(payload: string): Body | undefined {
-  let raw: Body;
+  let raw: z.infer<ReturnType<typeof z.json>>;
 
   try {
-    raw = JSON.parse(payload);
+    raw = z.json().parse(JSON.parse(payload));
   } catch {
     return undefined;
   }
 
-  // SAFETY: `raw` is JSON.parse output; the schema check below proves the shape before anything reads it.
-  return body.safeParse(raw).success ? raw : undefined;
+  // SAFETY: `raw` is parsed JSON; the schema check below proves the shape before returning it as Body.
+  return body.safeParse(raw).success ? (raw as Body) : undefined;
 }
 
 const encode = (value: Body) => JSON.stringify(value);

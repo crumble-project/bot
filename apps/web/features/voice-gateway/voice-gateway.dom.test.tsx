@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
+import { z } from "zod";
 import type { VoiceGateway } from "./api";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor, waitForIdle } from "@/test/wait-for";
@@ -138,7 +139,9 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
 
       if (init?.method !== "PUT") return Response.json(stored);
 
-      const body = JSON.parse(await new Response(init.body).text());
+      const body = z
+        .json()
+        .parse(JSON.parse(await new Response(init.body).text()));
 
       bodies.push(body);
 
@@ -238,7 +241,9 @@ test("a line's Calls others checkbox is described and saved as callsOthers", asy
 
       if (init?.method !== "PUT") return Response.json(stored);
 
-      const body = JSON.parse(await new Response(init.body).text());
+      const body = z
+        .json()
+        .parse(JSON.parse(await new Response(init.body).text()));
 
       bodies.push(body);
 

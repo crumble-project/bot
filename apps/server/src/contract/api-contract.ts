@@ -277,13 +277,14 @@ const credentialParams = id.extend({ name: z.string() });
 const heldActionParams = id.extend({ actionId: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
 
-export function patchInput(schema: z.ZodObject) {
+export function patchInput(schema: z.ZodObject<Record<string, z.ZodType>>) {
   const fields: Record<string, z.ZodType> = {};
 
-  for (const [key, field] of Object.entries(schema.shape))
-    fields[key] = (
-      field instanceof z.ZodDefault ? field.unwrap() : field
-    ).optional();
+  for (const [key, field] of Object.entries(schema.shape)) {
+    const inner = field instanceof z.ZodDefault ? field.unwrap() : field;
+
+    if (inner instanceof z.ZodType) fields[key] = inner.optional();
+  }
 
   return z.object(fields);
 }

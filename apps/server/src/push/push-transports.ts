@@ -456,13 +456,13 @@ const fcmAccessToken = Effect.fnUntraced(function* (account: ServiceAccount) {
     });
 
   const body = yield* Effect.tryPromise({
-    try: () => response.json(),
+    try: () => response.text(),
     catch: temporaryFailure,
   });
 
-  return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
-    Effect.mapError(temporaryFailure),
-  )).access_token;
+  return (yield* Schema.decodeUnknownEffect(Schema.fromJsonString(FcmToken))(
+    body,
+  ).pipe(Effect.mapError(temporaryFailure))).access_token;
 });
 
 function fcmTransport(account: ServiceAccount): PushTransport {

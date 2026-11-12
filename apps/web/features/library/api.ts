@@ -1,5 +1,5 @@
 import type { ResponseBody } from "@/lib/api";
-import { apiRaw, HttpError, queryClient } from "@/lib/api";
+import { apiRaw, bodyOf, HttpError, queryClient } from "@/lib/api";
 import { useMutation } from "@tanstack/react-query";
 
 export type LibraryFile = ResponseBody<"listFiles">[number];
@@ -19,7 +19,7 @@ export async function uploadFile(
     body: file,
   });
 
-  const result: UploadResponse = await response.json();
+  const result = await bodyOf<"uploadFile">(response);
 
   void queryClient.invalidateQueries({ queryKey: ["library"] });
 

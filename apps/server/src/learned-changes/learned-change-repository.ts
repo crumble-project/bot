@@ -1,10 +1,56 @@
 import { and, asc, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { ChangeBy, Memory } from "../shared/domain";
-import type { LearnedChange, Skill } from "../contract/skills";
+import { z } from "zod";
+import { memorySource, type ChangeBy, type Memory } from "../shared/domain";
+import {
+  SKILL_STATES,
+  skillInput,
+  type LearnedChange,
+  type Skill,
+} from "../contract/skills";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { learnedChanges, reviewResults } from "./schema";
+
+const changeSourceSchema = z.object({
+  executionId: z.exactOptional(z.string().nullable()),
+  conversationId: z.exactOptional(z.string().nullable()),
+  groupId: z.exactOptional(z.string().nullable()),
+});
+
+const memorySchema = z.object({
+  id: z.string(),
+  agentId: z.string().nullable(),
+  content: z.string(),
+  source: memorySource.nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const skillOriginSchema = z.object({
+  repository: z.string(),
+  branch: z.string(),
+  path: z.string(),
+  commit: z.string(),
+  digest: z.string(),
+});
+
+const skillSchema = skillInput.extend({
+  copiedFromSkillId: z.exactOptional(z.string().nullable()),
+  origin: skillOriginSchema.nullable(),
+  id: z.string(),
+  agentId: z.string().nullable(),
+  createdBy: z.enum(["owner", "bot"]),
+  sourceExecutionId: z.string().nullable(),
+  useCount: z.number(),
+  lastUsedAt: z.string().nullable(),
+  state: z.enum(SKILL_STATES),
+  pinned: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const snapshotSchema = z.union([skillSchema, memorySchema]);
 
 const changeOf = (row: typeof learnedChanges.$inferSelect): LearnedChange => ({
   id: row.id,
@@ -13,9 +59,13 @@ const changeOf = (row: typeof learnedChanges.$inferSelect): LearnedChange => ({
   target: row.target,
   targetId: row.targetId,
   action: row.action,
-  before: row.beforeState ? JSON.parse(row.beforeState) : null,
-  after: row.afterState ? JSON.parse(row.afterState) : null,
-  source: row.source ? JSON.parse(row.source) : null,
+  before: row.beforeState
+    ? snapshotSchema.parse(JSON.parse(row.beforeState))
+    : null,
+  after: row.afterState
+    ? snapshotSchema.parse(JSON.parse(row.afterState))
+    : null,
+  source: row.source ? changeSourceSchema.parse(JSON.parse(row.source)) : null,
   revertsId: row.revertsId ?? null,
   createdAt: row.createdAt,
 });

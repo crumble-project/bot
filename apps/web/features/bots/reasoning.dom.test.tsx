@@ -38,8 +38,13 @@ test("draft switches ignore late previews and retain a pending choice", async ()
         if (z.string().safeParse(input).data === "/v1/providers")
           return Response.json([]);
 
-        const body: { provider: string; model: string; thinkingLevel: string } =
-          JSON.parse(z.string().parse(init?.body));
+        const body = z
+          .object({
+            provider: z.string(),
+            model: z.string(),
+            thinkingLevel: z.string(),
+          })
+          .parse(JSON.parse(z.string().parse(init?.body)));
 
         return new Promise<Response>((resolve) =>
           pending.set(

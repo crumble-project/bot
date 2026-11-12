@@ -1,6 +1,12 @@
 import { asc, eq, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { Agent, AgentInput } from "../contract/agents";
+import { z } from "zod";
+import {
+  agentInput,
+  modelRef,
+  type Agent,
+  type AgentInput,
+} from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { AgentSkills } from "./agent-skills";
@@ -38,11 +44,16 @@ export class AgentRepository extends Context.Service<
       const db = yield* ProductDatabase;
       const skillLibrary = yield* AgentSkills;
 
+      const stringList = z.array(z.string());
+
       const agentOf = Effect.fnUntraced(function* (
         row: typeof agents.$inferSelect,
       ) {
         const tools: string[] = [
-          ...new Set([...STANDARD_TOOLS, ...JSON.parse(row.tools)]),
+          ...new Set([
+            ...STANDARD_TOOLS,
+            ...stringList.parse(JSON.parse(row.tools)),
+          ]),
         ];
 
         const others = yield* db
@@ -65,16 +76,22 @@ export class AgentRepository extends Context.Service<
           enabled: row.enabled,
           tools,
           skills,
-          sharedSkills: JSON.parse(row.sharedSkills),
+          sharedSkills: stringList.parse(JSON.parse(row.sharedSkills)),
           sharedMemory: tools.includes(BOT_TOOL.memory),
-          mcpServers: JSON.parse(row.mcpServers),
+          mcpServers: stringList.parse(JSON.parse(row.mcpServers)),
           delegates: others.map((other) => other.id),
-          inference: JSON.parse(row.inference),
+          inference: agentInput.shape.inference.parse(
+            JSON.parse(row.inference),
+          ),
           ...(row.desktopModel && {
-            desktopModel: JSON.parse(row.desktopModel),
+            desktopModel: modelRef.parse(JSON.parse(row.desktopModel)),
           }),
-          ...(row.reviewModel && { reviewModel: JSON.parse(row.reviewModel) }),
-          ...(row.review && { review: JSON.parse(row.review) }),
+          ...(row.reviewModel && {
+            reviewModel: modelRef.parse(JSON.parse(row.reviewModel)),
+          }),
+          ...(row.review && {
+            review: agentInput.shape.review.parse(JSON.parse(row.review)),
+          }),
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
         };

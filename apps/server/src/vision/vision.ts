@@ -181,7 +181,24 @@ async function recordModelUsage(
 
   // Providers may leave optional counters undefined; documents take strict JSON.
   if (!total) {
-    totals[key] = JSON.parse(JSON.stringify(usage));
+    totals[key] = {
+      input: usage.input,
+      output: usage.output,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      totalTokens: usage.totalTokens,
+      ...(usage.cacheWrite1h !== undefined && {
+        cacheWrite1h: usage.cacheWrite1h,
+      }),
+      ...(usage.reasoning !== undefined && { reasoning: usage.reasoning }),
+      cost: {
+        input: usage.cost.input,
+        output: usage.cost.output,
+        cacheRead: usage.cost.cacheRead,
+        cacheWrite: usage.cost.cacheWrite,
+        total: usage.cost.total,
+      },
+    };
 
     return;
   }

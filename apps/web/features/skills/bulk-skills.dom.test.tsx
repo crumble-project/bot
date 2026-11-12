@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
+import { z } from "zod";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
 import type { Bot } from "@/features/bots/api";
@@ -159,9 +160,9 @@ async function fixture(
     }
 
     if (path.endsWith("/assignment")) {
-      const body: { botId: string; assigned: boolean } = JSON.parse(
-        await new Response(init?.body).text(),
-      );
+      const body = z
+        .object({ botId: z.string(), assigned: z.boolean() })
+        .parse(JSON.parse(await new Response(init?.body).text()));
 
       return assignmentResponse(path, body);
     }

@@ -29,7 +29,9 @@ test("schedule preview ignores stale responses and retries failures", async () =
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (_input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse(z.string().parse(init?.body));
+        const body = z
+          .object({ cron: z.string().optional() })
+          .parse(JSON.parse(z.string().parse(init?.body)));
 
         if (body.cron === "old")
           return new Promise<Response>((resolve) => {

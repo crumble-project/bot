@@ -99,24 +99,30 @@ const newBotRoute = createRoute({
   component: () => <BotForm />,
 });
 
+const botParams = z.object({ botId: z.string() });
+const groupParams = z.object({ groupId: z.string() });
+const gatewayParams = z.object({ gatewayId: z.string() });
+
 const botRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId",
   loader: ({ params }) =>
     queryClient.query({ ...chatQuery(params.botId), staleTime: "static" }),
-  component: function BotPage() {
-    const { botId } = botRoute.useParams();
-
-    return <Chat key={botId} botId={botId} />;
-  },
+  component: BotPage,
 });
+
+function BotPage(): React.JSX.Element {
+  const { botId } = botParams.parse(botRoute.useParams());
+
+  return <Chat key={botId} botId={botId} />;
+}
 
 const editBotRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId/edit",
   loader: () => queryClient.query({ ...botsQuery, staleTime: "static" }),
   component: function EditBotPage() {
-    const { botId } = editBotRoute.useParams();
+    const { botId } = botParams.parse(editBotRoute.useParams());
     const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
 
     return bot ? (
@@ -131,7 +137,7 @@ const desktopRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId/desktop",
   component: function DesktopPage() {
-    const { botId } = desktopRoute.useParams();
+    const { botId } = botParams.parse(desktopRoute.useParams());
 
     return <BotDesktop key={botId} botId={botId} />;
   },
@@ -141,7 +147,7 @@ const botLibraryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId/library",
   component: function BotLibraryPage() {
-    const { botId } = botLibraryRoute.useParams();
+    const { botId } = botParams.parse(botLibraryRoute.useParams());
 
     return <Library kind="bot" id={botId} />;
   },
@@ -151,7 +157,7 @@ const groupLibraryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/groups/$groupId/library",
   component: function GroupLibraryPage() {
-    const { groupId } = groupLibraryRoute.useParams();
+    const { groupId } = groupParams.parse(groupLibraryRoute.useParams());
 
     return <Library kind="group" id={groupId} />;
   },
@@ -172,7 +178,7 @@ const groupRoute = createRoute({
       staleTime: "static",
     }),
   component: function GroupPage() {
-    const { groupId } = groupRoute.useParams();
+    const { groupId } = groupParams.parse(groupRoute.useParams());
 
     return <GroupChatView key={groupId} groupId={groupId} />;
   },
@@ -183,7 +189,7 @@ const editGroupRoute = createRoute({
   path: "/groups/$groupId/edit",
   loader: () => queryClient.query({ ...groupsQuery, staleTime: "static" }),
   component: function EditGroupPage() {
-    const { groupId } = editGroupRoute.useParams();
+    const { groupId } = groupParams.parse(editGroupRoute.useParams());
 
     const group = useQuery(groupsQuery).data?.find(
       (each) => each.id === groupId,
@@ -352,7 +358,7 @@ const messageGatewayRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/message-gateways/$gatewayId",
   component: function MessageGatewayRoutePage() {
-    const { gatewayId } = messageGatewayRoute.useParams();
+    const { gatewayId } = gatewayParams.parse(messageGatewayRoute.useParams());
 
     return <MessageGatewayPage key={gatewayId} gatewayId={gatewayId} />;
   },

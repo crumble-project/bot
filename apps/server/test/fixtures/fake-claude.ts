@@ -91,7 +91,9 @@ if (env["FAKE_MODE"] === "hang") {
     .parse(JSON.parse(readFileSync(settingsPath, "utf8")));
 
   const body = {
-    ...JSON.parse(extra.env.CLAUDE_CODE_EXTRA_BODY),
+    ...z
+      .record(z.string(), z.json())
+      .parse(JSON.parse(extra.env.CLAUDE_CODE_EXTRA_BODY)),
     model: args[args.indexOf("--model") + 1],
     system: readFileSync(
       args[args.indexOf("--system-prompt-file") + 1] ?? "",

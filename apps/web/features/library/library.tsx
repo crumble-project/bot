@@ -20,7 +20,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorAlert, Page } from "@/components/page";
-import { apiRaw, queryClient } from "@/lib/api";
+import { apiRaw, bodyOf, queryClient } from "@/lib/api";
 import { agentPath, botsQuery } from "@/features/bots/api";
 import { groupPath, groupsQuery } from "@/features/group-chats/api";
 import { MAX_FILE_BYTES } from "@crumble/server/contract/limits";
@@ -256,9 +256,8 @@ function useLibraryFiles(kind: "bot" | "group", id: string, path: string) {
       if (pageParam) query.set("before", pageParam);
 
       const response = await apiRaw(`${path}?${query}`, { signal });
-      const page: LibraryFile[] = await response.json();
 
-      return page;
+      return bodyOf<"listFiles">(response);
     },
     getNextPageParam: (page) =>
       page.length === PAGE_SIZE ? page.at(-1)?.id : undefined,

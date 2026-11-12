@@ -1,6 +1,7 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
+import { z } from "zod";
 import { ProductDatabase } from "./product-database";
 import { settings } from "./schema";
 
@@ -24,7 +25,7 @@ export class SettingsRepository extends Context.Service<
           .where(eq(settings.key, key));
 
         const value: JsonValue | undefined = row
-          ? JSON.parse(row.value)
+          ? z.json().parse(JSON.parse(row.value))
           : undefined;
 
         return value;

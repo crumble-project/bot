@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { ActivityEvent } from "@/features/activity/api";
+import { activityEvent } from "@crumble/server/contract/api-responses";
 import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
 import { invalidateGroups } from "@/features/group-chats/api";
 import { follow, queryClient } from "@/lib/api";
@@ -72,7 +72,7 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
       onEvent: (name, data) => {
         if (name !== "activity") return;
 
-        const event: ActivityEvent = JSON.parse(data);
+        const event = activityEvent.parse(JSON.parse(data));
 
         if (event.type === "chat-preview")
           preview(event.agentId, event.lastMessage);

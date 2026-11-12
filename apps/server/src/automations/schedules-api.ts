@@ -1,13 +1,29 @@
+import { z } from "zod";
 import { EventRepository } from "../event-sources/event-repository";
 import { scheduleDescription, previewSchedule } from "./schedule-description";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { Schedule } from "../contract/schedules";
+import { scheduleInput, type Schedule } from "../contract/schedules";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler } from "./scheduler";
 import { ScriptRuns } from "./script-runs";
+
+const schedulePatch = z.object({
+  agentId: z.exactOptional(scheduleInput.shape.agentId),
+  name: z.exactOptional(scheduleInput.shape.name),
+  kind: z.exactOptional(scheduleInput.shape.kind.unwrap()),
+  prompt: z.exactOptional(scheduleInput.shape.prompt.unwrap()),
+  command: z.exactOptional(scheduleInput.shape.command.unwrap()),
+  timeoutSeconds: z.exactOptional(scheduleInput.shape.timeoutSeconds.unwrap()),
+  notify: z.exactOptional(scheduleInput.shape.notify.unwrap()),
+  cron: z.exactOptional(scheduleInput.shape.cron.unwrap()),
+  timezone: z.exactOptional(scheduleInput.shape.timezone.unwrap()),
+  runAt: z.exactOptional(scheduleInput.shape.runAt.unwrap()),
+  eventSourceId: z.exactOptional(scheduleInput.shape.eventSourceId.unwrap()),
+  enabled: z.exactOptional(scheduleInput.shape.enabled.unwrap()),
+});
 
 type Services = ScheduleRepository | Scheduler | ScriptRuns | EventRepository;
 
@@ -80,7 +96,7 @@ const registerScheduleEditRoutes = ({
     async (c) => {
       const id = c.req.param("id");
       assertSchedule(run, id);
-      const input = await c.req.json();
+      const input = schedulePatch.parse(await c.req.json());
 
       const schedule = await run.runPromise(
         Scheduler.use((s) => s.update(id, input)),
