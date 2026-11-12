@@ -42,14 +42,8 @@ const bindReply = z.object({
 const refSchema = z.object({
   ref: z.string(),
   role: loose(z.string()),
-  name: z
-    .string()
-    .nullish()
-    .catch(() => undefined),
-  value: z
-    .string()
-    .nullish()
-    .catch(() => undefined),
+  name: z.string().nullish().catch(undefined),
+  value: z.string().nullish().catch(undefined),
   frame: loose(z.string()),
   states: loose(z.record(z.string(), z.unknown())),
 });
@@ -62,10 +56,7 @@ const semanticSnapshot = z.object({
   refs: z.array(refSchema).catch([]),
   snapshot: loose(
     z.object({
-      continuation: z
-        .string()
-        .nullish()
-        .catch(() => undefined),
+      continuation: z.string().nullish().catch(undefined),
     }),
   ),
 });

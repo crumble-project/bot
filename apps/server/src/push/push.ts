@@ -264,7 +264,7 @@ export const PushDelivery = Layer.effectDiscard(
     yield* Effect.uninterruptibleMask((restore) =>
       restore(Queue.take(replies)).pipe(Effect.flatMap(push.enqueue)),
     ).pipe(
-      Effect.andThen(Queue.offer(due, void 0)),
+      Effect.andThen(Queue.offer(due, undefined)),
       Effect.forever,
       Effect.forkScoped,
     );

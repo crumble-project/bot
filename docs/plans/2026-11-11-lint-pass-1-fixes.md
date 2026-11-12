@@ -31,7 +31,7 @@ After pass 1: 668 findings. 129 files changed, all in `apps/` and `tools/`.
 - `apps/server/src/learning/learning-review.ts`: dropped the assertion, its now-dangling `SAFETY:` comment, and the two imports it kept alive.
 - `apps/server/test/fixtures/crash-server.ts`: dropped the `as any` on `provider: "faux"`; the comment above it was `SAFETY:`-prefixed and removed with it.
 
-**`unicorn/no-useless-undefined` (114 of 152).** `return undefined;` became `return;` where the function's type allows it, `() => undefined` became `() => {}` where the return value is unused, and `.catch(undefined)` on zod schemas became `.catch(() => undefined)` (zod requires the argument, and its absence is a type error).
+**`unicorn/no-useless-undefined` (114 of 152).** `return undefined;` became `return;` where the function's type allows it, `() => undefined` became `() => {}` where the return value is unused, and `.catch(undefined)` on zod schemas went through `.catch(() => undefined)` (zod requires the argument, and its absence is a type error) before settling back on `.catch(undefined)` with the rule's `checkArguments` off; see the architectural findings doc.
 
 **`eslint/no-nested-ternary` (39, all).** Each nested chain became an early-return helper (`targetLabel`, `callStateOf`, `authOf`, `memberOf`, `markOf`, `replyToOf`, `modelsHint`, `secretInputOf`, `avatarState`, `titleOf`, `contentOf` in three components, `afterOf`, `replyOf`, `commandOf`, `actionOf`, `screenshotMode`, `dashOf`, `missOf`, `outcomeError`) or a short if-chain. JSX branches use explicit `if`/`return` inside the render helper instead of chained `?:` on elements.
 

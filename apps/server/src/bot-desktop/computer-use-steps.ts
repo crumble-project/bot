@@ -32,10 +32,7 @@ const stepsReply = z.object({
       }),
     )
     .catch([]),
-  failed_step: z
-    .number()
-    .nullish()
-    .catch(() => undefined),
+  failed_step: z.number().nullish().catch(undefined),
   total: loose(z.number()),
   observation: loose(z.object({ state: loose(driverReply) })),
 });

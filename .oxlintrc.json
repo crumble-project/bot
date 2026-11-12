@@ -56,7 +56,10 @@
     "typescript/no-unsafe-assignment": "error",
     "typescript/no-unsafe-return": "error",
     "typescript/switch-exhaustiveness-check": "error",
-    "unicorn/no-useless-undefined": ["error", { "checkArrowFunctionBody": false }],
+    "unicorn/no-useless-undefined": [
+      "error",
+      { "checkArguments": false, "checkArrowFunctionBody": false }
+    ],
     "effect/noManagedRuntimeInEffect": "error",
     "effect/noNewPromise": "warn",
     "effect/noTryCatch": "warn",

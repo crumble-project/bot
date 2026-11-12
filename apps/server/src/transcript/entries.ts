@@ -30,22 +30,10 @@ export type MessageOrigin = {
 export const messageOrigin = z
   .object({
     kind: z.string(),
-    name: z
-      .string()
-      .optional()
-      .catch(() => undefined),
-    agentId: z
-      .string()
-      .optional()
-      .catch(() => undefined),
-    via: z
-      .string()
-      .optional()
-      .catch(() => undefined),
-    source: z
-      .string()
-      .optional()
-      .catch(() => undefined),
+    name: z.string().optional().catch(undefined),
+    agentId: z.string().optional().catch(undefined),
+    via: z.string().optional().catch(undefined),
+    source: z.string().optional().catch(undefined),
   })
   .transform(({ kind, name, agentId, via, source }) => {
     const origin: MessageOrigin = { kind };
@@ -82,10 +70,7 @@ export const heldActionData = z.object({
   id: z.string(),
   job: z.string(),
   action: z.string(),
-  timestamp: z
-    .number()
-    .optional()
-    .catch(() => undefined),
+  timestamp: z.number().optional().catch(undefined),
 });
 
 export const CALL_DIRECTIONS = ["inbound", "outbound"] as const;
@@ -105,10 +90,7 @@ export type CallEventData = Omit<z.infer<typeof callEventData>, "timestamp">;
 
 export const botMessage = z.object({
   content: z.string(),
-  timestamp: z
-    .number()
-    .optional()
-    .catch(() => undefined),
+  timestamp: z.number().optional().catch(undefined),
   communication: botCommunication,
 });
 
@@ -138,22 +120,10 @@ export const groupMessageData = z.object({
 export type GroupMessageData = z.infer<typeof groupMessageData>;
 
 export const inputMetadata = z.object({
-  text: z
-    .string()
-    .optional()
-    .catch(() => undefined),
-  replyTo: z
-    .string()
-    .optional()
-    .catch(() => undefined),
-  requestId: z
-    .string()
-    .optional()
-    .catch(() => undefined),
-  replyPreview: z
-    .string()
-    .optional()
-    .catch(() => undefined),
+  text: z.string().optional().catch(undefined),
+  replyTo: z.string().optional().catch(undefined),
+  requestId: z.string().optional().catch(undefined),
+  replyPreview: z.string().optional().catch(undefined),
 });
 
 export function contentText(content: ModelContent | undefined): string {

@@ -59,15 +59,15 @@ Every remaining finding is an `any` arriving from outside the type system. Three
 
 ## 4. `unicorn/no-useless-undefined` (0 left, decided)
 
-The rule now runs with `{ "checkArrowFunctionBody": false }`, which is the option its own documentation provides for callbacks whose contract is to return `undefined`. 22 of the 38 findings were exactly that: zod `.catch(() => undefined)` on an `.optional()` schema, where zod requires an argument and the catch value is `undefined`.
+22 of the 38 findings were zod `.catch(undefined)` on an `.optional()` schema: zod requires the argument and the catch value is `undefined`, so there is nothing useless about it. The rule therefore runs with `checkArguments` and `checkArrowFunctionBody` both off, which leaves it guarding `return undefined` and `x = undefined`.
 
-The other 16 argument-position findings were real and are fixed:
+The other 16 findings were fixed before `checkArguments` was turned off, and stay fixed:
 
 - `Ref.make<T | undefined>(undefined)` became `Ref<Option<T>>` in `bot-ports/bot-notices.ts` and `bot-ports/call-notes.ts`. `CallNoteSource` now returns `Option<OutsideCallNote>`, so `voice-gateway/outside-calls.ts` provides `Option.some`/`Option.none` and `bots/bots-admission.ts` passes `Option.getOrUndefined(call)` into `frameInput`.
 - `Effect.succeed(undefined)` in `bot-messaging/bot-messaging.ts`: `jobsOf` now returns `Option<TurnWork>`, unwrapped with `Option.getOrUndefined` where the polling loop and `outcomeOf` want the bare value.
 - `piUsage(undefined)` became `piUsage()` (optional parameter), and `agentInput.shape.instructions.parse(undefined)` became `DEFAULT_BOT_INSTRUCTIONS`, exported from `contract/agents.ts` and used as the schema's `.default`.
 - `Promise.resolve(undefined)` became an `async` function returning `undefined` (`integrations/mcp-oauth.ts`), which also removed one `noNewPromise` warning.
-- `Queue.offer(due, undefined)` in `push/push.ts` is `Queue<void>`, which still takes a value; it now offers `void 0`.
+- `Queue.offer(due, undefined)` in `push/push.ts` stays: a `Queue<void>` still takes a value, and it is no longer flagged.
 
 ## 5. Rule configuration observations
 

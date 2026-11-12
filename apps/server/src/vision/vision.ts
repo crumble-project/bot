@@ -39,7 +39,7 @@ export const VISION_MODEL = "vision-model";
 const stored = z
   .object({ provider: z.string(), model: z.string() })
   .optional()
-  .catch(() => undefined);
+  .catch(undefined);
 
 export const parseVisionModel = (
   value: JsonValue | undefined,
