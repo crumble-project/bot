@@ -429,9 +429,12 @@ export function UsesDialog<U extends SecretUse>({
 
   const contentOf = () => {
     if (uses.isPending) return <Skeleton className="h-32" />;
+
     if (uses.isError) return <ErrorAlert>{uses.error.message}</ErrorAlert>;
+
     if (rows.length === 0)
       return <p className="text-sm text-muted-foreground">{empty}</p>;
+
     return <UseRows rows={rows}>{children}</UseRows>;
   };
 

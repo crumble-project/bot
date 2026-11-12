@@ -838,8 +838,10 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
 
   const descriptionOf = () => {
     if (error) return fieldError(error.message);
+
     if (gateway.token)
       return `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`;
+
     return "Not issued. The voice gateway connects with this token.";
   };
 

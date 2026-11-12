@@ -114,8 +114,8 @@ async function closeTenants(tenants: Iterable<Promise<Tenant>>) {
     ),
   );
 
-  const failed: unknown[] = results.flatMap((result) =>
-    result.status === "rejected" ? [result.reason as unknown] : [],
+  const failed = results.flatMap((result): unknown[] =>
+    result.status === "rejected" ? [result.reason] : [],
   );
 
   if (failed.length) throw new AggregateError(failed, "Tenant shutdown failed");

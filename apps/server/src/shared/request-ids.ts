@@ -104,6 +104,7 @@ export type ParsedRequest =
 
 export function askingBot(request: ParsedRequest) {
   if (request.kind === "delegate") return request.sourceAgentId;
+
   if (request.kind === "job-question") return request.assigneeId;
 
   return;

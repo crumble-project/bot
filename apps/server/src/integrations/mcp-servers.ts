@@ -36,6 +36,7 @@ const authOf = (
   hasTokenSecret: boolean,
 ): McpServerStatus["auth"] => {
   if (hasTokens) return "oauth";
+
   return hasTokenSecret ? "token" : "none";
 };
 

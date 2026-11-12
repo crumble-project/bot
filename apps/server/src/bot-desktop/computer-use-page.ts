@@ -349,7 +349,9 @@ const scrollDelta = (args: ComputerUseArgs) => {
   const pixels = (args.amount ?? SCROLL_DEFAULTS.amount) * 100;
 
   if (args.direction === "up") return { delta_y: -pixels };
+
   if (args.direction === "left") return { delta_x: -pixels };
+
   if (args.direction === "right") return { delta_x: pixels };
 
   return { delta_y: pixels };

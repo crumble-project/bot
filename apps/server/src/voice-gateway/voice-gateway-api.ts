@@ -190,6 +190,7 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
 
     const replyOf = async () => {
       if (execution.status !== "done") return null;
+
       if (!execution.submissionId) return [];
 
       return runtime.response(

@@ -12,6 +12,7 @@ export const callEvent = messageCard(
       : null,
   ({ result, chat }) => {
     if (result.ended) return <CallMarker title={result.content} />;
+
     if (result.outbound)
       return (
         <CallMarker
@@ -19,6 +20,7 @@ export const callEvent = messageCard(
           quote={result.content}
         />
       );
+
     return <CallMarker title="Call started" />;
   },
 );

@@ -11,6 +11,7 @@ const avatarState = (
   working: ReturnType<typeof useWorking>,
 ): BotState => {
   if (!enabled) return "sleeping";
+
   return isBusy(working) ? "working" : "idle";
 };
 

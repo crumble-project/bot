@@ -128,7 +128,9 @@ export function switchedTo(
   const { hour, minute } = kept;
 
   if (kind === "hourly") return { kind, minute };
+
   if (kind === "weekly") return { kind, days: kept.days, hour, minute };
+
   if (kind === "monthly") return { kind, day: kept.day, hour, minute };
 
   return { kind, hour, minute };

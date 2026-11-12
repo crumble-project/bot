@@ -120,8 +120,10 @@ export const groupChatsService = (
 
           const statusOf = Effect.fnUntraced(function* () {
             if (!(yield* context.enabled(agentId))) return "disabled" as const;
+
             if (yield* context.groups.activeTurn(groupId, agentId))
               return "running" as const;
+
             return member?.pending ? ("queued" as const) : ("idle" as const);
           });
 

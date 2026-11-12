@@ -149,6 +149,7 @@ export async function applyBulkAction(
   let apply = assigner;
 
   if (action === "delete") apply = deleteSkill;
+
   if (action === "update") apply = updater(await checkUpdates(), messages);
 
   // Skills run in order, so two operations never race on one bot's assignments.

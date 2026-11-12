@@ -95,7 +95,9 @@ export class LearnedChangeRepository extends Context.Service<
 
         const actionOf = (): LearnedChange["action"] => {
           if (revertsId) return "revert";
+
           if (before === null) return "create";
+
           return after === null ? "delete" : "update";
         };
 

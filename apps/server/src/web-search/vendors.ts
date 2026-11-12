@@ -209,7 +209,12 @@ export const parallelSearch = (query: WebSearchQuery, sessionId?: string) =>
     }),
   );
 
-const fetchJson = (name: string, url: string, init: RequestInit) =>
+const fetchJson = <T>(
+  name: string,
+  url: string,
+  init: RequestInit,
+  schema: z.ZodType<T>,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
       const controller = yield* Effect.acquireRelease(
@@ -234,7 +239,7 @@ const fetchJson = (name: string, url: string, init: RequestInit) =>
         );
 
       return yield* Effect.tryPromise({
-        try: async (): Promise<unknown> => response.json(),
+        try: async () => schema.parse(await response.json()),
         catch: (cause) => unavailable(name, cause),
       });
     }),
@@ -244,7 +249,7 @@ export const tavilySearch = (query: WebSearchQuery) =>
   timed(
     "Tavily",
     Effect.gen(function* () {
-      const response = yield* fetchJson(
+      const data = yield* fetchJson(
         "Tavily",
         "https://api.tavily.com/search",
         {
@@ -262,12 +267,8 @@ export const tavilySearch = (query: WebSearchQuery) =>
             end_date: query.before,
           }),
         },
+        tavilyResponse,
       );
-
-      const data = yield* Effect.try({
-        try: () => tavilyResponse.parse(response),
-        catch: (cause) => unavailable("Tavily", cause),
-      });
 
       return data.results.map((item) => {
         const mapped: WebSearchResult = {
@@ -287,14 +288,12 @@ export const jinaExtract = (url: string) =>
   timed(
     "Jina",
     Effect.gen(function* () {
-      const response = yield* fetchJson("Jina", `https://r.jina.ai/${url}`, {
-        headers: { "User-Agent": "crumble", Accept: "application/json" },
-      });
-
-      const { data } = yield* Effect.try({
-        try: () => jinaResponse.parse(response),
-        catch: (cause) => unavailable("Jina", cause),
-      });
+      const { data } = yield* fetchJson(
+        "Jina",
+        `https://r.jina.ai/${url}`,
+        { headers: { "User-Agent": "crumble", Accept: "application/json" } },
+        jinaResponse,
+      );
 
       if (data.httpStatus && data.httpStatus >= 400)
         return yield* Effect.fail(

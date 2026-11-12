@@ -26,7 +26,9 @@ const markOf = ({
   picked: boolean;
 }) => {
   if (sending) return Spinner;
+
   if (!multiple) return IconCircle;
+
   return picked ? IconSquareCheckFilled : IconSquare;
 };
 

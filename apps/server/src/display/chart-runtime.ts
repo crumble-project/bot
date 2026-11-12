@@ -102,6 +102,7 @@ const dashOf = (
   parent: Paint["dash"],
 ): Paint["dash"] => {
   if (strokeDasharray === undefined) return parent;
+
   if (strokeDasharray === "none") return undefined;
 
   return strokeDasharray.split(/[\s,]+/).map(Number);

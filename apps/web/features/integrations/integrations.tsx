@@ -151,8 +151,10 @@ export function IntegrationsPage() {
   const contentOf = () => {
     if (servers.isPending || bots.isPending)
       return <Skeleton className="h-40" />;
+
     if (servers.isError)
       return <ErrorAlert>{servers.error.message}</ErrorAlert>;
+
     return (
       <IntegrationSections
         shared={list.filter((server) => server.agentId === null)}

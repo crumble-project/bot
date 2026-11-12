@@ -56,6 +56,8 @@ export const CALL_OUTCOMES: Record<
 
 export const callStateOf = (request: CallRequest) => {
   if (request.status === "declined") return "Declined";
+
   if (request.status === "calling") return "Calling";
+
   return request.outcome ? CALL_OUTCOMES[request.outcome] : "Ended";
 };

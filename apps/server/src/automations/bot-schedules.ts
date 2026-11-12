@@ -97,6 +97,7 @@ const kindFields = (
 
   const commandOf = () => {
     if (draft.command !== undefined) return draft.command;
+
     return kind === "script" ? existing.command : null;
   };
 

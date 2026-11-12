@@ -46,8 +46,7 @@ export function accessOf<S extends object, const Sync extends keyof S = never>(
       ? runner.runSync(effect as Effect.Effect<unknown>)
       : runner.runPromise(effect as Effect.Effect<unknown>);
 
-  // SAFETY: this walk over the members is what the mapped type describes.
-  const memberOf = (key: string, member: unknown) => {
+  const memberOf = (key: string, member: S[keyof S]) => {
     if (Effect.isEffect(member)) return () => run(key, member);
 
     if (!Predicate.isFunction(member)) return member;
@@ -59,6 +58,7 @@ export function accessOf<S extends object, const Sync extends keyof S = never>(
     };
   };
 
+  // SAFETY: this walk over the members is what the mapped type describes.
   return Object.fromEntries(
     Object.entries(service).map(([key, member]) => [
       key,

@@ -108,11 +108,16 @@ export function turnSource({
       : { kind: "credential", name: request.name };
 
   if (request.kind === "bot-request") return { kind: "bot_request" };
+
   if (request.kind === "gateway")
     return { kind: "owner", via: request.adapterId };
+
   if (request.kind === "voice") return { kind: "owner", via: VOICE_VIA };
+
   if (request.kind === "voice-call") return { kind: "call" };
+
   if (request.kind === "outside-call") return { kind: "callee" };
+
   if (request.kind === "call-request") return { kind: "call_request" };
 
   return { kind: "owner" };

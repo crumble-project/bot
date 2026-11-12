@@ -46,6 +46,7 @@ import { BOT_TOOL } from "@crumble/server/contract/tools";
 
 const replyToOf = (replyTo: Message | null, botName: string) => {
   if (!replyTo) return;
+
   return replyTo.role === "user" ? "You" : botName;
 };
 

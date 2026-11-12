@@ -49,6 +49,7 @@ const secretInputOf = (
   draft: SecretSourceDraft,
 ): SecretInput | null => {
   if (reference) return { reference };
+
   return draft.kind === "value" && draft.value ? { value: draft.value } : null;
 };
 

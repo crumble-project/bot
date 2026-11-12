@@ -40,6 +40,7 @@ function actorLabel(change: Change, botName: string | null) {
 
 const targetLabel = (change: Change) => {
   if (change.target === "skill") return "a skill";
+
   return change.agentId ? "a memory" : "a shared memory";
 };
 

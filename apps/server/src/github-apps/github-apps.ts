@@ -654,7 +654,10 @@ export class GitHubApps extends Context.Service<
 
         const config: [string, string][] = [
           ...(trailer
-            ? [["CRUMBLE_COMMIT_TRAILER", trailer] as [string, string]]
+            ? ([["CRUMBLE_COMMIT_TRAILER", trailer]] satisfies [
+                string,
+                string,
+              ][])
             : []),
           ["GIT_CONFIG_COUNT", String(entries.length)],
           ...entries.flatMap(([key, value], index): [string, string][] => [

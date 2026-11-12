@@ -75,6 +75,7 @@ async function list(
     )
     .sort((a, b) => {
       if (a.id < b.id) return 1;
+
       return a.id > b.id ? -1 : 0;
     });
 

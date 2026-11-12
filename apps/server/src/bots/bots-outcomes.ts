@@ -20,6 +20,7 @@ type MonitorDeps = {
 
 const outcomeError = (result: SubmissionOutcome) => {
   if (result.status === "done") return null;
+
   if (!("detail" in result)) return "The agent could not answer this input";
 
   return Predicate.isString(result.detail) ? result.detail : result.reason;

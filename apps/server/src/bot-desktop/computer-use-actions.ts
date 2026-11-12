@@ -260,6 +260,7 @@ async function actAndReport(
 
   const afterOf = async () => {
     if (!args.capture_after || error) return [];
+
     if (ref !== undefined)
       return (await readPage(state, {}, window, context)).content;
 
