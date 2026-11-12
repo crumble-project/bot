@@ -163,13 +163,15 @@ async function candidates(scope: Scope, before: string | undefined) {
     ),
   );
 
-  const cutoff = pages
-    .filter((page) => page.length === LIST_PAGE)
-    .map((page) => page.at(-1)!.id)
-    .reduce<string | undefined>(
-      (newest, id) => (newest === undefined || id > newest ? id : newest),
-      undefined,
-    );
+  let cutoff: string | undefined;
+
+  for (const page of pages) {
+    if (page.length !== LIST_PAGE) continue;
+
+    const last = page.at(-1);
+
+    if (last && (cutoff === undefined || last.id > cutoff)) cutoff = last.id;
+  }
 
   const entries = pages
     .flat()
@@ -178,9 +180,6 @@ async function candidates(scope: Scope, before: string | undefined) {
 
   return { entries, exhausted: cutoff === undefined };
 }
-
-const overflows = (files: ListedFile[], before: string) =>
-  files.length > 1 && byteSize({ files, before }) > MAX_LIBRARY_OUTPUT_BYTES;
 
 async function scan(scope: Scope, entries: LibraryEntry[], words?: RegExp[]) {
   const files: ListedFile[] = [];
@@ -194,12 +193,17 @@ async function scan(scope: Scope, entries: LibraryEntry[], words?: RegExp[]) {
 
     textBytes += match.textBytes;
 
-    if (match.matched) files.push(listed(entry, match.excerpt));
+    if (match.matched) {
+      files.push(listed(entry, match.excerpt));
 
-    if (match.matched && overflows(files, entry.id)) {
-      files.pop();
+      if (
+        files.length > 1 &&
+        byteSize({ files, before: entry.id }) > MAX_LIBRARY_OUTPUT_BYTES
+      ) {
+        files.pop();
 
-      return { files, scanned, stopped: true };
+        return { files, scanned, stopped: true };
+      }
     }
 
     scanned = entry.id;
