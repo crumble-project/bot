@@ -13,6 +13,7 @@
     "@types/node": "^26.6.6",
     "fallow": "3.38.0",
     "oxlint": "1.88.0",
+    "oxlint-plugin-effect": "^0.32.1",
     "oxlint-tsgolint": "7.0.2005",
     "typescript": "7.0.2"
   },
