@@ -53,7 +53,7 @@ export function accessOf<S extends object, const Sync extends keyof S = never>(
     if (!Predicate.isFunction(member)) return member;
 
     return (...args: unknown[]) => {
-      const result = member(...args);
+      const result: unknown = member(...args);
 
       return Effect.isEffect(result) ? run(key, result) : result;
     };

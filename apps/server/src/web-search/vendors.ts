@@ -234,7 +234,7 @@ const fetchJson = (name: string, url: string, init: RequestInit) =>
         );
 
       return yield* Effect.tryPromise({
-        try: () => response.json(),
+        try: async (): Promise<unknown> => response.json(),
         catch: (cause) => unavailable(name, cause),
       });
     }),

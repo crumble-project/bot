@@ -194,7 +194,7 @@ const authStatus = z.looseObject({
   subscriptionType: z.string().nullish(),
 });
 
-const jsonLine = (line: string) => {
+const jsonLine = (line: string): unknown => {
   try {
     return JSON.parse(line);
   } catch {

@@ -179,7 +179,7 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
     const text = replyText(reply);
 
     const parsed = chatAnswer.safeParse(
-      (() => {
+      ((): unknown => {
         try {
           return JSON.parse(jsonIn(text));
         } catch {

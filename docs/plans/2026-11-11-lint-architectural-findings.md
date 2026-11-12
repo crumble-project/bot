@@ -1,7 +1,7 @@
 # Lint pass 1: findings that need a design decision
 
 Date: 2026-11-11
-Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 381 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
+Companion to `2026-11-11-lint-pass-1-fixes.md`. These are the 367 findings left after the mechanical fixes; none of them is a one-line change, and several are questions about what the codebase wants to be rather than about lint.
 
 ## 1. `effect/noThrowStatement` is off (287 findings, decided)
 
@@ -43,9 +43,11 @@ Two boundaries keep `throw` legitimately and should stay documented rather than 
 
 `composer.dom.test.tsx` (8), `message-gateways.dom.test.tsx` (4), and five more tests replace whole modules with `mock.module(...)`. Passing this rule means giving those components injectable dependencies (a props/seam for `send`, the API client, `useQuery`), which is a testability refactor of the component layer, not a lint fix. It may also be the point where the rule is declared "for tests, mocks are the design" and turned off for `**/*.test.*`.
 
-## 3. Untyped boundaries: `no-unsafe-assignment` (57) and `no-unsafe-return` (11)
+## 3. Untyped boundaries: `no-unsafe-assignment` (54 left)
 
-Every one of these is an `any` arriving from outside the type system. Three roots:
+The 11 `no-unsafe-return` findings are fixed: each was an `any` (or `Promise<any>`) returned from a boundary, narrowed with an explicit `unknown` annotation or a typed tuple array, except `apps/web/lib/api.ts`, which trusts the route's OpenAPI shape and says so in a `SAFETY` comment.
+
+Every remaining finding is an `any` arriving from outside the type system. Three roots:
 
 - **`JSON.parse` on Drizzle text columns** — `apps/server/src/bot-store/agent-repository.ts` (8 findings) parses `tools`, `sharedSkills`, `mcpServers`, `inference`, `desktopModel`, `reviewModel`, `review` column by column; `learned-change-repository.ts`, `settings-repository.ts`, `script-runs.ts`, `bot-secret-uses.ts` do the same. The fix is one pattern: `$type<>()` on the column, plus a `jsonColumn(schema)` helper on read and write. It touches the schema and every repository that stores JSON, so it is a change of its own.
 - **TanStack Router route types** — `apps/web/app/router.tsx` (18 findings). `useParams()` on a `createRoute` handle is `any` until the router is registered globally (`declare module "@tanstack/react-router" { interface Register { router: typeof router } }`). One file, but it can ripple through every `useParams`/`useSearch` call site, so it wants a deliberate attempt with typecheck in front of it.
