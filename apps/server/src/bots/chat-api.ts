@@ -24,23 +24,23 @@ type ChatRoutesOptions = {
 const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
-  register(routes.chat, async (c) => {
+  register.plain(routes.chat, async (c) => {
     const snapshot: z.output<typeof chatSnapshotResponse> =
       await service.chatSnapshot(c.req.param("id"), c.req.valid("query"));
 
     return c.json(snapshot, 200);
   });
-  register(routes.history, async (c) =>
+  register.plain(routes.history, async (c) =>
     c.json(await service.history(c.req.param("id"), c.req.valid("query")), 200),
   );
-  register(routes.codingJobs, async (c) => {
+  register.plain(routes.codingJobs, async (c) => {
     const jobs: z.output<typeof codingJobsResponse> = {
       jobs: await service.jobs(c.req.param("id"), "coding"),
     };
 
     return c.json(jobs, 200);
   });
-  register(routes.answerCodingJob, async (c) => {
+  register.plain(routes.answerCodingJob, async (c) => {
     await service.answerJob(c.req.param("id"), "coding", {
       name: c.req.param("name"),
       ...c.req.valid("json"),
@@ -48,7 +48,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
 
     return c.body(null, 204);
   });
-  register(routes.codingJobHistory, async (c) =>
+  register.plain(routes.codingJobHistory, async (c) =>
     c.json(
       await service.jobHistory(
         c.req.param("id"),
@@ -59,14 +59,14 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
       200,
     ),
   );
-  register(routes.desktopJobs, async (c) => {
+  register.plain(routes.desktopJobs, async (c) => {
     const jobs: z.output<typeof desktopJobsResponse> = {
       jobs: await service.jobs(c.req.param("id"), "desktop"),
     };
 
     return c.json(jobs, 200);
   });
-  register(routes.desktopJobHistory, async (c) =>
+  register.plain(routes.desktopJobHistory, async (c) =>
     c.json(
       await service.jobHistory(
         c.req.param("id"),
@@ -82,7 +82,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
 const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
-  register(routes.sendMessage, async (c) => {
+  register.plain(routes.sendMessage, async (c) => {
     const input = c.req.valid("json");
 
     return c.json(
@@ -97,7 +97,7 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
       202,
     );
   });
-  register(routes.attachment, async (c) => {
+  register.plain(routes.attachment, async (c) => {
     const { id, entryId, index } = c.req.valid("param");
     const image = await service.attachment(id, entryId, index);
 
@@ -107,12 +107,12 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
       attachmentHeaders(image.mimeType),
     );
   });
-  register(routes.abort, async (c) => {
+  register.plain(routes.abort, async (c) => {
     await service.abortChat(c.req.param("id"));
 
     return c.body(null, 204);
   });
-  register(routes.compact, async (c) =>
+  register.plain(routes.compact, async (c) =>
     c.json({ taskId: await service.compact(c.req.param("id")) }, 202),
   );
 };
@@ -162,7 +162,7 @@ export const chatEventStream = async (
 const registerChatEventRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
-  register(routes.chatEvents, (c) =>
+  register.plain(routes.chatEvents, (c) =>
     chatEventStream(c, service, {
       agentId: c.req.param("id"),
       snapshot: c.req.valid("query"),

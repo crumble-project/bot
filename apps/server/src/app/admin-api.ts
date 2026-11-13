@@ -5,7 +5,7 @@ import { ADMIN_ROLE, adminCount } from "./auth";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 import { routes } from "../contract/api-contract";
-import type { Register } from "../contract/route";
+import type { PlainRegister } from "../contract/route";
 
 type Accounts = Awaited<ReturnType<typeof createAuth>>;
 
@@ -27,7 +27,7 @@ const userOf = (user: StoredUser) => ({
 
 type AdminEnv = { Variables: { adminId: string } };
 
-type AdminRegister = Register<AdminEnv>;
+type AdminRegister = PlainRegister<AdminEnv>;
 
 type AdminOptions = {
   accounts: Accounts;
@@ -148,7 +148,7 @@ function registerServerRoutes(register: AdminRegister, options: AdminOptions) {
 export function adminAPI(options: AdminOptions) {
   const { accounts } = options;
   const app = new OpenAPIHono<AdminEnv>();
-  const register = pathRegister(app);
+  const register = pathRegister(app).plain;
 
   limitBodies(app);
   app.use("/v1/admin/*", async (c, next) => {

@@ -1,8 +1,8 @@
 import { Effect, Predicate, Redacted } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { Conflict, InvalidInput, Unavailable } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
@@ -77,25 +77,24 @@ const disconnect = Effect.fnUntraced(function* (id: PasswordManagerId) {
 });
 
 export function registerPasswordManagerRoutes(options: {
-  register: Register;
-  run: Runner<PasswordManagerServices>;
+  register: Register<Env, PasswordManagerServices>;
 }) {
-  const { register, run } = options;
+  const { register } = options;
 
-  register(routes.passwordManagers, (c) => c.json(run.runSync(list), 200));
-  register(routes.connectPasswordManager, async (c) => {
+  register(routes.passwordManagers, function* (c) {
+    return c.json(yield* list, 200);
+  });
+  register(routes.connectPasswordManager, function* (c) {
     return c.json(
-      await run.runPromise(
-        connect(
-          c.req.valid("param").id,
-          Redacted.make(c.req.valid("json").token),
-        ),
+      yield* connect(
+        c.req.valid("param").id,
+        Redacted.make(c.req.valid("json").token),
       ),
       200,
     );
   });
-  register(routes.disconnectPasswordManager, async (c) => {
-    await run.runPromise(disconnect(c.req.valid("param").id));
+  register(routes.disconnectPasswordManager, function* (c) {
+    yield* disconnect(c.req.valid("param").id);
 
     return c.body(null, 204);
   });

@@ -1,10 +1,10 @@
 import { Effect } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { pluginSettingKey } from "../shared/vendors";
 import { Secrets } from "../secrets/secrets";
 import { NotFound } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import {
   pluginContributions,
   type CrumblePlugin,
@@ -27,59 +27,81 @@ const findSetting = (
   return { plugin, setting, stored: pluginSettingKey(plugin.id, key) };
 };
 
+const describe = Effect.fnUntraced(function* (
+  plugin: CrumblePlugin,
+  setting: PluginSetting,
+) {
+  const secrets = yield* Secrets;
+
+  return {
+    ...setting,
+    secret: yield* secrets.status(pluginSettingKey(plugin.id, setting.key)),
+  };
+});
+
 export function registerPluginSettingRoutes(options: {
-  register: Register;
-  run: Runner<Secrets>;
+  register: Register<Env, Secrets>;
   plugins: readonly CrumblePlugin[];
 }) {
-  const { register, run } = options;
-  const secrets = run.runSync(Secrets.use(Effect.succeed));
+  const { register } = options;
 
   const plugins = options.plugins.filter(
     (plugin) => (plugin.settings?.length ?? 0) > 0,
   );
 
-  const describe = (plugin: CrumblePlugin, setting: PluginSetting) => ({
-    ...setting,
-    secret: run.runSync(
-      secrets.status(pluginSettingKey(plugin.id, setting.key)),
-    ),
+  const updateSetting = Effect.fnUntraced(function* <E>(
+    pluginId: string,
+    key: string,
+    update: (
+      secrets: Secrets["Service"],
+      stored: string,
+    ) => Effect.Effect<unknown, E>,
+  ) {
+    const { plugin, setting, stored } = findSetting(plugins, pluginId, key);
+    const secrets = yield* Secrets;
+
+    yield* update(secrets, stored);
+
+    return yield* describe(plugin, setting);
   });
 
-  register(routes.pluginSettings, (c) =>
-    c.json(
+  register(routes.pluginSettings, function* (c) {
+    return c.json(
       {
-        plugins: plugins.map((plugin) => ({
-          id: plugin.id,
-          contributes: pluginContributions(plugin),
-          settings: (plugin.settings ?? []).map((setting) =>
-            describe(plugin, setting),
-          ),
-        })),
+        plugins: yield* Effect.forEach(plugins, (plugin) =>
+          Effect.gen(function* () {
+            return {
+              id: plugin.id,
+              contributes: pluginContributions(plugin),
+              settings: yield* Effect.forEach(
+                plugin.settings ?? [],
+                (setting) => describe(plugin, setting),
+              ),
+            };
+          }),
+        ),
       },
       200,
-    ),
-  );
-  register(routes.setPluginSetting, async (c) => {
-    const { plugin, setting, stored } = findSetting(
-      plugins,
-      c.req.param("pluginId"),
-      c.req.param("key"),
     );
-
-    await run.runPromise(secrets.save(stored, c.req.valid("json")));
-
-    return c.json(describe(plugin, setting), 200);
   });
-  register(routes.deletePluginSetting, (c) => {
-    const { plugin, setting, stored } = findSetting(
-      plugins,
-      c.req.param("pluginId"),
-      c.req.param("key"),
+  register(routes.setPluginSetting, function* (c) {
+    return c.json(
+      yield* updateSetting(
+        c.req.param("pluginId"),
+        c.req.param("key"),
+        (secrets, stored) => secrets.save(stored, c.req.valid("json")),
+      ),
+      200,
     );
-
-    run.runSync(secrets.delete(stored));
-
-    return c.json(describe(plugin, setting), 200);
+  });
+  register(routes.deletePluginSetting, function* (c) {
+    return c.json(
+      yield* updateSetting(
+        c.req.param("pluginId"),
+        c.req.param("key"),
+        (secrets, stored) => secrets.delete(stored),
+      ),
+      200,
+    );
   });
 }

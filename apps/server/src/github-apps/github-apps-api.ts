@@ -1,49 +1,42 @@
 import { Effect } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { BotLookup } from "../bot-ports/bot-lookup";
-import type { Runner } from "../shared/runner";
 import { Unavailable } from "../shared/errors";
 import { GitHubUnavailable } from "./github-api";
 import { GitHubAccounts } from "./github-accounts";
 import { GitHubAppUsers } from "./github-app-users";
 import { GitHubApps } from "./github-apps";
 
-type GitHubRoutesRunner = Runner<GitHubApps | GitHubAppUsers | GitHubAccounts>;
-
-const githubRunner =
-  (run: GitHubRoutesRunner) =>
-  <A, E>(effect: Effect.Effect<A, E>) =>
-    run.runPromise(
-      effect.pipe(
-        Effect.mapError((error) =>
-          error instanceof GitHubUnavailable
-            ? new Unavailable({ message: error.message })
-            : error,
-        ),
-      ),
-    );
+const github = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.mapError((error) =>
+      error instanceof GitHubUnavailable
+        ? new Unavailable({ message: error.message })
+        : error,
+    ),
+  );
 
 type GitHubRoutes = {
-  register: Register;
-  github: ReturnType<typeof githubRunner>;
+  register: Register<Env, GitHubApps | GitHubAppUsers | GitHubAccounts>;
   botIdsOf: (botIds: readonly string[]) => string[];
-  githubApps: GitHubApps["Service"];
-  githubAppUsers: GitHubAppUsers["Service"];
-  githubAccounts: GitHubAccounts["Service"];
 };
 
 function registerAppRoutes(routeSet: GitHubRoutes) {
-  const { register, github, botIdsOf, githubApps } = routeSet;
+  const { register, botIdsOf } = routeSet;
 
-  register(routes.githubApps, async (c) =>
-    c.json({ apps: await github(githubApps.list) }, 200),
-  );
-  register(routes.createGithubAppManifest, async (c) => {
+  register(routes.githubApps, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    return c.json({ apps: yield* github(githubApps.list) }, 200);
+  });
+  register(routes.createGithubAppManifest, function* (c) {
     const input = c.req.valid("json");
+    const githubApps = yield* GitHubApps;
 
     return c.json(
-      await github(
+      yield* github(
         githubApps.manifest({
           ...input,
           origin: new URL(input.origin).origin,
@@ -52,54 +45,68 @@ function registerAppRoutes(routeSet: GitHubRoutes) {
       200,
     );
   });
-  register(routes.completeGithubApp, async (c) =>
-    c.json(await github(githubApps.complete(c.req.valid("json"))), 200),
-  );
-  register(routes.connectGithubApp, async (c) =>
-    c.json(await github(githubApps.connect(c.req.param("id"))), 200),
-  );
-  register(routes.setGithubAppBots, async (c) =>
-    c.json(
-      await github(
+  register(routes.completeGithubApp, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    return c.json(yield* github(githubApps.complete(c.req.valid("json"))), 200);
+  });
+  register(routes.connectGithubApp, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    return c.json(yield* github(githubApps.connect(c.req.param("id"))), 200);
+  });
+  register(routes.setGithubAppBots, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    return c.json(
+      yield* github(
         githubApps.assign(
           c.req.param("id"),
           botIdsOf(c.req.valid("json").botIds),
         ),
       ),
       200,
-    ),
-  );
-  register(routes.deleteGithubApp, async (c) => {
-    await github(githubApps.remove(c.req.param("id")));
+    );
+  });
+  register(routes.deleteGithubApp, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    yield* github(githubApps.remove(c.req.param("id")));
 
     return c.body(null, 204);
   });
 }
 
 function registerAppSignInRoutes(routeSet: GitHubRoutes) {
-  const { register, github, githubApps, githubAppUsers } = routeSet;
+  const { register } = routeSet;
 
-  register(routes.signInGithubApp, async (c) =>
-    c.json(
-      { url: await github(githubAppUsers.authorize(c.req.param("id"))) },
-      200,
-    ),
-  );
-  register(routes.completeGithubAppSignIn, async (c) => {
-    const input = c.req.valid("json");
+  register(routes.signInGithubApp, function* (c) {
+    const githubAppUsers = yield* GitHubAppUsers;
 
     return c.json(
-      await github(
+      { url: yield* github(githubAppUsers.authorize(c.req.param("id"))) },
+      200,
+    );
+  });
+  register(routes.completeGithubAppSignIn, function* (c) {
+    const input = c.req.valid("json");
+    const githubAppUsers = yield* GitHubAppUsers;
+    const githubApps = yield* GitHubApps;
+
+    return c.json(
+      yield* github(
         githubAppUsers.complete(input).pipe(Effect.flatMap(githubApps.get)),
       ),
       200,
     );
   });
-  register(routes.signOutGithubApp, async (c) => {
+  register(routes.signOutGithubApp, function* (c) {
     const id = c.req.param("id");
+    const githubAppUsers = yield* GitHubAppUsers;
+    const githubApps = yield* GitHubApps;
 
     return c.json(
-      await github(
+      yield* github(
         githubApps
           .get(id)
           .pipe(
@@ -110,13 +117,14 @@ function registerAppSignInRoutes(routeSet: GitHubRoutes) {
       200,
     );
   });
-  register(routes.setGithubAppClientSecret, async (c) => {
+  register(routes.setGithubAppClientSecret, function* (c) {
     const id = c.req.param("id");
-
     const clientSecret = c.req.valid("json");
+    const githubAppUsers = yield* GitHubAppUsers;
+    const githubApps = yield* GitHubApps;
 
     return c.json(
-      await github(
+      yield* github(
         githubAppUsers
           .setClientSecret(id, clientSecret)
           .pipe(Effect.andThen(githubApps.get(id))),
@@ -127,45 +135,51 @@ function registerAppSignInRoutes(routeSet: GitHubRoutes) {
 }
 
 function registerAccountRoutes(routeSet: GitHubRoutes) {
-  const { register, github, botIdsOf, githubApps, githubAccounts } = routeSet;
+  const { register, botIdsOf } = routeSet;
 
-  register(routes.githubAccounts, async (c) =>
-    c.json({ accounts: await github(githubAccounts.list) }, 200),
-  );
-  register(routes.addGithubAccount, async (c) => {
-    const token = c.req.valid("json");
+  register(routes.githubAccounts, function* (c) {
+    const githubAccounts = yield* GitHubAccounts;
 
-    return c.json(await github(githubAccounts.add(token)), 200);
+    return c.json({ accounts: yield* github(githubAccounts.list) }, 200);
   });
-  register(routes.setGithubAccountToken, async (c) => {
+  register(routes.addGithubAccount, function* (c) {
     const token = c.req.valid("json");
+    const githubAccounts = yield* GitHubAccounts;
+
+    return c.json(yield* github(githubAccounts.add(token)), 200);
+  });
+  register(routes.setGithubAccountToken, function* (c) {
+    const token = c.req.valid("json");
+    const githubAccounts = yield* GitHubAccounts;
 
     return c.json(
-      await github(githubAccounts.setToken(c.req.param("id"), token)),
+      yield* github(githubAccounts.setToken(c.req.param("id"), token)),
       200,
     );
   });
-  register(routes.setGithubAccountBots, async (c) => {
+  register(routes.setGithubAccountBots, function* (c) {
     const botIds = botIdsOf(c.req.valid("json").botIds);
+    const githubApps = yield* GitHubApps;
 
     return c.json(
-      await github(githubApps.assignAccount(c.req.param("id"), botIds)),
+      yield* github(githubApps.assignAccount(c.req.param("id"), botIds)),
       200,
     );
   });
-  register(routes.deleteGithubAccount, async (c) => {
-    await github(githubApps.removeAccount(c.req.param("id")));
+  register(routes.deleteGithubAccount, function* (c) {
+    const githubApps = yield* GitHubApps;
+
+    yield* github(githubApps.removeAccount(c.req.param("id")));
 
     return c.body(null, 204);
   });
 }
 
 export function registerGitHubAppRoutes(options: {
-  register: Register;
+  register: Register<Env, GitHubApps | GitHubAppUsers | GitHubAccounts>;
   service: BotLookup;
-  run: GitHubRoutesRunner;
 }) {
-  const { register, service, run } = options;
+  const { register, service } = options;
 
   const botIdsOf = (botIds: readonly string[]) => {
     for (const botId of botIds) service.agent(botId);
@@ -175,11 +189,7 @@ export function registerGitHubAppRoutes(options: {
 
   const routeSet: GitHubRoutes = {
     register,
-    github: githubRunner(run),
     botIdsOf,
-    githubApps: run.runSync(GitHubApps.use(Effect.succeed)),
-    githubAppUsers: run.runSync(GitHubAppUsers.use(Effect.succeed)),
-    githubAccounts: run.runSync(GitHubAccounts.use(Effect.succeed)),
   };
 
   registerAppRoutes(routeSet);

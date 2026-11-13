@@ -1,9 +1,15 @@
 import { bodyLimit } from "hono/body-limit";
 import type { Env, MiddlewareHandler } from "hono";
-import type { OpenAPIHono, RouteConfig } from "@hono/zod-openapi";
+import type { OpenAPIHono, RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import { Effect } from "effect";
 import { z } from "zod";
 import { routes } from "../contract/api-contract";
-import type { Register } from "../contract/route";
+import type {
+  EffectRouteHandler,
+  PlainRegister,
+  Register,
+} from "../contract/route";
+import { noServices, type Runner } from "../shared/runner";
 import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
 import { MAX_FILE_BYTES } from "../files/library";
 import { fileName, fileTooLarge } from "../files/files-api";
@@ -40,9 +46,20 @@ const validated = (
   };
 };
 
-export const pathRegister =
-  <E extends Env>(app: OpenAPIHono<E>): Register<E> =>
-  (definition, handler, options) => {
+const registerWith = <E extends Env, S>(
+  app: OpenAPIHono<E>,
+  run: Runner<S>,
+): Register<E, S> => {
+  const mount = <R extends RouteConfig>(
+    definition: R & { getRoutingPath: () => string },
+    handler: (
+      c: Parameters<RouteHandler<R, E>>[0],
+      next: Parameters<RouteHandler<R, E>>[1],
+    ) =>
+      | ReturnType<RouteHandler<R, E>>
+      | Promise<Awaited<ReturnType<RouteHandler<R, E>>>>,
+    options?: { parsesBody: true },
+  ) => {
     const body = options?.parsesBody ? undefined : requiredBody(definition);
 
     app.openAPIRegistry.registerPath(definition);
@@ -53,6 +70,39 @@ export const pathRegister =
       handler,
     );
   };
+
+  const plain: PlainRegister<E> = (definition, handler, options) =>
+    mount(definition, handler, options);
+
+  const register = <R extends RouteConfig>(
+    definition: R & { getRoutingPath: () => string },
+    handler: EffectRouteHandler<R, E, S>,
+    options?: { parsesBody: true },
+  ) =>
+    mount(
+      definition,
+      (c) => run.runPromise(Effect.gen(() => handler(c))),
+      options,
+    );
+
+  register.plain = plain;
+
+  return register;
+};
+
+export function pathRegister<E extends Env>(
+  app: OpenAPIHono<E>,
+): Register<E, never>;
+export function pathRegister<E extends Env, S>(
+  app: OpenAPIHono<E>,
+  run: Runner<S>,
+): Register<E, S>;
+export function pathRegister<E extends Env, S>(
+  app: OpenAPIHono<E>,
+  run?: Runner<S>,
+): Register<E, S> | Register<E, never> {
+  return run ? registerWith(app, run) : registerWith(app, noServices);
+}
 
 const messagePaths = [routes.sendMessage, routes.sendGroupMessage].map(
   (route) =>

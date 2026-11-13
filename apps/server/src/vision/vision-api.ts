@@ -1,8 +1,9 @@
 import type { Models } from "@earendil-works/pi-ai";
+import { Effect } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { InvalidInput } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import {
   chosenVisionModel,
@@ -12,31 +13,34 @@ import {
 } from "./vision";
 
 export function registerVisionModelRoutes(options: {
-  register: Register;
-  run: Runner<SettingsRepository>;
+  register: Register<Env, SettingsRepository>;
   providerAuth: { readonly models: Models };
 }) {
-  const { register, run } = options;
+  const { register } = options;
   const models = options.providerAuth.models;
 
-  const status = async () => {
-    await models.refresh();
+  const status = Effect.gen(function* () {
+    yield* Effect.promise(() => models.refresh());
+    const choices = yield* Effect.promise(() => visionChoices(models));
 
     return {
-      visionModel: run.runSync(chosenVisionModel) ?? null,
-      choices: (await visionChoices(models)).map((model) => ({
+      visionModel: (yield* chosenVisionModel) ?? null,
+      choices: choices.map((model) => ({
         provider: model.provider,
         model: model.id,
         name: model.name,
       })),
     };
-  };
+  });
 
-  const reachable = async (chosen: VisionModelRef) =>
-    (await visionChoices(models)).some(
+  const reachable = Effect.fnUntraced(function* (chosen: VisionModelRef) {
+    const choices = yield* Effect.promise(() => visionChoices(models));
+
+    return choices.some(
       (model) =>
         model.provider === chosen.provider && model.id === chosen.model,
     );
+  });
 
   const save = (chosen: VisionModelRef | null) =>
     SettingsRepository.use((settings) =>
@@ -45,17 +49,21 @@ export function registerVisionModelRoutes(options: {
         : settings.set(VISION_MODEL, chosen),
     );
 
-  register(routes.getVisionModel, async (c) => c.json(await status(), 200));
-  register(routes.updateVisionModel, async (c) => {
+  register(routes.getVisionModel, function* (c) {
+    return c.json(yield* status, 200);
+  });
+  register(routes.updateVisionModel, function* (c) {
     const { visionModel } = c.req.valid("json");
 
-    if (visionModel && !(await reachable(visionModel)))
-      throw new InvalidInput({
-        message: `${visionModel.provider}/${visionModel.model} is not a model that reads images and your provider keys reach`,
-      });
+    if (visionModel && !(yield* reachable(visionModel)))
+      return yield* Effect.fail(
+        new InvalidInput({
+          message: `${visionModel.provider}/${visionModel.model} is not a model that reads images and your provider keys reach`,
+        }),
+      );
 
-    run.runSync(save(visionModel));
+    yield* save(visionModel);
 
-    return c.json(await status(), 200);
+    return c.json(yield* status, 200);
   });
 }

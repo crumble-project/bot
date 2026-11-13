@@ -29,7 +29,7 @@ export function registerBotActivityRoutes(options: {
 }) {
   const { register, service, serverId } = options;
 
-  register(routes.events, (c) =>
+  register.plain(routes.events, (c) =>
     streamEvents(c, async ({ stream, close, onClose }) => {
       const send = activitySender(serverId, stream, close);
 

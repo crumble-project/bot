@@ -1,10 +1,10 @@
 import { isModelType, type AnyModel, type Models } from "@earendil-works/pi-ai";
 import { Effect } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { judgeModelInput } from "../contract/agents";
 import { InvalidInput } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import {
   judgeChoices,
@@ -34,42 +34,46 @@ const choiceOf = (model: AnyModel) => ({
 });
 
 export function registerJudgeModelRoutes(options: {
-  register: Register;
-  run: Runner<SettingsRepository>;
+  register: Register<Env, SettingsRepository>;
   models: Models;
 }) {
-  const { register, run, models } = options;
+  const { register, models } = options;
 
-  const status = async () => {
-    await models.refresh();
-    const judgeModelRef = run.runSync(chosenJudge);
-    const effective = await judgeModel(models, judgeModelRef);
+  const status = Effect.gen(function* () {
+    yield* Effect.promise(() => models.refresh());
+    const judgeModelRef = yield* chosenJudge;
+
+    const effective = yield* Effect.promise(() =>
+      judgeModel(models, judgeModelRef),
+    );
+
+    const choices = yield* Effect.promise(() => judgeChoices(models));
 
     return {
       judgeModel: judgeModelRef ?? null,
       effective: effective ? choiceOf(effective) : null,
-      choices: (await judgeChoices(models)).map(choiceOf),
+      choices: choices.map(choiceOf),
     };
-  };
+  });
 
-  register(routes.getJudgeModel, async (c) => c.json(await status(), 200));
-  register(routes.updateJudgeModel, async (c) => {
+  register(routes.getJudgeModel, function* (c) {
+    return c.json(yield* status, 200);
+  });
+  register(routes.updateJudgeModel, function* (c) {
     const { judgeModel: chosen } = c.req.valid("json");
+    const choices = yield* Effect.promise(() => judgeChoices(models));
 
-    if (
-      chosen &&
-      !(await judgeChoices(models)).some((model) => sameRef(model, chosen))
-    )
-      throw new InvalidInput({
-        message: `${chosen.provider}/${chosen.model} is not a classifier model your provider keys reach`,
-      });
+    if (chosen && !choices.some((model) => sameRef(model, chosen)))
+      return yield* Effect.fail(
+        new InvalidInput({
+          message: `${chosen.provider}/${chosen.model} is not a classifier model your provider keys reach`,
+        }),
+      );
 
-    run.runSync(
-      SettingsRepository.use((r) =>
-        chosen ? r.set(JUDGE_MODEL, chosen) : r.delete(JUDGE_MODEL),
-      ),
+    yield* SettingsRepository.use((r) =>
+      chosen ? r.set(JUDGE_MODEL, chosen) : r.delete(JUDGE_MODEL),
     );
 
-    return c.json(await status(), 200);
+    return c.json(yield* status, 200);
   });
 }

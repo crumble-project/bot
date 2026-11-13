@@ -60,7 +60,7 @@ function setup() {
   const app = contractApp();
   limitBodies(app);
   app.onError(handleApiError);
-  registerFileRoutes({ register: pathRegister(app), run: runnerOf(context) });
+  registerFileRoutes({ register: pathRegister(app, runnerOf(context)) });
   cleanup.push(
     () => rmSync(dir, { recursive: true, force: true }),
     () => store.close(),

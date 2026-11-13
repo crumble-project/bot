@@ -4,17 +4,38 @@ import {
   type RouteConfig,
   type RouteHandler,
 } from "@hono/zod-openapi";
+import type { Effect } from "effect";
 import type { Env } from "hono";
 
 /**
  * Registers a contract route's handler on the API app, behind the route's request schemas. `parsesBody` leaves the
  * body to a handler that must read it first, such as a PATCH that merges it over the stored record.
  */
-export type Register<E extends Env = Env> = <R extends RouteConfig>(
+export type EffectRouteHandler<
+  R extends RouteConfig,
+  E extends Env = Env,
+  S = never,
+> = (
+  c: Parameters<RouteHandler<R, E>>[0],
+) => Generator<
+  Effect.Effect<unknown, unknown, S>,
+  Awaited<ReturnType<RouteHandler<R, E>>>,
+  never
+>;
+
+export type PlainRegister<E extends Env = Env> = <R extends RouteConfig>(
   definition: R & { getRoutingPath: () => string },
   handler: RouteHandler<R, E>,
   options?: { parsesBody: true },
 ) => void;
+
+export type Register<E extends Env = Env, S = never> = (<R extends RouteConfig>(
+  definition: R & { getRoutingPath: () => string },
+  handler: EffectRouteHandler<R, E, S>,
+  options?: { parsesBody: true },
+) => void) & {
+  plain: PlainRegister<E>;
+};
 
 export const mergedBody = async <S extends z.ZodType>(
   c: { req: { json(): Promise<object> } },
