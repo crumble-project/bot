@@ -2,7 +2,7 @@
 
 **Status:** implemented. See the [implementation plan](../plans/2026-11-11-file-library.md) for verification and deviations.
 
-PDF extraction uses a separate Bun process with time and output bounds and a best-effort RSS watchdog, not the worker described in the original decisions. Bun 1.4.4 ignores worker memory limits. The watchdog is not an OS hard memory cap and cannot guarantee protection against system-wide memory exhaustion.
+PDF extraction uses a separate Bun process with time and output bounds and a best-effort RSS watchdog, not the worker described in the original decisions. A [completion handshake](pdf-extraction-completion-handshake.md) keeps the process alive until the parent validates its result and settles in-flight RSS sampling. Bun 1.4.4 ignores worker memory limits. The watchdog is not an OS hard memory cap and cannot guarantee protection against system-wide memory exhaustion.
 
 Scope of this change: the server and the web client. The iOS, macOS, and Android clients follow in separate changes.
 
@@ -133,6 +133,7 @@ type LibraryFile = {
 - **Deleted files and accepted work**, same seam: a queued message whose file is deleted before admission is delivered with the deleted marker and the model note; a retry with the same request ID returns the existing execution; a new send naming the deleted file is refused. A group turn queued for a member behaves the same (`apps/server/src/group-chats/group-turns.test.ts`). A group transcript message with legacy attachments shows them as deleted and passes nothing to a member's turn (`apps/server/src/group-chats/group-transcripts.test.ts`).
 
   The size limit is injected, so no test allocates 100 MB.
+
 - **Bot chat with the faux provider**, in `apps/server/src/bots/chat.test.ts` and `apps/server/src/group-chats/group-turns.test.ts`: what the model receives for small text, text over 32 KB, PDF, image, large image, and other formats; the library tool's list, read, and search; a bot in its bot chat reaches only its own library; a bot in a group chat reaches the group library and its own, not another member's.
 - **Workspace copy and jobs**, with a fake environment in the style of `apps/server/src/jobs/coding.test.ts`: the bytes arrive at the reported path, a bot without coding lacks the action, and a coding job reaches its bot's library.
 - **PDF extraction**, a unit test against a small PDF in `apps/server/test/fixtures/`: text from a text PDF, nothing from a scan, and a timeout for a pathological file.
