@@ -34,7 +34,7 @@ const providerId = z
 
 const modelId = z.string().trim().min(1).max(MAX_MODEL_ID_CHARS);
 
-const modelRef = z.object({ provider: providerId, model: modelId });
+export const modelRef = z.object({ provider: providerId, model: modelId });
 
 /** A model other than the bot's own; null clears it in a patch. */
 const modelChoice = modelRef.nullable().optional();

@@ -72,7 +72,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   const models = providerAuth.models;
   const provider = providerSchema(models);
 
-  register(routes.providers, async (c) =>
+  register.plain(routes.providers, async (c) =>
     c.json(
       await Promise.all(
         models.getProviders().map(async (item) => ({
@@ -88,13 +88,13 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
       200,
     ),
   );
-  register(routes.previewReasoning, (c) => {
+  register.plain(routes.previewReasoning, (c) => {
     const input = c.req.valid("json");
     const model = models.getModel(input.provider, input.model);
 
     return c.json(previewReasoning(model, input.thinkingLevel), 200);
   });
-  register(routes.models, async (c) => {
+  register.plain(routes.models, async (c) => {
     const name = c.req.query("provider");
 
     if (name) provider.parse(name);
@@ -117,14 +117,14 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const provider = providerSchema(providerAuth.models);
 
-  register(routes.putProvider, async (c) => {
+  register.plain(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
 
     await providerAuth.setApiKey(name, c.req.valid("json"));
 
     return c.json({ provider: name, configured: true }, 200);
   });
-  register(routes.deleteProvider, async (c) => {
+  register.plain(routes.deleteProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
     const external = await options.externalAuth.get(name)?.();
 
@@ -143,7 +143,7 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const models = providerAuth.models;
 
-  register(routes.startProviderLogin, async (c) => {
+  register.plain(routes.startProviderLogin, (c) => {
     const name = c.req.param("provider");
 
     if (!models.getProvider(name))
@@ -151,10 +151,10 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
 
     return c.json(providerAuth.start(name, c.req.valid("json").method), 202);
   });
-  register(routes.getProviderLogin, (c) =>
+  register.plain(routes.getProviderLogin, (c) =>
     c.json(providerAuth.get(c.req.param("id")), 200),
   );
-  register(
+  register.plain(
     routes.answerProviderLogin,
     async (c) => {
       const input = providerLoginAnswerInput.safeParse(await c.req.json());
@@ -173,7 +173,7 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
     },
     { parsesBody: true },
   );
-  register(routes.cancelProviderLogin, (c) =>
+  register.plain(routes.cancelProviderLogin, (c) =>
     c.json(providerAuth.cancel(c.req.param("id")), 200),
   );
 };

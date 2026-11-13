@@ -38,7 +38,7 @@ const setup = () => {
 
   app.onError(handleApiError);
   registerLoginRoutes({
-    register: pathRegister(app),
+    register: pathRegister(app, store.runtime),
     service: {
       agent: (id) => {
         if (id !== agentId) throw new NotFound({ message: "Bot not found" });
@@ -46,7 +46,6 @@ const setup = () => {
         return store.getAgent(id)!;
       },
     },
-    run: store.runtime,
   });
 
   const request = (path: string, init: RequestInit = {}) =>

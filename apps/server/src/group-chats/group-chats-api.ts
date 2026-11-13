@@ -12,14 +12,14 @@ type GroupChatRoutesOptions = {
 const registerGroupChatDefinitionRoutes = (options: GroupChatRoutesOptions) => {
   const { register, groupChats } = options;
 
-  register(routes.listGroupChats, (c) => c.json(groupChats.list(), 200));
-  register(routes.createGroupChat, (c) =>
+  register.plain(routes.listGroupChats, (c) => c.json(groupChats.list(), 200));
+  register.plain(routes.createGroupChat, (c) =>
     c.json(groupChats.create(c.req.valid("json")), 201),
   );
-  register(routes.getGroupChat, (c) =>
+  register.plain(routes.getGroupChat, (c) =>
     c.json(groupChats.get(c.req.param("id")), 200),
   );
-  register(
+  register.plain(
     routes.updateGroupChat,
     async (c) => {
       const current = groupChats.get(c.req.param("id"));
@@ -34,18 +34,18 @@ const registerGroupChatDefinitionRoutes = (options: GroupChatRoutesOptions) => {
     },
     { parsesBody: true },
   );
-  register(routes.deleteGroupChat, async (c) => {
+  register.plain(routes.deleteGroupChat, async (c) => {
     await groupChats.delete(c.req.param("id"));
 
     return c.body(null, 204);
   });
-  register(routes.groupChatSnapshot, async (c) =>
+  register.plain(routes.groupChatSnapshot, async (c) =>
     c.json(
       await groupChats.snapshot(c.req.param("id"), c.req.valid("query")),
       200,
     ),
   );
-  register(routes.groupChatHistory, async (c) =>
+  register.plain(routes.groupChatHistory, async (c) =>
     c.json(
       await groupChats.history(c.req.param("id"), c.req.valid("query")),
       200,
@@ -56,7 +56,7 @@ const registerGroupChatDefinitionRoutes = (options: GroupChatRoutesOptions) => {
 const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
   const { register, groupChats } = options;
 
-  register(routes.sendGroupMessage, async (c) => {
+  register.plain(routes.sendGroupMessage, async (c) => {
     const input = c.req.valid("json");
 
     return c.json(
@@ -67,12 +67,12 @@ const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
       201,
     );
   });
-  register(routes.stopGroupChat, async (c) => {
+  register.plain(routes.stopGroupChat, async (c) => {
     await groupChats.stop(c.req.param("id"));
 
     return c.body(null, 204);
   });
-  register(routes.groupChatEvents, async (c) => {
+  register.plain(routes.groupChatEvents, (c) => {
     const query = c.req.valid("query");
     const groupId = groupChats.get(c.req.param("id")).id;
 

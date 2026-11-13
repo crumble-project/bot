@@ -54,8 +54,7 @@ const setup = (state: FakePasswordManager) => {
 
   app.onError(handleApiError);
   registerPasswordManagerRoutes({
-    register: pathRegister(app),
-    run,
+    register: pathRegister(app, run),
   });
 
   const request = (method: string, token?: string) =>

@@ -1,8 +1,8 @@
-import type { Register } from "../contract/route";
 import { Effect } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
 import type { WSContext, WSEvents, WSMessageReceive } from "hono/ws";
 import { routes, type contractApp } from "../contract/api-contract";
+import type { Register } from "../contract/route";
 import type { ControlState, DesktopControlAccess } from "./desktop-control";
 import {
   bridgeDesktop,
@@ -82,17 +82,17 @@ function registerControlRoutes(
   { register, service, workspaces, control }: DesktopRouteOptions,
   { hasBotDesktop, desktopAgent }: DesktopAccess,
 ) {
-  register(routes.desktopControl, (c) =>
+  register.plain(routes.desktopControl, (c) =>
     c.json(control.get(service.agent(c.req.param("id")).id), 200),
   );
 
-  register(routes.putDesktopControl, async (c) => {
+  register.plain(routes.putDesktopControl, (c) => {
     const agent = desktopAgent(c.req.param("id"));
 
     return c.json(control.set(agent.id, c.req.valid("json").holder), 200);
   });
 
-  register(routes.desktopEvents, (c) => {
+  register.plain(routes.desktopEvents, (c) => {
     const agent = service.agent(c.req.param("id"));
 
     return streamEvents(c, async ({ stream, close, onClose }) => {
@@ -110,7 +110,7 @@ function registerControlRoutes(
     });
   });
 
-  register(routes.desktopStatus, (c) => {
+  register.plain(routes.desktopStatus, (c) => {
     const agent = service.agent(c.req.param("id"));
 
     return c.json(
@@ -127,7 +127,7 @@ function registerViewerLinkRoute(
   { register, run, workspaces, tickets }: DesktopRouteOptions,
   { desktopAgent }: DesktopAccess,
 ) {
-  register(routes.createDesktopViewer, (c) => {
+  register.plain(routes.createDesktopViewer, (c) => {
     const agent = desktopAgent(c.req.param("id"));
     const { passive = false } = c.req.valid("query");
     const { ticket, expiresAt } = tickets.issue(agent.id, passive);

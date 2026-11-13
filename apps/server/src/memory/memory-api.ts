@@ -1,80 +1,70 @@
+import { Effect } from "effect";
+import type { Env } from "hono";
 import type { z } from "zod";
 import { routes, type memoryInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { BotLookup } from "../bot-ports/bot-lookup";
 import { NotFound } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { MemoryRepository } from "./memory-repository";
 
-type Services = MemoryRepository;
-
-type Exec = Runner<Services>["runSync"];
-
 type MemoryRoutesOptions = {
-  register: Register;
+  register: Register<Env, MemoryRepository>;
   service: BotLookup;
-  run: Runner<Services>;
 };
 
-const memoryOf = (exec: Exec, agentId: string | null, memoryId: string) => {
-  const memory = exec(MemoryRepository.use((r) => r.get(memoryId)));
+const memoryOf = Effect.fnUntraced(function* (
+  agentId: string | null,
+  memoryId: string,
+) {
+  const memories = yield* MemoryRepository;
+  const memory = yield* memories.get(memoryId);
 
   if (!memory || memory.agentId !== agentId)
-    throw new NotFound({ message: "Memory not found" });
+    return yield* Effect.fail(new NotFound({ message: "Memory not found" }));
 
   return memory;
-};
+});
 
 const createMemory = (
-  exec: Exec,
   agentId: string | null,
   input: z.output<typeof memoryInput>,
 ) =>
-  exec(
-    MemoryRepository.use((r) =>
-      r.create({ agentId, content: input.content, source: { kind: "owner" } }),
-    ),
+  MemoryRepository.use((r) =>
+    r.create({ agentId, content: input.content, source: { kind: "owner" } }),
   );
 
-const updateMemory = (
-  exec: Exec,
-  memoryId: string,
-  input: z.output<typeof memoryInput>,
-) => exec(MemoryRepository.use((r) => r.update(memoryId, input)));
+const updateMemory = (memoryId: string, input: z.output<typeof memoryInput>) =>
+  MemoryRepository.use((r) => r.update(memoryId, input));
 
-const deleteMemory = (exec: Exec, memoryId: string) =>
-  exec(MemoryRepository.use((r) => r.delete(memoryId)));
+const deleteMemory = (memoryId: string) =>
+  MemoryRepository.use((r) => r.delete(memoryId));
 
 const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register, service } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
 
-  register(routes.agentMemories, (c) => {
+  register(routes.agentMemories, function* (c) {
     service.agent(c.req.param("id"));
+    const memories = yield* MemoryRepository;
 
-    return c.json(
-      exec(MemoryRepository.use((r) => r.list(c.req.param("id")))),
-      200,
-    );
+    return c.json(yield* memories.list(c.req.param("id")), 200);
   });
-  register(routes.createAgentMemory, async (c) => {
+  register(routes.createAgentMemory, function* (c) {
     service.agent(c.req.param("id"));
 
     return c.json(
-      createMemory(exec, c.req.param("id"), c.req.valid("json")),
+      yield* createMemory(c.req.param("id"), c.req.valid("json")),
       201,
     );
   });
-  register(routes.updateAgentMemory, async (c) => {
-    const memory = memoryOf(exec, c.req.param("id"), c.req.param("memoryId"));
+  register(routes.updateAgentMemory, function* (c) {
+    const memory = yield* memoryOf(c.req.param("id"), c.req.param("memoryId"));
 
-    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
+    return c.json(yield* updateMemory(memory.id, c.req.valid("json")), 200);
   });
-  register(routes.deleteAgentMemory, (c) => {
-    deleteMemory(
-      exec,
-      memoryOf(exec, c.req.param("id"), c.req.param("memoryId")).id,
-    );
+  register(routes.deleteAgentMemory, function* (c) {
+    const memory = yield* memoryOf(c.req.param("id"), c.req.param("memoryId"));
+
+    yield* deleteMemory(memory.id);
 
     return c.body(null, 204);
   });
@@ -82,21 +72,24 @@ const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
 
 const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
 
-  register(routes.memories, (c) =>
-    c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
-  );
-  register(routes.createMemory, async (c) =>
-    c.json(createMemory(exec, null, c.req.valid("json")), 201),
-  );
-  register(routes.updateMemory, async (c) => {
-    const memory = memoryOf(exec, null, c.req.param("id"));
+  register(routes.memories, function* (c) {
+    const memories = yield* MemoryRepository;
 
-    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
+    return c.json(yield* memories.list(null), 200);
   });
-  register(routes.deleteMemory, (c) => {
-    deleteMemory(exec, memoryOf(exec, null, c.req.param("id")).id);
+  register(routes.createMemory, function* (c) {
+    return c.json(yield* createMemory(null, c.req.valid("json")), 201);
+  });
+  register(routes.updateMemory, function* (c) {
+    const memory = yield* memoryOf(null, c.req.param("id"));
+
+    return c.json(yield* updateMemory(memory.id, c.req.valid("json")), 200);
+  });
+  register(routes.deleteMemory, function* (c) {
+    const memory = yield* memoryOf(null, c.req.param("id"));
+
+    yield* deleteMemory(memory.id);
 
     return c.body(null, 204);
   });

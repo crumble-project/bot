@@ -21,7 +21,7 @@ import { Store } from "../../test/support/store";
 import { Context, Effect, Layer } from "effect";
 import { Library } from "../files/library";
 import { FileStore } from "../files/file-store";
-import { resolveMessageFiles } from "../files/message-files";
+import { DESCRIPTION_HINT, resolveMessageFiles } from "../files/message-files";
 import { EventRepository } from "../event-sources/event-repository";
 import { eventRequest, voiceRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../automations/schedule-repository";
@@ -472,6 +472,7 @@ describe("legacy execution recovery", () => {
               mimeType: "image/png",
               size: 70,
             },
+            description: null,
             content: { kind: "image", data: png },
           },
         ],
@@ -915,9 +916,10 @@ describe("library files", () => {
     expect(blocks[2].text).toContain("library tool");
     expect(blocks[3].text).toContain("Crumble library fixture");
     expect(blocks[4].text.toLowerCase()).toContain("no text could be read");
-    expect(blocks[5].type).toBe("image");
-    expect(blocks[6].text).toContain(bigImage);
-    expect(blocks[7].text).toContain(zip);
+    expect(blocks[5].text).toContain(image);
+    expect(blocks[6].type).toBe("image");
+    expect(blocks[7].text).toContain(bigImage);
+    expect(blocks[8].text).toContain(zip);
 
     const entry = (await Effect.runPromise(library.entries(ref, [pdf]))).get(
       pdf,
@@ -1042,10 +1044,14 @@ describe("library files", () => {
     await settle(service, execution.id);
     expect(seen[0]).toEqual([
       { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
+      {
+        type: "text",
+        text: `File "dot.png" (id: ${image.file.id}). ${DESCRIPTION_HINT}`,
+      },
       { type: "image", data: png, mimeType: "image/png" },
       {
         type: "text",
-        text: '<attachment name="notes.txt">\nBuy oat milk\n</attachment>',
+        text: `File "notes.txt" (id: ${text.file.id}). ${DESCRIPTION_HINT}\n<attachment name="notes.txt">\nBuy oat milk\n</attachment>`,
       },
     ]);
     expect(store.executionAttachments(execution.id)).toEqual({
@@ -1186,6 +1192,10 @@ describe("vision model", () => {
     expect(asked).toEqual([{ images: [png], prompt: "Describe this image." }]);
     expect(seen[0]).toEqual([
       { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
+      {
+        type: "text",
+        text: expect.stringContaining(`File "dot.png" (id: `),
+      },
       { type: "text", text: described("A red dot. Text: HELLO") },
     ]);
 
@@ -1267,6 +1277,10 @@ describe("vision model", () => {
     expect(await sendImage(service, agent.id, 1)).toBe("done");
     expect(seen[0]).toEqual([
       { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
+      {
+        type: "text",
+        text: expect.stringContaining(`File "dot.png" (id: `),
+      },
       { type: "text", text: "[An image could not be read: vision is down]" },
     ]);
 

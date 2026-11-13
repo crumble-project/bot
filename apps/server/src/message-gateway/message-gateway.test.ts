@@ -390,8 +390,10 @@ test("gateway HTTP configuration validates input, hides credentials, and can dis
   const app = contractApp();
   app.onError(handleApiError);
   registerGatewayRoutes({
-    register: pathRegister(app),
-    run: runnerOf(Context.make(MessageGateway, f.gateway)),
+    register: pathRegister(
+      app,
+      runnerOf(Context.make(MessageGateway, f.gateway)),
+    ),
   });
 
   type GatewayTestInput = Omit<GatewayConfig, "enabled"> & {

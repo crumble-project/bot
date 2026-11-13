@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import type { z } from "@hono/zod-openapi";
+import { z } from "zod";
 import type { routes } from "@crumble/server/contract/api-contract";
 import { onSessionReset, signedOut } from "@/lib/session";
 
@@ -68,7 +68,9 @@ async function errorMessage(response: Response) {
   const text = await response.text();
 
   try {
-    const body: { error?: string } = JSON.parse(text);
+    const body = z
+      .object({ error: z.string().optional() })
+      .parse(JSON.parse(text));
 
     return body.error ?? text;
   } catch {
@@ -96,7 +98,7 @@ async function request(path: string, init: RequestInit = {}) {
   return response;
 }
 
-async function bodyOf<N extends RouteName>(
+export async function bodyOf<N extends RouteName>(
   response: Response,
 ): Promise<ResponseBody<N>> {
   // SAFETY: the server answers in the shape its route's OpenAPI schema describes.

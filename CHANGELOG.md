@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The web library has a list and grid view, uploads by button or drop, and shows each bot's five newest files in its details. Bots can search a whole library by name, description, and text, and keep a short description of each file so they can find scans and photos from how the owner refers to them. Every file a bot receives states its file ID. Listing a group library together with a bot's own library no longer skips files.
 - Send any file up to 100 MB in the web client. Each bot chat and group chat has a library for browsing, downloading, and deleting uploaded files. Bots and their jobs can list, read, and search library text, and copy files into a workspace when available.
 - Breaking: message routes accept uploaded `files` IDs instead of base64 `attachments`. File sending from older iOS, macOS, and Android clients fails until they update; text messages still work. Older transcript attachments show **File deleted** and are no longer downloadable. Pending messages recover under their original request ID, without a second turn; when their files did not arrive, a notice asks the owner to send them again.
 

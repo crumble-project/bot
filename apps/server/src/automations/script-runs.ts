@@ -196,8 +196,8 @@ export class ScriptRuns extends Context.Service<
         schedule: Schedule,
         run: ScriptRun,
         result: Outcome,
-        output = "",
-        droppedBytes = 0,
+        output: string = "",
+        droppedBytes: number = 0,
       ) {
         yield* repository.finish(run.id, {
           ...result,

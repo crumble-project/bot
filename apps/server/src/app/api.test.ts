@@ -2243,19 +2243,20 @@ describe("MCP server tokens from a password manager", () => {
 
     app.onError(handleApiError);
     registerMcpServerRoutes({
-      register: pathRegister(app),
-      service,
-      run: runnerOf(
-        Context.add(
-          Context.merge(core, vault),
-          McpServers,
-          mcpServersOver(Context.merge(core, vault), integrations),
+      register: pathRegister(
+        app,
+        runnerOf(
+          Context.add(
+            Context.merge(core, vault),
+            McpServers,
+            mcpServersOver(Context.merge(core, vault), integrations),
+          ),
         ),
       ),
+      service,
     });
     registerPluginSettingRoutes({
-      register: pathRegister(app),
-      run,
+      register: pathRegister(app, run),
       plugins: [
         {
           id: "chat",

@@ -60,16 +60,30 @@ function setup() {
   const app = contractApp();
   limitBodies(app);
   app.onError(handleApiError);
-  registerFileRoutes({ register: pathRegister(app), run: runnerOf(context) });
+  registerFileRoutes({ register: pathRegister(app, runnerOf(context)) });
   cleanup.push(
     () => rmSync(dir, { recursive: true, force: true }),
     () => store.close(),
     () => Effect.runSync(Scope.close(scope, Exit.void)),
   );
 
+  const describe = (kind: "bot" | "group", id: string) =>
+    Effect.runPromise(
+      Library.use((library) =>
+        library.describe(
+          kind === "bot"
+            ? { kind: "bot", agentId: agent.id }
+            : { kind: "group", groupId: group.id },
+          id,
+          "Bot-only description",
+        ),
+      ).pipe(Effect.provideContext(context)),
+    );
+
   return {
     app,
     bot: `/v1/agents/${agent.id}/files`,
+    describe,
     other: `/v1/agents/${other.id}/files`,
     group: `/v1/group-chats/${group.id}/files`,
   };
@@ -111,7 +125,9 @@ for (const kind of ["bot", "group"] as const) {
       await upload("a.png", "text/html", "<script>x</script>")
     ).json();
 
+    await env.describe(kind, first.file.id);
     const listed = await (await env.app.request(path)).json();
+    expect(JSON.stringify(listed)).not.toContain("Bot-only description");
     expect(listed.map((file: { id: string }) => file.id)).toEqual([
       html.file.id,
       first.file.id,

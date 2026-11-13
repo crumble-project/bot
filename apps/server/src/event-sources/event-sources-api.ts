@@ -1,41 +1,37 @@
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { Runner } from "../shared/runner";
 import { EventSources } from "./event-sources";
 
 export function registerEventSourceRoutes(options: {
-  register: Register;
-  run: Runner<EventSources>;
+  register: Register<Env, EventSources>;
 }) {
-  const { register, run } = options;
+  const { register } = options;
 
-  register(routes.eventRelay, async (c) =>
-    c.json(await run.runPromise(EventSources.use((s) => s.relay)), 200),
-  );
-  register(routes.updateEventRelay, async (c) =>
-    c.json(
-      await run.runPromise(
-        EventSources.use((s) => s.setRelayUrl(c.req.valid("json").url)),
-      ),
-      200,
-    ),
-  );
-  register(routes.eventSources, async (c) =>
-    c.json(
-      { sources: await run.runPromise(EventSources.use((s) => s.list)) },
-      200,
-    ),
-  );
-  register(routes.createEventSource, async (c) =>
-    c.json(
-      await run.runPromise(
-        EventSources.use((s) => s.create(c.req.valid("json").name)),
-      ),
-      201,
-    ),
-  );
-  register(routes.deleteEventSource, async (c) => {
-    await run.runPromise(EventSources.use((s) => s.remove(c.req.param("id"))));
+  register(routes.eventRelay, function* (c) {
+    const sources = yield* EventSources;
+
+    return c.json(yield* sources.relay, 200);
+  });
+  register(routes.updateEventRelay, function* (c) {
+    const sources = yield* EventSources;
+
+    return c.json(yield* sources.setRelayUrl(c.req.valid("json").url), 200);
+  });
+  register(routes.eventSources, function* (c) {
+    const sources = yield* EventSources;
+
+    return c.json({ sources: yield* sources.list }, 200);
+  });
+  register(routes.createEventSource, function* (c) {
+    const sources = yield* EventSources;
+
+    return c.json(yield* sources.create(c.req.valid("json").name), 201);
+  });
+  register(routes.deleteEventSource, function* (c) {
+    const sources = yield* EventSources;
+
+    yield* sources.remove(c.req.param("id"));
 
     return c.body(null, 204);
   });

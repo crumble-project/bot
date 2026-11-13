@@ -1,3 +1,4 @@
+import type { Env } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { Context, Effect } from "effect";
 import { contractApp, routes } from "../contract/api-contract";
@@ -19,7 +20,7 @@ import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
 import { registerVisionModelRoutes } from "../vision/vision-api";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
-import { BotRequests } from "../bot-requests/bot-requests";
+import type { BotRequests } from "../bot-requests/bot-requests";
 import { registerGroupChatRoutes } from "../group-chats/group-chats-api";
 import { GroupChats, groupChatsAccess } from "../group-chats/group-chats";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
@@ -54,9 +55,9 @@ import type { MessageGateway } from "../message-gateway/message-gateway";
 import type { EventSources } from "../event-sources/event-sources";
 import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
 import { registerVoiceGatewayRoutes } from "../voice-gateway/voice-gateway-api";
-import type { VoiceGateway } from "../voice-gateway/voice-gateway";
+import { VoiceGateway } from "../voice-gateway/voice-gateway";
 import { registerCallRequestRoutes } from "../voice-gateway/call-requests-api";
-import { CallRequests } from "../voice-gateway/call-requests";
+import type { CallRequests } from "../voice-gateway/call-requests";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 import type { Library } from "../files/library";
@@ -95,7 +96,7 @@ function apiContext(
   app: ApiApp,
   service: ApiBots,
   options: ApiOptions,
-  register: Register,
+  register: Register<Env, ApiServices>,
 ) {
   const { core, runtime } = service;
   const services = core.runSync(Effect.context<ApiServices>());
@@ -106,8 +107,8 @@ function apiContext(
     app,
     register,
     service,
-    run: core,
     runtime,
+    run: core,
     workspaces: Context.get(services, BotWorkspaces),
     plugins,
     jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
@@ -117,14 +118,13 @@ function apiContext(
         externalAuth ? [[provider.id, externalAuth] as const] : [],
       ),
     ),
-    botRequests: Context.get(services, BotRequests),
-    callRequests: Context.get(services, CallRequests),
     provider: providerSchema(providerAuth.models),
     models: providerAuth.models,
     providerAuth,
     desktopControl: desktopControlAccess(core),
     viewerTickets: options.viewerTickets,
     held: heldActionsAccess(core),
+    voiceGateway: Context.get(services, VoiceGateway),
     serverId: Context.get(services, Push).serverId,
   };
 }
@@ -139,7 +139,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
       tickets: api.viewerTickets,
     }),
   (api) =>
-    api.register(routes.capabilities, (c) =>
+    api.register.plain(routes.capabilities, (c) =>
       c.json(
         {
           coding: api.workspaces !== undefined,
@@ -193,7 +193,12 @@ export function createAPI(
   app.use("/v1/*", bearerAuth({ token }));
   app.onError(handleApiError);
 
-  const api = apiContext(app, service, options, pathRegister(app));
+  const api = apiContext(
+    app,
+    service,
+    options,
+    pathRegister(app, service.core),
+  );
 
   for (const routes of featureRoutes) routes(api);
 

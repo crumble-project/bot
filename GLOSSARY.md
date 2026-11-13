@@ -66,6 +66,10 @@ _Avoid_: Model context
 The files the owner sent in a bot chat or group chat, kept for the owner to browse and for the bot to read. Each bot and each group chat has its own.
 _Avoid_: Drive, storage, attachments folder
 
+**File description**:
+A sentence a bot writes about a library file, in the owner's words, so bots can find the file again from how the owner refers to it. Bots read and write it; the owner's library view doesn't show it. Distinct from workspace notes.
+_Avoid_: File note, caption, tag
+
 **Working context**:
 The selected recent messages, summaries, instructions, and recalled material available to the bot for its next response.
 _Avoid_: Full history, transcript

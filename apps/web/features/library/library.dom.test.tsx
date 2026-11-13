@@ -20,11 +20,11 @@ test("failed downloads show an error instead of an unhandled rejection", async (
         () => container.textContent?.includes("page.html") === true,
       );
 
-      const button = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Download",
+      const row = container.querySelector<HTMLElement>(
+        '[title="Download page.html"]',
       )!;
 
-      await act(async () => button.click());
+      await act(async () => row.click());
       await waitFor(
         () =>
           container
@@ -155,6 +155,7 @@ async function withLibrary(
   );
 
   const { Library } = await import("./library");
+  const { SidebarProvider } = await import("@/components/ui/sidebar");
   const rootRoute = createRootRoute();
 
   const router = createRouter({
@@ -163,7 +164,11 @@ async function withLibrary(
       createRoute({
         getParentRoute: () => rootRoute,
         path: "/",
-        component: () => <Library kind="bot" id="bot" />,
+        component: () => (
+          <SidebarProvider>
+            <Library kind="bot" id="bot" />
+          </SidebarProvider>
+        ),
       }),
     ]),
   });
@@ -240,28 +245,33 @@ test("library lists files, downloads safely and confirms deletion", async () => 
       container.textContent.indexOf("archive.zip"),
     );
 
-    const download = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Download",
+    const row = container.querySelector<HTMLElement>(
+      '[title="Download page.html"]',
     )!;
 
-    await act(async () => download.click());
+    await act(async () => row.click());
     await waitFor(() => blobs.length > 0);
     expect(blobs[0]!.type).toBe("application/octet-stream");
 
-    const remove = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Delete",
-    )!;
-
     await act(async () => {
-      remove.dispatchEvent(
-        new window.PointerEvent("pointerdown", {
+      row.querySelector<HTMLButtonElement>('[title="More"]')!.dispatchEvent(
+        new window.KeyboardEvent("keydown", {
+          key: "ArrowDown",
           bubbles: true,
-          button: 0,
-          pointerType: "mouse",
         }),
       );
-      remove.click();
     });
+    await waitFor(() =>
+      [...document.querySelectorAll('[role="menuitem"]')].some(
+        (item) => item.textContent === "Delete",
+      ),
+    );
+
+    const remove = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent === "Delete")!;
+
+    await act(async () => remove.click());
     expect(calls.some((call) => call.startsWith("DELETE"))).toBe(false);
     await waitFor(
       () => document.body.textContent?.includes("Delete page.html?") === true,

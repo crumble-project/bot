@@ -12,12 +12,12 @@ type HeldActionRoutesOptions = {
 export function registerHeldActionRoutes(options: HeldActionRoutesOptions) {
   const { register, service, held } = options;
 
-  register(routes.agentHeldActions, (c) => {
+  register.plain(routes.agentHeldActions, (c) => {
     service.agent(c.req.param("id"));
 
     return c.json(held.list(c.req.param("id")), 200);
   });
-  register(routes.approveAgentHeldAction, async (c) => {
+  register.plain(routes.approveAgentHeldAction, async (c) => {
     service.agent(c.req.param("id"));
 
     return c.json(
@@ -27,7 +27,7 @@ export function registerHeldActionRoutes(options: HeldActionRoutesOptions) {
       200,
     );
   });
-  register(routes.declineAgentHeldAction, async (c) => {
+  register.plain(routes.declineAgentHeldAction, async (c) => {
     service.agent(c.req.param("id"));
     const { reason } = c.req.valid("json");
 

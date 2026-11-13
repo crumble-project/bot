@@ -1,11 +1,11 @@
 import { Effect } from "effect";
+import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
+import { agentInput } from "../contract/agents";
 import type { McpServerRepository } from "../integrations/mcp-server-repository";
 import type { McpServers } from "../integrations/mcp-servers";
 import type { SkillRepository } from "../skills/skill-repository";
-import { agentInput } from "../contract/agents";
-import type { Runner } from "../shared/runner";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { checkBotChoices } from "./bot-choices";
 import { duplicateAgent } from "./agent-duplicate";
@@ -13,27 +13,20 @@ import type { BotsAccess } from "./bots";
 import { usesDesktop } from "../contract/tools";
 import type { Workspaces } from "../workspaces/workspace";
 
-type Services =
-  | AgentRepository
-  | McpServerRepository
-  | McpServers
-  | SkillRepository;
-
-type Exec = Runner<Services>["runSync"];
-
 type AgentRoutesOptions = {
-  register: Register;
+  register: Register<
+    Env,
+    AgentRepository | McpServerRepository | McpServers | SkillRepository
+  >;
   service: BotsAccess;
-  run: Runner<Services>;
   provider: { parse(value: string): string };
   workspaces: Workspaces | undefined;
 };
 
 const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
-  const { register, service } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
+  const { register, service, provider } = options;
 
-  register(routes.listAgents, async (c) =>
+  register.plain(routes.listAgents, async (c) =>
     c.json(
       (await service.agentPreviews()).map(({ agent, lastMessage }) => {
         return lastMessage ? { ...agent, lastMessage } : agent;
@@ -41,17 +34,18 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
       200,
     ),
   );
-  register(routes.createAgent, async (c) => {
+  register(routes.createAgent, function* (c) {
     const input = c.req.valid("json");
 
-    await checkBotChoices(options, input, null);
+    yield* checkBotChoices(provider, input, null);
+    const agents = yield* AgentRepository;
 
-    return c.json(exec(AgentRepository.use((r) => r.create(input))), 201);
+    return c.json(yield* agents.create(input), 201);
   });
-  register(routes.getAgent, (c) =>
+  register.plain(routes.getAgent, (c) =>
     c.json(service.agent(c.req.param("id")), 200),
   );
-  register(routes.updateAgent, async (c) => {
+  register(routes.updateAgent, function* (c) {
     const old = service.agent(c.req.param("id"));
     const body = c.req.valid("json");
 
@@ -61,19 +55,21 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
       skills: body["skills"] ?? [],
     });
 
-    await checkBotChoices(options, input, old.id);
+    yield* checkBotChoices(provider, input, old.id);
 
-    if (!input.enabled && old.enabled) await service.stopAgent(old.id);
+    if (!input.enabled && old.enabled)
+      yield* Effect.promise(() => service.stopAgent(old.id));
 
-    const updated = exec(
-      AgentRepository.use((r) =>
-        r.update(old.id, body["skills"] ? { ...input, skills } : input),
-      ),
+    const agents = yield* AgentRepository;
+
+    const updated = yield* agents.update(
+      old.id,
+      body["skills"] ? { ...input, skills } : input,
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
     if (options.workspaces && usesDesktop(old) !== usesDesktop(input))
-      await Effect.runPromise(options.workspaces.restart(old.id));
+      yield* options.workspaces.restart(old.id);
 
     return c.json(updated, 200);
   });
@@ -81,14 +77,13 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
 
 const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
   const { register, service } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
 
-  register(routes.duplicateAgent, (c) => {
+  register(routes.duplicateAgent, function* (c) {
     service.agent(c.req.param("id"));
 
-    return c.json(exec(duplicateAgent(c.req.param("id"))), 201);
+    return c.json(yield* duplicateAgent(c.req.param("id")), 201);
   });
-  register(routes.deleteAgent, async (c) => {
+  register.plain(routes.deleteAgent, async (c) => {
     await service.deleteAgent(c.req.param("id"));
 
     return c.body(null, 204);

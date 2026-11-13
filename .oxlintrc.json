@@ -53,7 +53,7 @@
     "no-else-return": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-unnecessary-type-assertion": "error",
-    //"typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-assignment": "error",
     "typescript/no-unsafe-return": "error",
     "typescript/switch-exhaustiveness-check": "error",
     "unicorn/no-useless-undefined": [

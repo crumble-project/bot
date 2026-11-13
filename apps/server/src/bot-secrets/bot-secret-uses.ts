@@ -1,6 +1,7 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Clock, Context, Effect, Layer } from "effect";
+import { z } from "zod";
 import { BOT_SECRET_USE_RETENTION_DAYS } from "../contract/limits";
 import { ProductDatabase } from "../shared/product-database";
 import { pruneHourly, startTicking } from "../shared/ticker";
@@ -104,7 +105,7 @@ export class BotSecretUses extends Context.Service<
               at: row.at,
               host: row.host,
               error: row.error,
-              detail: JSON.parse(row.detail),
+              detail: z.json().parse(JSON.parse(row.detail)),
             }));
           },
         ),
