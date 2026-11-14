@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { onSessionReset } from "@/lib/session";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import {
@@ -38,6 +45,32 @@ type ReplyAttentionProps = {
   element: Element | null;
 };
 
+type AttentionState = {
+  controller: ChatAttentionController | undefined;
+  references: readonly ReplyReference[];
+  ready: boolean;
+  chat: string | null;
+};
+
+const canReport = (state: AttentionState, visible: boolean) =>
+  (state.controller !== undefined ||
+    (!!state.chat && state.chat === activeChat)) &&
+  visible &&
+  state.ready &&
+  document.visibilityState === "visible" &&
+  document.hasFocus();
+
+function reportDisplayed(
+  state: AttentionState,
+  visible: boolean,
+  fallback: ChatAttentionController,
+) {
+  if (!canReport(state, visible)) return;
+
+  for (const reference of state.references)
+    (state.controller ?? fallback).displayed(reference);
+}
+
 export function ReplyAttention(props: ReplyAttentionProps) {
   return props.references.length ? <ObservedReplyAttention {...props} /> : null;
 }
@@ -51,24 +84,21 @@ function ObservedReplyAttention({
   const chat = useContext(AttentionChatContext);
   const [boundController] = useState(() => controller ?? getChatAttention());
   const visible = useRef(false);
-  const current = useRef({ controller, references, ready, chat });
-  current.current = { controller, references, ready, chat };
+
+  const current = useRef<AttentionState>({
+    controller,
+    references,
+    ready,
+    chat,
+  });
+
+  useLayoutEffect(() => {
+    current.current = { controller, references, ready, chat };
+  });
 
   useEffect(() => {
-    const report = () => {
-      if (
-        (!current.current.controller &&
-          (!current.current.chat || current.current.chat !== activeChat)) ||
-        !visible.current ||
-        !current.current.ready ||
-        document.visibilityState !== "visible" ||
-        !document.hasFocus()
-      )
-        return;
-
-      for (const reference of current.current.references)
-        (current.current.controller ?? boundController).displayed(reference);
-    };
+    const report = () =>
+      reportDisplayed(current.current, visible.current, boundController);
 
     report();
     window.addEventListener("focus", report);
@@ -78,7 +108,7 @@ function ObservedReplyAttention({
       window.removeEventListener("focus", report);
       document.removeEventListener("visibilitychange", report);
     };
-  }, [controller, references, ready]);
+  }, [boundController, controller, references, ready]);
 
   useEffect(() => {
     visible.current = false;
@@ -95,16 +125,7 @@ function ObservedReplyAttention({
           entry.intersectionRatio > 0,
       );
 
-      if (
-        (current.current.controller ||
-          (current.current.chat && current.current.chat === activeChat)) &&
-        visible.current &&
-        current.current.ready &&
-        document.visibilityState === "visible" &&
-        document.hasFocus()
-      )
-        for (const reference of current.current.references)
-          (current.current.controller ?? boundController).displayed(reference);
+      reportDisplayed(current.current, visible.current, boundController);
     });
 
     observer.observe(element);
@@ -114,7 +135,7 @@ function ObservedReplyAttention({
       observer.disconnect();
       visible.current = false;
     };
-  }, [element]);
+  }, [boundController, element]);
 
   return null;
 }
