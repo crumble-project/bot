@@ -26,15 +26,6 @@ export const pushDevices = sqliteTable("push_devices", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const pushPresence = sqliteTable("push_presence", {
-  installationId: text("installation_id")
-    .primaryKey()
-    .references(() => pushDevices.installationId, { onDelete: "cascade" }),
-  active: integer("active", { mode: "boolean" }).notNull(),
-  agentId: text("agent_id"),
-  refreshedAt: integer("refreshed_at").notNull(),
-});
-
 export const chatViews = sqliteTable("chat_views", {
   viewId: text("view_id").primaryKey(),
   chatKind: text("chat_kind", { enum: ["bot", "group"] }).notNull(),

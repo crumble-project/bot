@@ -4,13 +4,7 @@ import { PushDatabase } from "./push-database";
 import type { ReplyEvent } from "../contract/reply-event";
 import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import type { PushDevice, PushDeviceInput } from "./push-model";
-import {
-  pushDelivery,
-  pushDevices,
-  pushOutbox,
-  pushPresence,
-  pushSettings,
-} from "./schema";
+import { pushDelivery, pushDevices, pushOutbox, pushSettings } from "./schema";
 
 export type PendingDelivery = {
   readonly outboxId: string;
@@ -19,9 +13,6 @@ export type PendingDelivery = {
   readonly expiresAt: number;
   readonly attempts: number;
 };
-
-// A presence report counts for two minutes; clients refresh it while a chat is visible.
-const PRESENCE_TTL_MS = 120_000;
 
 const PUSH_TTL_MS = PUSH_TTL_SECONDS * 1000;
 
@@ -54,16 +45,6 @@ export class PushRepository extends Context.Service<
       installationId: string,
     ) => Effect.Effect<Option.Option<PushDevice>>;
     readonly deleteDevice: (installationId: string) => Effect.Effect<void>;
-    readonly setPresence: (
-      installationId: string,
-      active: boolean,
-      agentId: string | null,
-    ) => Effect.Effect<boolean>;
-    /** Whether the device shows this bot's chat now, so a reply there needs no notification. */
-    readonly isSuppressed: (
-      installationId: string,
-      agentId: string,
-    ) => Effect.Effect<boolean>;
     readonly enqueue: (event: ReplyEvent) => Effect.Effect<void>;
     readonly pending: () => Effect.Effect<ReadonlyArray<PendingDelivery>>;
     readonly markDelivered: (
@@ -145,16 +126,6 @@ export class PushRepository extends Context.Service<
             set: values,
           });
 
-        yield* db
-          .insert(pushPresence)
-          .values({
-            installationId,
-            active: false,
-            agentId: null,
-            refreshedAt: yield* Clock.currentTimeMillis,
-          })
-          .onConflictDoNothing();
-
         return Option.getOrThrow(yield* getDevice(installationId));
       }, Effect.orDie);
 
@@ -166,51 +137,11 @@ export class PushRepository extends Context.Service<
           .where(eq(pushDevices.installationId, installationId));
       }, Effect.orDie);
 
-      const setPresence = Effect.fn("PushRepository.setPresence")(function* (
-        installationId: string,
-        active: boolean,
-        agentId: string | null,
-      ) {
-        if (Option.isNone(yield* getDevice(installationId))) return false;
-
-        const presence = {
-          active,
-          agentId,
-          refreshedAt: yield* Clock.currentTimeMillis,
-        };
-
-        yield* db
-          .insert(pushPresence)
-          .values({ installationId, ...presence })
-          .onConflictDoUpdate({
-            target: pushPresence.installationId,
-            set: presence,
-          });
-
-        return true;
-      }, Effect.orDie);
-
-      const isSuppressed = Effect.fn("PushRepository.isSuppressed")(function* (
-        installationId: string,
-        agentId: string,
-      ) {
-        const [row] = yield* db
-          .select()
-          .from(pushPresence)
-          .where(eq(pushPresence.installationId, installationId));
-
-        return (
-          !!row?.active &&
-          row.agentId === agentId &&
-          (yield* Clock.currentTimeMillis) - row.refreshedAt <= PRESENCE_TTL_MS
-        );
-      }, Effect.orDie);
-
       const enqueue = Effect.fn("PushRepository.enqueue")(function* (
         event: ReplyEvent,
       ) {
         const now = yield* Clock.currentTimeMillis;
-        const createdAt = DateTime.formatIso(yield* DateTime.now);
+        const createdAt = DateTime.formatIso(DateTime.makeUnsafe(now));
 
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
@@ -226,7 +157,7 @@ export class PushRepository extends Context.Service<
               .onConflictDoNothing();
 
             const [outbox] = yield* tx
-              .select({ id: pushOutbox.id })
+              .select({ id: pushOutbox.id, createdAt: pushOutbox.createdAt })
               .from(pushOutbox)
               .where(eq(pushOutbox.eventId, event.eventId));
 
@@ -243,7 +174,9 @@ export class PushRepository extends Context.Service<
                 devices.map((device) => ({
                   outboxId: outbox.id,
                   installationId: device.installationId,
-                  nextAttemptAt: now,
+                  nextAttemptAt:
+                    DateTime.makeUnsafe(outbox.createdAt).epochMilliseconds +
+                    3000,
                 })),
               )
               .onConflictDoNothing();
@@ -359,8 +292,6 @@ export class PushRepository extends Context.Service<
         upsertDevice,
         getDevice,
         deleteDevice,
-        setPresence,
-        isSuppressed,
         enqueue,
         pending,
         markDelivered,

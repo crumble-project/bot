@@ -473,9 +473,16 @@ describe("push database migrations", () => {
     const current = schemaOf(fresh);
     expect(
       Object.fromEntries(
-        Object.keys(baseline).map((name) => [name, current[name]]),
+        Object.keys(baseline)
+          .filter((name) => name !== "push_presence")
+          .map((name) => [name, current[name]]),
       ),
-    ).toEqual(baseline);
+    ).toEqual(
+      Object.fromEntries(
+        Object.entries(baseline).filter(([name]) => name !== "push_presence"),
+      ),
+    );
+    expect(current["push_presence"]).toBeUndefined();
     expect(
       Object.keys(current)
         .filter((name) => !(name in baseline))
