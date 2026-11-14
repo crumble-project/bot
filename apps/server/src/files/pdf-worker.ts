@@ -1,4 +1,5 @@
 import { getDocumentProxy } from "unpdf";
+import { z } from "zod";
 
 const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 
@@ -25,11 +26,29 @@ try {
     page.cleanup();
   }
 
+  const ack = new Promise<void>((resolve, reject) => {
+    process.once("message", (message) => {
+      if (z.object({ kind: z.literal("ack") }).safeParse(message).success)
+        resolve();
+      else reject(new Error("Invalid acknowledgment"));
+    });
+    process.once("disconnect", () => reject(new Error("Parent disconnected")));
+  });
+
   process.stdout.write(
-    JSON.stringify(
-      output.trim() ? { kind: "text", text: output.trim() } : { kind: "none" },
-    ),
+    `${JSON.stringify(output.trim() ? { kind: "text", text: output.trim() } : { kind: "none" })}\n`,
   );
+  await ack;
+
+  if (!process.send || !process.connected)
+    throw new Error("Parent disconnected");
+  await new Promise<void>((resolve, reject) => {
+    process.send?.({ kind: "ack-received" }, (error) =>
+      error ? reject(error) : resolve(),
+    );
+  });
+  process.disconnect?.();
 } catch {
+  if (process.connected) process.disconnect?.();
   process.exitCode = 1;
 }
