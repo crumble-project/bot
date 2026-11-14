@@ -23,7 +23,9 @@ type AdmissionDeps = {
 };
 
 export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
-  const { callNotes, events, executions, monitors, runtime } = context;
+  const { callNotes, events, executions, monitors, runtime, scriptRuns } =
+    context;
+
   const { agent } = deps.lookup;
   const { settle } = deps.notifications;
 
@@ -33,6 +35,14 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     if (request.kind !== "event") return;
 
     return (yield* events.eventWithSource(request.eventId)) ?? undefined;
+  });
+
+  const scriptSucceeded = Effect.fnUntraced(function* (execution: Execution) {
+    const request = parseRequestId(execution.requestId);
+
+    if (request.kind !== "script") return false;
+
+    return (yield* scriptRuns.status(request.runId)) === "succeeded";
   });
 
   // An outside call's goal and transcript reach the model, never the stored message.
@@ -80,7 +90,11 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       prepared.modelContent,
       origin,
       execution.requestId,
-      { event, call: Option.getOrUndefined(call) },
+      {
+        event,
+        call: Option.getOrUndefined(call),
+        scriptSucceeded: yield* scriptSucceeded(execution),
+      },
     );
 
     const submissionId = yield* pi(() =>

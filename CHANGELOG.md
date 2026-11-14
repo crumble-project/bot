@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bots may stay quiet after automations. A scheduled or event automation, and a succeeded script automation's result, tell the bot it can react with 👍 instead of replying when the run found nothing the owner needs, unless the automation asks for a message every time. A reaction sends no notification. Results of failed, timed-out, and interrupted script runs don't carry the note.
 - Push notifications wait at least three seconds after enqueue and are suppressed on every device when the reply was seen or its bot or group chat is active in a focused web tab. Request cards count as seen only after their content loads and appears in the viewport. Browser notifications and unread counters are unchanged.
 - Breaking: independent chat views and explicit reply acknowledgements replace the device-presence endpoint. Existing Apple and Android clients still register for and receive pushes, but must adopt the new attention API before their foreground chats suppress pushes on other devices.
 

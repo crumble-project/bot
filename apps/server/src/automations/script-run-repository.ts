@@ -20,6 +20,7 @@ export class ScriptRunRepository extends Context.Service<
   {
     readonly create: (run: ScriptRun) => Effect.Effect<void>;
     readonly finish: (id: string, result: FinishedRun) => Effect.Effect<void>;
+    readonly status: (id: string) => Effect.Effect<ScriptRun["status"] | null>;
     readonly list: (
       scheduleId: string,
       options: { limit: number; before?: string | undefined },
@@ -44,6 +45,17 @@ export class ScriptRunRepository extends Context.Service<
         result: FinishedRun,
       ) {
         yield* db.update(scriptRuns).set(result).where(eq(scriptRuns.id, id));
+      }, Effect.orDie);
+
+      const status = Effect.fn("ScriptRunRepository.status")(function* (
+        id: string,
+      ) {
+        const [run] = yield* db
+          .select({ status: scriptRuns.status })
+          .from(scriptRuns)
+          .where(eq(scriptRuns.id, id));
+
+        return run?.status ?? null;
       }, Effect.orDie);
 
       const list = Effect.fn("ScriptRunRepository.list")(function* (
@@ -103,6 +115,7 @@ export class ScriptRunRepository extends Context.Service<
       return ScriptRunRepository.of({
         create,
         finish,
+        status,
         list,
         interruptRunning,
         prune,
