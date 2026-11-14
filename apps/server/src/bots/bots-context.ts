@@ -8,6 +8,7 @@ import {
 } from "../shared/keyed";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
+import { ScriptRunRepository } from "../automations/script-run-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { Activity } from "./bots";
@@ -38,6 +39,7 @@ export type BotsContext = {
   readonly executions: ExecutionRepository["Service"];
   readonly settings: SettingsRepository["Service"];
   readonly schedules: ScheduleRepository["Service"];
+  readonly scriptRuns: ScriptRunRepository["Service"];
   readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
   readonly library: Library["Service"];
@@ -63,6 +65,7 @@ export const botsContext = Effect.gen(function* () {
     executions: yield* ExecutionRepository,
     settings: yield* SettingsRepository,
     schedules: yield* ScheduleRepository,
+    scriptRuns: yield* ScriptRunRepository,
     events: yield* EventRepository,
     runtime: yield* BotRuntime,
     library: yield* Library,

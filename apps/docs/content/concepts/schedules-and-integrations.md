@@ -27,6 +27,13 @@ to open the bot's chat, or a script run to see its output.
 A prompt automation sends its prompt to the bot's chat, and the bot answers
 there. A script automation runs a shell command instead.
 
+When a run finds nothing you need to know, the bot reacts to the automation's
+message with 👍 instead of replying, and you get no notification. To hear from
+the bot after every run, say so in the prompt, such as "Send me the summary
+every morning, even when nothing changed." The same holds for the result of a
+script automation that succeeded, when **Send results to the chat** is on. A
+script run that failed or timed out doesn't give the bot that option.
+
 A one-time automation that already ran doesn't run again when you edit, pause,
 or resume it. To run it again, give it a new time or use **Run now**.
 

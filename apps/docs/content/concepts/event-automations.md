@@ -61,6 +61,10 @@ A prompt automation sends its prompt to the bot's chat, followed by the event:
 the method, query string, headers, and body. The chat shows only the prompt,
 labeled with the automation and the source.
 
+When an event needs nothing from you, the bot reacts to the automation's
+message with 👍 instead of replying, and you get no notification. To hear about
+every event, say so in the prompt.
+
 The event is marked as untrusted data from outside Crumble. Text in a webhook
 can come from anyone, such as the author of a GitHub issue, so the bot must not
 follow instructions in it. [Intent checks](/concepts/workspaces#what-counts-as-your-request) count only the

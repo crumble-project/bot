@@ -1,6 +1,7 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { EventRepository } from "../event-sources/event-repository";
 import type { ScheduleRepository } from "../automations/schedule-repository";
+import type { ScriptRunRepository } from "../automations/script-run-repository";
 import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";
 import type { SettingsRepository } from "../shared/settings-repository";
@@ -23,6 +24,7 @@ type StandaloneServices =
   | ExecutionRepository
   | SettingsRepository
   | ScheduleRepository
+  | ScriptRunRepository
   | EventRepository
   | BotNotices
   | CallNotes
