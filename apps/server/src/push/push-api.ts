@@ -1,11 +1,12 @@
-import { Effect } from "effect";
 import type { Env } from "hono";
 import { pushRoutes } from "../contract/push";
 import type { Register } from "../contract/route";
-import { NotFound } from "../shared/errors";
+import { ChatAttention } from "./chat-attention";
 import { Push } from "./push";
 
-export function registerPushRoutes(options: { register: Register<Env, Push> }) {
+export function registerPushRoutes(options: {
+  register: Register<Env, Push | ChatAttention>;
+}) {
   const { register } = options;
 
   register(pushRoutes.pushStatus, function* (c) {
@@ -40,20 +41,17 @@ export function registerPushRoutes(options: { register: Register<Env, Push> }) {
 
     return c.body(null, 204);
   });
-  register(pushRoutes.putPresence, function* (c) {
-    const push = yield* Push;
-    const input = c.req.valid("json");
-
-    const registered = yield* push.presence(
-      c.req.valid("param").installationId,
-      input.active,
-      input.agentId,
+  register(pushRoutes.putView, function* (c) {
+    yield* (yield* ChatAttention).view(
+      c.req.valid("param").viewId,
+      c.req.valid("json").chat,
     );
 
-    if (!registered)
-      return yield* Effect.fail(
-        new NotFound({ message: "Push device not found" }),
-      );
+    return c.body(null, 204);
+  });
+  register(pushRoutes.postSeen, function* (c) {
+    const input = c.req.valid("json");
+    yield* (yield* ChatAttention).seen(input.chat, input.eventIds);
 
     return c.body(null, 204);
   });

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { activityEvent } from "@crumble/server/contract/api-responses";
 import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
-import { invalidateGroups } from "@/features/group-chats/api";
+import { groupChatQuery, invalidateGroups } from "@/features/group-chats/api";
+import { chatQuery } from "@/features/chat/api";
 import { follow, queryClient } from "@/lib/api";
 import { type ChatLinks, notifyReply } from "@/lib/notifications";
 import { onSessionReset } from "@/lib/session";
@@ -76,7 +77,14 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
 
         if (event.type === "chat-preview")
           preview(event.agentId, event.lastMessage);
-        else notifyReply(event, links);
+        else {
+          const queryKey = event.groupId
+            ? groupChatQuery(event.groupId).queryKey
+            : chatQuery(event.agentId).queryKey;
+
+          void queryClient.invalidateQueries({ queryKey });
+          notifyReply(event, links);
+        }
       },
     },
     controller.signal,

@@ -65,7 +65,7 @@ export function jobItems(
 
       if (subject !== undefined) step.subject = subject;
 
-      if (result) step.result = result;
+      if (result) step.result = { ...result, replyReferences: [] };
 
       return [step];
     });

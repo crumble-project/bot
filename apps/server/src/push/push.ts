@@ -18,6 +18,7 @@ import {
   type ReplyActivity,
   type ReplyEvent,
 } from "../contract/reply-event";
+import { ChatAttention } from "./chat-attention";
 import type { PushDevice, PushDeviceInput } from "./push-model";
 import { PushRepository, type PendingDelivery } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
@@ -91,11 +92,6 @@ export class Push extends Context.Service<
       input: PushDeviceInput,
     ) => Effect.Effect<PushRegistration>;
     readonly remove: (installationId: string) => Effect.Effect<void>;
-    readonly presence: (
-      installationId: string,
-      active: boolean,
-      agentId: string | null,
-    ) => Effect.Effect<boolean>;
     readonly enqueue: (activity: ReplyActivity) => Effect.Effect<void>;
     /** One delivery pass over what is due; passes run one at a time and finish once started. */
     readonly drain: Effect.Effect<void>;
@@ -106,6 +102,7 @@ export class Push extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* PushRepository;
       const transports = yield* PushTransports;
+      const attention = yield* ChatAttention;
       const serverId = yield* repository.serverId;
       const passes = yield* Semaphore.make(1);
 
@@ -155,13 +152,13 @@ export class Push extends Context.Service<
 
           const event = yield* decodeEvent(row.eventJson).pipe(Effect.orDie);
 
-          // Presence names the bot chat a client shows; a group answer is not in it.
-          const suppressed =
-            !event.groupId &&
-            (yield* repository.isSuppressed(
-              device.installationId,
-              event.agentId,
-            ));
+          const chat = event.groupId
+            ? { kind: "group" as const, id: event.groupId }
+            : { kind: "bot" as const, id: event.agentId };
+
+          const suppressed = yield* attention
+            .isSuppressed(chat, event.eventId)
+            .pipe(Effect.catchTag("NotFound", () => Effect.succeed(true)));
 
           const transport = transports[device.transport];
 
@@ -177,6 +174,7 @@ export class Push extends Context.Service<
         }
 
         yield* repository.cleanup;
+        yield* attention.cleanup;
       });
 
       // Uninterruptible, so closing waits for a send in progress instead of losing its outcome.
@@ -204,6 +202,12 @@ export class Push extends Context.Service<
       const enqueue = Effect.fn("Push.enqueue")(function* (
         activity: ReplyActivity,
       ) {
+        const chat = activity.groupId
+          ? { kind: "group" as const, id: activity.groupId }
+          : { kind: "bot" as const, id: activity.agentId };
+
+        if (!(yield* attention.exists(chat))) return;
+
         const createdAt =
           activity.createdAt ?? DateTime.formatIso(yield* DateTime.now);
 
@@ -217,7 +221,6 @@ export class Push extends Context.Service<
         transports: { apns: !!transports.apns, fcm: !!transports.fcm },
         device,
         remove: repository.deleteDevice,
-        presence: repository.setPresence,
         enqueue,
         drain,
       });

@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
+import { getChatAttention } from "@/lib/chat-attention";
+import { AttentionChatContext, selectAttentionChat } from "./reply-attention";
 import { type HistoryPage, type Message, historyPage } from "./api";
 import { api, type RoutePath } from "@/lib/api";
 import { useChatStream } from "./chat-stream";
@@ -144,6 +146,7 @@ export function useConversation<S extends HistoryPage>(
 
   return {
     snapshot,
+    attentionKey: target.key,
     outgoing,
     sending,
     stop,
@@ -348,9 +351,26 @@ export function ConversationMessages({
   renderNotice?: (message: Message, row: ReactNode) => ReactNode;
 }) {
   const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;
+  const chatKey = conversation.attentionKey;
+
+  useEffect(() => {
+    const separator = chatKey.indexOf(":");
+    const kind = chatKey.slice(0, separator);
+    const id = chatKey.slice(separator + 1);
+
+    if ((kind !== "bot" && kind !== "group") || !id) return;
+    const controller = getChatAttention();
+    const release = selectAttentionChat(chatKey);
+
+    controller.setChat({ kind, id });
+
+    return () => {
+      if (release()) controller.setChat(null);
+    };
+  }, [chatKey]);
 
   return (
-    <>
+    <AttentionChatContext value={conversation.attentionKey}>
       {hasMore && oldest && (
         <LoadEarlier
           pending={loadEarlier.isPending}
@@ -375,7 +395,7 @@ export function ConversationMessages({
           conversation={conversation}
         />
       ))}
-    </>
+    </AttentionChatContext>
   );
 }
 

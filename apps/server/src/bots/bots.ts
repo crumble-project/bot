@@ -18,7 +18,12 @@ import type {
   SnapshotOptions,
 } from "./runtime";
 import type { JobAnswerInput, SendOptions } from "./bots-submissions";
-import type { BotMessageEvent, PageOptions } from "../transcript/transcript";
+import type {
+  BotMessageEvent,
+  PageOptions,
+  TranscriptMessage,
+} from "../transcript/transcript";
+import type { ReplyReference } from "../contract/push";
 import type { CallEventData } from "../transcript/entries";
 
 export type ChatPreviewActivity = {
@@ -44,7 +49,12 @@ export type LearnedActivity = {
 
 export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
 
-export type ChatSnapshot = RuntimeSnapshot & {
+type ReferencedMessage = TranscriptMessage & {
+  replyReferences: ReplyReference[];
+};
+
+export type ChatSnapshot = Omit<RuntimeSnapshot, "messages"> & {
+  messages: ReferencedMessage[];
   working: Working;
   agentId: string;
   conversation: Conversation;
@@ -54,7 +64,9 @@ export type ChatSnapshot = RuntimeSnapshot & {
 type Page<K extends keyof AgentRuntime> = AgentRuntime[K] extends (
   ...args: never[]
 ) => Promise<infer A>
-  ? A
+  ? A extends { messages: TranscriptMessage[] }
+    ? Omit<A, "messages"> & { messages: ReferencedMessage[] }
+    : A
   : never;
 
 export class Bots extends Context.Service<
@@ -69,6 +81,7 @@ export class Bots extends Context.Service<
       callback: () => void,
     ) => () => void;
     readonly onActivity: (callback: (event: Activity) => void) => () => void;
+    readonly changed: (conversationId: string) => Effect.Effect<void>;
     /** Runs when an execution is done, failed, or cancelled; it may run more than once for one execution. */
     readonly onSettled: (
       callback: (execution: Execution) => void | Promise<void>,
@@ -81,7 +94,9 @@ export class Bots extends Context.Service<
      * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
      * Job reports reach the chat without an execution, so a finished execution never announces them.
      */
-    readonly announceJobAnswer: (answer: JobAnswer) => Effect.Effect<void>;
+    readonly announceJobAnswer: (
+      answer: JobAnswer,
+    ) => Effect.Effect<void, AppError>;
     readonly announce: (
       event: ReplyActivity | LearnedActivity,
     ) => Effect.Effect<void>;
@@ -185,12 +200,7 @@ export class Bots extends Context.Service<
   );
 }
 
-const SYNC_BOTS = [
-  "agent",
-  "conversation",
-  "announceJobAnswer",
-  "announce",
-] as const;
+const SYNC_BOTS = ["agent", "conversation", "announce"] as const;
 
 export type BotsAccess = Access<Bots["Service"], (typeof SYNC_BOTS)[number]>;
 

@@ -197,16 +197,17 @@ export function latestReply(messages: TranscriptMessage[]) {
   const input = messages.findLastIndex((message) => message.role === "user");
   const output = messages.slice(input + 1);
 
+  const waiting = output.findLast(
+    (message) => !message.isError && OWNER_REQUEST_TOOLS.has(message.toolName),
+  );
+
   return {
     reply: output.findLast(
       (message) => message.role === "assistant" && hasTextBlock(message),
     ),
     reaction: output.map(reactionOf).findLast(Boolean),
-    waitingFor: output
-      .map((message) =>
-        message.isError ? undefined : OWNER_REQUEST_TOOLS.get(message.toolName),
-      )
-      .findLast(Boolean),
+    waitingFor: waiting && OWNER_REQUEST_TOOLS.get(waiting.toolName),
+    waiting,
   };
 }
 

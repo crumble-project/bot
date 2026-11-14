@@ -65,6 +65,7 @@ const toolResult: Message = {
   entryId: "t:1",
   role: "toolResult",
   content: "",
+  replyReferences: [],
   toolName: "request_call",
   toolDetails: pending,
 };
@@ -297,6 +298,7 @@ test("an outside call's end notice is one card with how the call went, and an ow
     role: "user",
     kind: "crumble.message",
     content,
+    replyReferences: [],
     requestId,
     origin: { kind: "call" },
   });

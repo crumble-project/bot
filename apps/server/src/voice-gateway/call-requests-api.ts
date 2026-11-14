@@ -45,12 +45,20 @@ export function registerCallRequestRoutes(options: Options) {
   register(routes.callRequestTranscript, function* (c) {
     const callRequests = yield* CallRequests;
 
+    const page = yield* callRequests.transcript(
+      agentOf(c.req.param("id")),
+      c.req.param("requestId"),
+      c.req.valid("query"),
+    );
+
     return c.json(
-      yield* callRequests.transcript(
-        agentOf(c.req.param("id")),
-        c.req.param("requestId"),
-        c.req.valid("query"),
-      ),
+      {
+        ...page,
+        messages: page.messages.map((message) => ({
+          ...message,
+          replyReferences: [],
+        })),
+      },
       200,
     );
   });

@@ -6,6 +6,38 @@ import {
 } from "../shared/push-devices";
 import { body, define, empty, json } from "./route";
 
+export const chatReference = z.object({
+  kind: z.enum(["bot", "group"]),
+  id: z.string().min(1),
+});
+
+export type ChatReference = z.infer<typeof chatReference>;
+
+export const replySurface = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("text") }),
+  z.object({ kind: z.literal("tool-card"), toolCallId: z.string().min(1) }),
+  z.object({ kind: z.literal("held-action"), actionId: z.string().min(1) }),
+]);
+
+export type ReplySurface = z.infer<typeof replySurface>;
+
+export const replyReference = z.object({
+  eventId: z.string().min(1),
+  surface: replySurface,
+});
+
+export type ReplyReference = z.infer<typeof replyReference>;
+
+export const replyAssociation = z.object({
+  eventId: z.string().min(1),
+  chat: chatReference,
+  messageId: z.string().min(1),
+  entryId: z.string().min(1),
+  surface: replySurface,
+});
+
+export type ReplyAssociation = z.infer<typeof replyAssociation>;
+
 export const pushInput = z
   .object({
     platform: z.enum(PUSH_PLATFORMS),
@@ -38,9 +70,18 @@ export const pushInput = z
       });
   });
 
-export const presenceInput = z.object({
-  active: z.boolean(),
-  agentId: z.uuid().nullable(),
+export const viewInput = z.object({ chat: chatReference.nullable() });
+
+export const seenInput = z.object({
+  chat: chatReference,
+  eventIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(100)
+    .refine(
+      (ids) => new Set(ids).size === ids.length,
+      "Event IDs must be distinct",
+    ),
 });
 
 export const pushStatusResponse = z
@@ -77,11 +118,21 @@ export const pushRoutes = {
     request: { params: installation },
     responses: { 204: empty },
   }),
-  putPresence: define({
+  putView: define({
     method: "put",
-    path: "/v1/push/devices/{installationId}/presence",
-    operationId: "putPushPresence",
-    request: { params: installation, body: body(presenceInput) },
+    path: "/v1/chat-attention/views/{viewId}",
+    operationId: "putChatAttentionView",
+    request: {
+      params: z.object({ viewId: z.string().min(1) }),
+      body: body(viewInput),
+    },
+    responses: { 204: empty },
+  }),
+  postSeen: define({
+    method: "post",
+    path: "/v1/chat-attention/seen",
+    operationId: "postChatAttentionSeen",
+    request: { body: body(seenInput) },
     responses: { 204: empty },
   }),
 };

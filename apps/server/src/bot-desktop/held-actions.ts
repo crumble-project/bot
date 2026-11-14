@@ -27,6 +27,8 @@ export type HeldAction = {
   decidedAt: string | null;
 };
 
+export type HeldActionSurface = { entryId: string; messageId: string };
+
 export type HoldInput = Pick<
   HeldAction,
   "agentId" | "job" | "action" | "page" | "ownerMessages" | "reason"
@@ -77,7 +79,13 @@ export class HeldActions extends Context.Service<
     readonly expire: (id: string) => Effect.Effect<void>;
     /** Succeeds with the owner's decision; a decision made earlier is returned at once. */
     readonly untilDecided: (id: string) => Effect.Effect<HoldDecision>;
-    readonly onHeld: (listener: (held: HeldAction) => void) => () => void;
+    readonly cardPosted: (
+      action: HeldAction,
+      surface: HeldActionSurface,
+    ) => Effect.Effect<void>;
+    readonly onHeld: (
+      listener: (held: HeldAction, surface: HeldActionSurface) => void,
+    ) => () => void;
   }
 >()("crumble/bot-desktop/HeldActions") {
   static readonly layer = Layer.effect(
@@ -85,7 +93,10 @@ export class HeldActions extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const listeners = keyedListeners<HoldDecision>();
-      const heldListeners = new Set<(held: HeldAction) => void>();
+
+      const heldListeners = new Set<
+        (held: HeldAction, surface: HeldActionSurface) => void
+      >();
 
       // No wait outlives the process: a job's tool call ends with it.
       yield* db
@@ -117,11 +128,7 @@ export class HeldActions extends Context.Service<
 
         yield* db.insert(heldActions).values(values).pipe(Effect.orDie);
 
-        const held = heldOf(values);
-
-        for (const listener of heldListeners) listener(held);
-
-        return held;
+        return heldOf(values);
       });
 
       const list = Effect.fn("HeldActions.list")(function* (agentId: string) {
@@ -222,7 +229,14 @@ export class HeldActions extends Context.Service<
         return yield* Deferred.await(decided).pipe(Effect.ensuring(stop));
       });
 
-      const onHeld = (listener: (held: HeldAction) => void) => {
+      const cardPosted = (action: HeldAction, surface: HeldActionSurface) =>
+        Effect.sync(() => {
+          for (const listener of heldListeners) listener(action, surface);
+        });
+
+      const onHeld = (
+        listener: (held: HeldAction, surface: HeldActionSurface) => void,
+      ) => {
         heldListeners.add(listener);
 
         return () => void heldListeners.delete(listener);
@@ -234,6 +248,7 @@ export class HeldActions extends Context.Service<
         decide,
         expire,
         untilDecided,
+        cardPosted,
         onHeld,
       });
     }),
@@ -244,7 +259,7 @@ const SYNC_HELD_ACTIONS = ["list"] as const;
 
 export type HeldActionsAccess = Omit<
   Access<HeldActions["Service"], (typeof SYNC_HELD_ACTIONS)[number]>,
-  "expire" | "untilDecided" | "onHeld"
+  "untilDecided" | "onHeld"
 > & {
   /** Resolves with the owner's decision; cancelling `context` expires the action and ends the wait. */
   until(id: string, context: PiContext): Promise<HoldDecision>;

@@ -15,6 +15,7 @@ import type { RuntimeWatch, SnapshotOptions } from "./runtime";
 import {
   latestMessagePreview,
   type PageOptions,
+  type TranscriptMessage,
 } from "../transcript/transcript";
 import type { JobKindName } from "../shared/job-kinds";
 
@@ -85,6 +86,21 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       return source;
     });
 
+  const withReferences = Effect.fnUntraced(function* (
+    agentId: string,
+    messages: TranscriptMessage[],
+  ) {
+    const references = yield* context.attention.references(
+      { kind: "bot", id: agentId },
+      messages.map((message) => message.id),
+    );
+
+    return messages.map((message) => ({
+      ...message,
+      replyReferences: [...(references.get(message.id) ?? [])],
+    }));
+  });
+
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
     options: SnapshotOptions = {},
@@ -100,6 +116,7 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
 
     return {
       ...read,
+      messages: yield* withReferences(owner.id, read.messages),
       agentId: owner.id,
       conversation: found,
       working: workingOf(read.status, read.partial, read.messages),
@@ -132,19 +149,36 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     origin,
     snapshot,
     agentPreviews,
-    history: (agentId: string, options: PageOptions) =>
-      withAgent(agentId, (owner) => runtime.history(owner, options)),
+    history: Effect.fn("Bots.history")(function* (
+      agentId: string,
+      options: PageOptions,
+    ) {
+      const page = yield* withAgent(agentId, (owner) =>
+        runtime.history(owner, options),
+      );
+
+      return {
+        ...page,
+        messages: yield* withReferences(agentId, page.messages),
+      };
+    }),
     jobs: (agentId: string, kind: JobKindName) =>
       withAgent(agentId, (owner) => runtime.jobs(owner, kind)),
-    jobHistory: (
+    jobHistory: Effect.fn("Bots.jobHistory")(function* (
       agentId: string,
       kind: JobKindName,
       name: string,
       options: PageOptions,
-    ) =>
-      withAgent(agentId, (owner) =>
+    ) {
+      const page = yield* withAgent(agentId, (owner) =>
         runtime.jobHistory(owner, kind, name, options),
-      ),
+      );
+
+      return {
+        ...page,
+        messages: yield* withReferences(agentId, page.messages),
+      };
+    }),
     attachment: (agentId: string, entryId: string, index: number) =>
       withAgent(agentId, (owner) => runtime.attachment(owner, entryId, index)),
     watch: (

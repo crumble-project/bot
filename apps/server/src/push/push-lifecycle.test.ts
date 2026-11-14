@@ -13,6 +13,10 @@ import { PushTransports, type PushTransport } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
 import type { Activity } from "../bots/bots";
 import { until } from "../../test/support/until";
+import { coreLayer } from "../app/core-layer";
+import { Store } from "../../test/support/store";
+import { PushDatabase } from "./push-database";
+import { pushOutbox } from "./schema";
 
 const dirs: string[] = [];
 
@@ -24,7 +28,7 @@ const id = () => crypto.randomUUID();
 
 type StoreProbe = { closes: number; failPending: number };
 
-const observedRepository = (dir: string, probe: StoreProbe) =>
+const observedRepository = (probe: StoreProbe) =>
   Layer.effect(
     PushRepository,
     Effect.gen(function* () {
@@ -47,7 +51,7 @@ const observedRepository = (dir: string, probe: StoreProbe) =>
           }),
       });
     }),
-  ).pipe(Layer.provide(PushRepository.layer(dir)));
+  ).pipe(Layer.provide(PushRepository.layerNoDeps));
 
 function activitySource() {
   let listener: ((event: Activity) => void) | undefined;
@@ -84,12 +88,31 @@ async function setup(transport: Omit<PushTransport, "canSend">) {
           Layer.provide(
             Layer.succeed(PushTransports, { fcm, apns: undefined }),
           ),
-          Layer.provideMerge(observedRepository(dir, probe)),
+          Layer.provideMerge(observedRepository(probe)),
         ),
       ),
       Layer.provide(source.layer),
+      Layer.provideMerge(coreLayer(dir)),
       Layer.provideMerge(TestClock.layer()),
     ),
+  );
+
+  await runtime.runPromise(Effect.void);
+  const store = new Store(runtime);
+  store.createAgent(
+    {
+      name: "Bot",
+      description: "",
+      instructions: "help",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: [],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    },
+    agentId,
   );
 
   await runtime.runPromise(
@@ -104,13 +127,15 @@ async function setup(transport: Omit<PushTransport, "canSend">) {
     ),
   );
 
-  return { runtime, probe, source };
+  return { runtime, probe, source, dir };
 }
+
+const agentId = id();
 
 const reply = (): ReplyActivity => ({
   type: "reply",
   executionId: id(),
-  agentId: id(),
+  agentId,
   agentName: "Bot",
   entryId: null,
   origin: "owner",
@@ -150,6 +175,7 @@ describe("push lifecycle", () => {
     });
 
     await runtime.runPromise(enqueueReply);
+    await runtime.runPromise(TestClock.adjust(3000));
     const draining = runtime.runPromise(Push.use((push) => push.drain));
     await until(() => order.length > 0);
 
@@ -171,13 +197,13 @@ describe("push lifecycle", () => {
     ]);
   });
 
-  test("a reply that arrives during a send is still delivered when closing", async () => {
+  test("a reply that arrives during a send is persisted when closing", async () => {
     const release = Promise.withResolvers<void>();
     const sent: string[] = [];
 
     let sending = false;
 
-    const { runtime, source } = await setup({
+    const { runtime, source, dir } = await setup({
       send: (_device, event) =>
         Effect.promise(async () => {
           sending = true;
@@ -192,13 +218,26 @@ describe("push lifecycle", () => {
     const first = reply();
     const second = reply();
     source.emit(first);
+    await until(
+      async () =>
+        (
+          await runtime.runPromise(
+            PushDatabase.use((db) =>
+              db.select().from(pushOutbox).pipe(Effect.orDie),
+            ),
+          )
+        ).length === 1,
+    );
+    await runtime.runPromise(TestClock.adjust(3000));
     await until(() => sending);
     source.emit(second);
     await until(
       async () =>
         (
           await runtime.runPromise(
-            PushRepository.use((repository) => repository.pending()),
+            PushDatabase.use((db) =>
+              db.select().from(pushOutbox).pipe(Effect.orDie),
+            ),
           )
         ).length === 2,
     );
@@ -207,7 +246,32 @@ describe("push lifecycle", () => {
     await Bun.sleep(20);
     release.resolve();
     await closing;
+    expect(sent).toEqual([first.executionId]);
+
+    const restarted = ManagedRuntime.make(
+      Push.layerNoDeps.pipe(
+        Layer.provide(
+          Layer.succeed(PushTransports, {
+            apns: undefined,
+            fcm: {
+              canSend: () => true,
+              send: (_device, event) =>
+                Effect.sync(() => {
+                  sent.push(event.eventId);
+                  return "delivered" as const;
+                }),
+            },
+          }),
+        ),
+        Layer.provideMerge(PushRepository.layerNoDeps),
+        Layer.provideMerge(coreLayer(dir)),
+        Layer.provideMerge(TestClock.layer()),
+      ),
+    );
+    await restarted.runPromise(TestClock.setTime(6000));
+    await restarted.runPromise(Push.use((push) => push.drain));
     expect(sent).toEqual([first.executionId, second.executionId]);
+    await restarted.dispose();
   });
 
   test("closing twice resolves and closes the store once", async () => {
@@ -247,7 +311,7 @@ describe("push lifecycle", () => {
       await until(() => probe.failPending === 0);
       expect(count.sends).toBe(0);
 
-      await runtime.runPromise(TestClock.adjust("1 second"));
+      await runtime.runPromise(TestClock.adjust("4 seconds"));
       await until(() => count.sends > 0);
       expect(count.sends).toBe(1);
       expect(unhandled).toBe(0);

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import { logged } from "../shared/app-errors";
 import { activeExecution, type Execution } from "../shared/domain";
-import { formatEntryId } from "../shared/entry-ids";
+import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import { nowIso } from "../shared/time";
 import type { Activity } from "./bots";
 import type { BotsContext } from "./bots-context";
@@ -88,17 +88,30 @@ export const botsNotifications = (context: BotsContext) => {
     // Bots of another server in the same process are not this account's.
     if (!owner) return;
 
+    const entryId = formatEntryId(owner.id, Number(answer.entryId));
+
+    yield* context.attention.register({
+      eventId: answer.eventId,
+      chat: { kind: "bot", id: owner.id },
+      entryId,
+      messageId: formatMessageId(entryId, 0),
+      surface: { kind: "text" },
+    });
+
     yield* emit({
       type: "reply",
       executionId: answer.eventId,
       agentId: owner.id,
       agentName: owner.name,
-      entryId: formatEntryId(owner.id, Number(answer.entryId)),
+      entryId,
       origin: answer.kind,
       jobName: answer.name,
       preview: answer.preview,
       createdAt: yield* nowIso,
     });
+    const [chat] = yield* context.conversations.list(owner.id, true);
+
+    if (chat) yield* changed(chat.id);
   });
 
   return {

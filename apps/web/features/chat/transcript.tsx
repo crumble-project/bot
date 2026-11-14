@@ -36,6 +36,7 @@ import { Reply } from "@/components/markdown";
 import { reactionDetails } from "@crumble/server/contract/tool-details";
 import { REACTION_TOOL_NAME } from "@crumble/server/contract/tools";
 import { blocksOf, toolDetailsOf } from "./tool-details";
+import { ReplyAttention } from "./reply-attention";
 
 /** Merges older pages into the live page, dropping IDs they share. Every page is in transcript order, oldest first. */
 export function mergeMessages(older: Message[], live: Message[]) {
@@ -682,9 +683,18 @@ export function BotMessage({
   reactions?: Reaction[] | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+
   return (
     <MessageRow align="start">
       <MessageContent>
+        <ReplyAttention
+          element={element}
+          ready={hasText(message)}
+          references={message.replyReferences.filter(
+            (reference) => reference.surface.kind === "text",
+          )}
+        />
         {sender && <MessageHeader>{sender}</MessageHeader>}
         <div className="flex w-full min-w-0 items-center gap-1">
           <Bubble
@@ -692,7 +702,7 @@ export function BotMessage({
             className="*:data-[slot=bubble-content]:bg-bot-soft!"
             style={color ? botStyle(color) : undefined}
           >
-            <BubbleContent>
+            <BubbleContent ref={setElement}>
               <Reply
                 source={message.presentation?.text ?? message.content}
                 citations={message.presentation?.citations}

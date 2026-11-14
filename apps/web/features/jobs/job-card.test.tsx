@@ -11,6 +11,7 @@ const failure: Message = {
   role: "event",
   kind: JOB_FAILURE_EVENT,
   content: "coding job builder failed: The model is down",
+  replyReferences: [],
   origin: { kind: "coding", name: "builder" },
 };
 

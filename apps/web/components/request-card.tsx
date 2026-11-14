@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
 import type { TablerIcon } from "@tabler/icons-react";
 
@@ -7,14 +7,19 @@ export function SettledCard({
   title,
   outcome,
   action,
+  ref,
 }: {
   icon: TablerIcon;
   title: string;
   outcome: string;
   action?: ReactNode;
+  ref?: Ref<HTMLDivElement>;
 }) {
   return (
-    <div className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3">
+    <div
+      ref={ref}
+      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3"
+    >
       <Icon className="size-4 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {title}

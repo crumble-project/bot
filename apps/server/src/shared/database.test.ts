@@ -469,9 +469,25 @@ describe("push database migrations", () => {
     const existing = databaseFile(fixture("legacy-push-schema.sql"));
     migratePush(existing);
 
-    expect(schemaOf(fresh)).toEqual(
-      schemaOf(databaseFile(fixture("legacy-push-schema.sql"))),
+    const baseline = schemaOf(databaseFile(fixture("legacy-push-schema.sql")));
+    const current = schemaOf(fresh);
+    expect(
+      Object.fromEntries(
+        Object.keys(baseline)
+          .filter((name) => name !== "push_presence")
+          .map((name) => [name, current[name]]),
+      ),
+    ).toEqual(
+      Object.fromEntries(
+        Object.entries(baseline).filter(([name]) => name !== "push_presence"),
+      ),
     );
+    expect(current["push_presence"]).toBeUndefined();
+    expect(
+      Object.keys(current)
+        .filter((name) => !(name in baseline))
+        .sort(),
+    ).toEqual(["chat_views", "reply_associations"]);
     expect(schemaOf(existing)).toEqual(schemaOf(fresh));
     expect(migrationsOf(existing)).toEqual(migrationsOf(fresh));
   });

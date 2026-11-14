@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { type Ref, useState } from "react";
+import type { ReplyReference } from "@crumble/server/contract/push";
+import { ReplyAttention } from "@/features/chat/reply-attention";
 import { useMutation } from "@tanstack/react-query";
 import { IconHandStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,9 @@ function HeldActionCard({
   held,
   title,
   botId,
+  references,
 }: {
+  references: readonly ReplyReference[];
   held: { id: string; job: string };
   title: string;
   botId: string;
@@ -37,6 +41,15 @@ function HeldActionCard({
   );
 
   const action = data && heldIn(data);
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+
+  const attention = (
+    <ReplyAttention
+      element={element}
+      ready={reading === null && action !== undefined}
+      references={references}
+    />
+  );
 
   if (reading || !action)
     return (
@@ -49,14 +62,23 @@ function HeldActionCard({
 
   if (action.status !== "pending")
     return (
-      <SettledCard
-        icon={IconHandStop}
-        title={title}
-        outcome={OUTCOMES[action.status]}
-      />
+      <>
+        {attention}
+        <SettledCard
+          ref={setElement}
+          icon={IconHandStop}
+          title={title}
+          outcome={OUTCOMES[action.status]}
+        />
+      </>
     );
 
-  return <HeldActionPending action={action} botId={botId} />;
+  return (
+    <>
+      {attention}
+      <HeldActionPending action={action} botId={botId} cardRef={setElement} />
+    </>
+  );
 }
 
 function useDecideHeldAction(botId: string, actionId: string, reason: string) {
@@ -101,9 +123,11 @@ function HeldActionSummary({ action }: { action: HeldAction }) {
 function HeldActionPending({
   action,
   botId,
+  cardRef,
 }: {
   action: HeldAction;
   botId: string;
+  cardRef: Ref<HTMLDivElement>;
 }) {
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
@@ -111,7 +135,10 @@ function HeldActionPending({
   const decide = useDecideHeldAction(botId, action.id, reason);
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
+    <div
+      ref={cardRef}
+      className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4"
+    >
       <HeldActionSummary action={action} />
       <CheckedAgainst action={action} />
       {decide.isError && (
@@ -193,5 +220,11 @@ export const heldActionEvent = messageCard(
     kind === "held-action" && heldAction
       ? { held: heldAction, title: content }
       : null,
-  ({ result, chat }) => <HeldActionCard botId={chat.botId} {...result} />,
+  ({ result, chat }) => (
+    <HeldActionCard
+      botId={chat.botId}
+      references={chat.replyReferences ?? []}
+      {...result}
+    />
+  ),
 );

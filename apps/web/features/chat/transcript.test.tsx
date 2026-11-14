@@ -20,6 +20,7 @@ const message = (id: string): Message => ({
   entryId: id,
   role: "assistant",
   content: "",
+  replyReferences: [],
 });
 
 const pending = new Promise<never>(() => {});

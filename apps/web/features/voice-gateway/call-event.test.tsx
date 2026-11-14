@@ -24,6 +24,7 @@ const event = (
   role: "event",
   kind,
   content,
+  replyReferences: [],
   call: { callId: "c1", direction },
 });
 
@@ -88,6 +89,7 @@ test("a call notice is drawn as the same marker, with the bot's reaction, not as
     role: "user",
     kind: "crumble.message",
     content: "Call ended after 4 minutes.",
+    replyReferences: [],
     origin: { kind: "call" },
   };
 

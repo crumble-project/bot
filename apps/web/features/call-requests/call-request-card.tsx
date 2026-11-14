@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { type ReactNode, type Ref, useState } from "react";
+import type { ReplyReference } from "@crumble/server/contract/push";
+import { ReplyAttention } from "@/features/chat/reply-attention";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { IconPhone } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -24,9 +26,11 @@ function CallRequestCard({
   request,
   botId,
   onOpen,
+  references,
 }: {
   request: CallRequest;
   botId: string;
+  references: readonly ReplyReference[];
   onOpen: (requestId: string) => void;
 }) {
   const requestIn = (requests: CallRequest[]) =>
@@ -43,6 +47,15 @@ function CallRequestCard({
   );
 
   const live = data && requestIn(data);
+  const [element, setElement] = useState<HTMLElement | null>(null);
+
+  const attention = (
+    <ReplyAttention
+      element={element}
+      ready={reading === null && live !== undefined}
+      references={references}
+    />
+  );
 
   if (reading || !live)
     return (
@@ -54,14 +67,36 @@ function CallRequestCard({
     );
 
   if (live.status === "pending")
-    return <CallRequestPending request={live} botId={botId} />;
+    return (
+      <>
+        {attention}
+        <CallRequestPending request={live} botId={botId} cardRef={setElement} />
+      </>
+    );
 
   if (live.status === "declined")
     return (
-      <SettledCard icon={IconPhone} title={live.callee} outcome="Declined" />
+      <>
+        {attention}
+        <SettledCard
+          ref={setElement}
+          icon={IconPhone}
+          title={live.callee}
+          outcome="Declined"
+        />
+      </>
     );
 
-  return <CallRequestPlaced request={live} onOpen={() => onOpen(live.id)} />;
+  return (
+    <>
+      {attention}
+      <CallRequestPlaced
+        cardRef={setElement}
+        request={live}
+        onOpen={() => onOpen(live.id)}
+      />
+    </>
+  );
 }
 
 function useDecideCallRequest(botId: string, requestId: string) {
@@ -106,14 +141,19 @@ function CallRequestSummary({ request }: { request: CallRequest }) {
 function CallRequestPending({
   request,
   botId,
+  cardRef,
 }: {
   request: CallRequest;
   botId: string;
+  cardRef: Ref<HTMLDivElement>;
 }) {
   const decide = useDecideCallRequest(botId, request.id);
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
+    <div
+      ref={cardRef}
+      className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4"
+    >
       <CallRequestSummary request={request} />
       <p className="text-sm whitespace-pre-wrap">{request.goal}</p>
       <div className="flex flex-col gap-1">
@@ -153,13 +193,16 @@ function CallRequestPlaced({
   request,
   detail,
   onOpen,
+  cardRef,
 }: {
   request: CallRequest;
+  cardRef?: Ref<HTMLButtonElement>;
   detail?: string | undefined;
   onOpen: () => void;
 }) {
   return (
     <button
+      ref={cardRef}
       type="button"
       className="flex w-full max-w-sm flex-col gap-2 rounded-xl border p-3 text-left hover:bg-muted/50"
       onClick={onOpen}
@@ -267,6 +310,7 @@ export const callRequestResult = messageCard(
   ({ result, chat }) => (
     <CallRequestCard
       request={result}
+      references={chat.replyReferences ?? []}
       botId={chat.botId}
       onOpen={chat.onOpenCall}
     />

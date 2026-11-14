@@ -85,6 +85,25 @@ Turn the sounds off with **Sound** in the same section.
 The tab title counts replies you haven't seen yet, such as `(3) Atlas | Crumble`,
 until you open their chats. It also names the bot or group chat you have open.
 
+### Push notifications on other devices
+
+Server push notifications are separate from browser notifications and the tab
+counter. A visible, focused web tab displaying a bot or group chat suppresses
+pushes for that chat on every device of your account.
+
+The web app also acknowledges each reply after its text or matching request
+card appears in the viewport. Loading cards and offscreen content do not
+count. Acknowledgements survive server restarts; opening a chat alone does not
+mark every reply seen.
+
+New pushes wait at least three seconds in the server's queue. This gives
+clients time to report attention before delivery. A push already accepted by
+Apple or Firebase cannot be recalled.
+
+Apple and Android clients can still receive pushes, but their foreground
+chats do not suppress pushes elsewhere until those clients adopt attention
+reporting.
+
 ## Installing as an App
 
 In Safari, use **Add to Dock** to open Crumble in its own window.

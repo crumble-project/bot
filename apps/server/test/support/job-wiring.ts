@@ -48,6 +48,8 @@ export const inertIntent: DesktopIntent = {
     list: () => [],
     decide: nothingHeld,
     hold: nothingHeld,
+    cardPosted: nothingHeld,
+    expire: nothingHeld,
     until: nothingHeld,
   },
 };

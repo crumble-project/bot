@@ -6,6 +6,7 @@ import type {
   ToolExecutionApi,
 } from "@earendil-works/pi-durable";
 import { HELD_ACTION_ENTRY } from "../transcript/entries";
+import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import type { IntentGate } from "./computer-use-intent";
 import type { HeldActionsAccess } from "./held-actions";
 import {
@@ -68,7 +69,8 @@ export type GateCall = {
     chatId: ConversationId,
     card: { id: string; job: string; action: string },
     context: Context,
-  ): Promise<void>;
+    agentId: string,
+  ): Promise<{ entryId: string; messageId: string }>;
 };
 
 export const gateCallOf = (
@@ -77,8 +79,8 @@ export const gateCallOf = (
 ): GateCall => ({
   models: api.models,
   request: (context) => readRequest(api, api.conversationId, context),
-  postCard: async (chatId, card, context) => {
-    await api.commit(
+  postCard: async (chatId, card, context, agentId) => {
+    const entry = await api.commit(
       (tx) =>
         tx.appendEntry(chatId, {
           kind: HELD_ACTION_ENTRY,
@@ -86,6 +88,10 @@ export const gateCallOf = (
         }),
       context,
     );
+
+    const entryId = formatEntryId(agentId, Number(entry.id));
+
+    return { entryId, messageId: formatMessageId(entryId, 0) };
   },
 });
 
@@ -122,11 +128,21 @@ export const desktopIntentGate =
       reason: holdReason(verdict, judge?.name),
     });
 
-    await call.postCard(
-      job.chatId,
-      { id: held.id, job: job.name, action: words },
-      context,
-    );
+    let surface: { entryId: string; messageId: string };
+
+    try {
+      surface = await call.postCard(
+        job.chatId,
+        { id: held.id, job: job.name, action: words },
+        context,
+        agentId,
+      );
+    } catch (error) {
+      await intent.held.expire(held.id);
+      throw error;
+    }
+
+    await intent.held.cardPosted(held, surface);
 
     const decision = await intent.held.until(held.id, context);
 

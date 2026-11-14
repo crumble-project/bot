@@ -71,6 +71,7 @@ function setup(answer: JudgeAnswer) {
     request: async () => jobRequest,
     postCard: async (to, card) => {
       cards.push({ chatId: to, id: card.id, action: card.action });
+      return { entryId: "entry", messageId: "message" };
     },
   };
 

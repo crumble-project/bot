@@ -13,6 +13,7 @@ import type { ConversationRepository } from "../bot-store/conversation-repositor
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime, type AgentRuntime } from "./runtime";
 import type { Library } from "../files/library";
+import type { ChatAttention } from "../push/chat-attention";
 
 type StandaloneServices =
   | Bots
@@ -27,7 +28,8 @@ type StandaloneServices =
   | CallNotes
   | BotDeletion
   | ProductDatabase
-  | Library;
+  | Library
+  | ChatAttention;
 
 type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
 

@@ -1,5 +1,5 @@
 import { REPLY_ORIGIN } from "../contract/reply-event";
-import { formatEntryId } from "../shared/entry-ids";
+import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import { activeExecution, type Execution } from "../shared/domain";
 import { logged, pi } from "../shared/app-errors";
 import { Effect } from "effect";
@@ -154,6 +154,13 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     const answered = yield* takeAnswered(group.id, turn, agent);
 
     if (!answered && !mentionsOwner(text)) return;
+    yield* context.attention.register({
+      eventId: turn.executionId,
+      chat: { kind: "group", id: group.id },
+      messageId: formatMessageId(entryId, 0),
+      entryId,
+      surface: { kind: "text" },
+    });
     yield* context.bots.announce({
       type: "reply",
       executionId: turn.executionId,
@@ -396,8 +403,8 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
         context.transcripts.post(group.id, post, requestId),
       );
 
-      yield* context.changed(group.id);
       yield* notify(group, turn, agent, entryId, outcome.text);
+      yield* context.changed(group.id);
 
       for (const agentId of yield* members.mentions(
         group,
