@@ -125,23 +125,6 @@ export function useConversation<S extends HistoryPage>(
 
   useChatStream(target, leave);
 
-  useEffect(() => {
-    if (!snapshot.data || snapshot.isError) return;
-    const separator = target.key.indexOf(":");
-    const kind = target.key.slice(0, separator);
-    const id = target.key.slice(separator + 1);
-
-    if ((kind !== "bot" && kind !== "group") || !id) return;
-    const controller = getChatAttention();
-    const release = selectAttentionChat(target.key);
-
-    controller.setChat({ kind, id });
-
-    return () => {
-      if (release()) controller.setChat(null);
-    };
-  }, [target.key, Boolean(snapshot.data), snapshot.isError]);
-
   const live = snapshot.data?.messages;
   const { arrival, remember } = useArrivals(live);
   const { older, loadEarlier } = useHistory(target.history, remember);
@@ -368,6 +351,23 @@ export function ConversationMessages({
   renderNotice?: (message: Message, row: ReactNode) => ReactNode;
 }) {
   const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;
+  const chatKey = conversation.attentionKey;
+
+  useEffect(() => {
+    const separator = chatKey.indexOf(":");
+    const kind = chatKey.slice(0, separator);
+    const id = chatKey.slice(separator + 1);
+
+    if ((kind !== "bot" && kind !== "group") || !id) return;
+    const controller = getChatAttention();
+    const release = selectAttentionChat(chatKey);
+
+    controller.setChat({ kind, id });
+
+    return () => {
+      if (release()) controller.setChat(null);
+    };
+  }, [chatKey]);
 
   return (
     <AttentionChatContext value={conversation.attentionKey}>

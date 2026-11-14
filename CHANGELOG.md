@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Push notifications wait at least three seconds after enqueue and are suppressed on every device when the reply was seen or its bot or group chat is active in a focused web tab. Request cards count as seen only after their content loads and appears in the viewport. Browser notifications and unread counters are unchanged.
+- Breaking: independent chat views and explicit reply acknowledgements replace the device-presence endpoint. Existing Apple and Android clients still register for and receive pushes, but must adopt the new attention API before their foreground chats suppress pushes on other devices.
+
 - PDF text extraction no longer fails intermittently when a successful extraction process exits during memory monitoring.
 - The web library has a list and grid view, uploads by button or drop, and shows each bot's five newest files in its details. Bots can search a whole library by name, description, and text, and keep a short description of each file so they can find scans and photos from how the owner refers to them. Every file a bot receives states its file ID. Listing a group library together with a bot's own library no longer skips files.
 - Send any file up to 100 MB in the web client. Each bot chat and group chat has a library for browsing, downloading, and deleting uploaded files. Bots and their jobs can list, read, and search library text, and copy files into a workspace when available.

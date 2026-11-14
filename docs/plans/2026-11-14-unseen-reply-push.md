@@ -221,12 +221,12 @@ Create `apps/web/features/chat/reply-attention.tsx` as a nonvisual surface bound
 
 **Interfaces:** the implemented shared contract is the source for native handoff; no additional API is introduced.
 
-- [ ] Update `apps/docs/content/self-hosting/configuration.md`'s push section and `clients/web.md`'s Notifications section for account-wide bot/group suppression, explicit seen acknowledgements, and the fixed delay. Preserve the distinction from unchanged browser notifications. Update `contributing/index.md` for the shared attention API and native migration. Add the user-visible change and temporary native limitation under `CHANGELOG.md`'s Unreleased section.
-- [ ] Record Apple/Android follow-up requirements locally: independent view identity, foreground lifecycle, `replyReferences` readiness, and acknowledgement batching. Do not claim native adoption was tested.
-- [ ] Run `bun run check` from the repository and `bun run check` from `apps/docs`. Inspect actual test declarations and confirm exactly four new server tests and one new DOM test.
-- [ ] If CI jobs changed, check their measured duration is at most two minutes. If CI was not run, report its duration as unverified.
-- [ ] Arrange a fresh-context `vet` review against the spec and this plan's Deviations. Resolve concrete defects without broadening scope or exceeding the test cap.
-- [ ] Report applicable checks, failures, skipped verification, native follow-ups, and any remaining `needs decision` entries. No commits or publication without permission.
+- [x] Update `apps/docs/content/self-hosting/configuration.md`'s push section and `clients/web.md`'s Notifications section for account-wide bot/group suppression, explicit seen acknowledgements, and the fixed delay. Preserve the distinction from unchanged browser notifications. Update `contributing/index.md` for the shared attention API and native migration. Add the user-visible change and temporary native limitation under `CHANGELOG.md`'s Unreleased section.
+- [x] Record Apple/Android follow-up requirements locally: independent view identity, foreground lifecycle, `replyReferences` readiness, and acknowledgement batching. Do not claim native adoption was tested.
+- [x] Run `bun run check` from the repository and `bun run check` from `apps/docs`. Inspect actual test declarations and confirm exactly four new server tests and one new DOM test.
+- [x] If CI jobs changed, check their measured duration is at most two minutes. If CI was not run, report its duration as unverified.
+- [x] Arrange a fresh-context `vet` review against the spec and this plan's Deviations. Resolve concrete defects without broadening scope or exceeding the test cap.
+- [x] Report applicable checks, failures, skipped verification, native follow-ups, and any remaining `needs decision` entries. No commits or publication without permission.
 
 ## Deviations
 
@@ -242,7 +242,10 @@ Task 1: `core-layer.ts` provides the shared push database and attention service 
 - Task 2 · Verification: typecheck and OpenAPI generation/check pass. Full existing suite: 1,283 passed, 118 skipped, two push tests fail on the removed presence endpoint and an old runtime fixture missing normalized message identity; Task 3 owns both adaptations.
 - Task 2 · The shared required transcript field also reaches job-history step results and outside-call transcript responses. Adapt `apps/server/src/bots/job-history.ts`, its existing fixtures, and `apps/server/src/voice-gateway/call-requests-api.ts` to return empty references where no eligible reply is associated. Adapt the existing `message-gateway.test.ts` service fixture for `Bots.changed`, exposed to refresh held-action snapshots. No new notification producers or test declarations.
 
-During implementation, record deviations without rewriting the tasks:
+- Task 5 · Fresh server and web reviews identified missing group-producer, delayed-enqueue deletion-race, and restart-persistence assertions; extend the existing allocated tests, not their declaration count. Move duplicate acknowledgements before shutdown so restart suppression cannot be recreated by the test itself. A mutation clearing seen flags on service construction now fails the restart test.
+- Task 5 · Review fixes also modify `apps/web/lib/chat-attention.ts`, `apps/web/features/chat/conversation.tsx`, and the allocated DOM test. Failed submitted acknowledgement batches retain their original chat across navigation; only unsent batches are canceled. Start presence from mounted `ConversationMessages`, not a loaded snapshot while the bot list still shows a loading screen. Both fixes fail against the prior committed implementation and pass afterward. These implement the existing specification, with no new API or test declarations.
+- Task 5 · Include the supplied design document unchanged alongside the implementation plan so its source link is available on the branch. Native follow-up requirements are documented locally in `apps/docs/content/contributing/index.md`; no native changes or public issues were created.
+- Task 5 · Final verification: repository and docs checks pass; 1,290 tests passed, 118 skipped, zero failed, 5,628 assertions. The local unit suite took 18.15 seconds. Exactly four server tests and one DOM test were added. CI jobs were unchanged and CI duration is unverified. Native clients, live providers, and real-browser cross-client smoke checks were not tested.
+- Task 5 · Review findings are addressed. Server review covered production paths and migration SQL, but generated migration snapshots were not exhaustively reviewed. The agreed pre-enqueue loss window, including asynchronous job-answer publication with logged failures and the existing listener lifecycle, remains intentionally unchanged.
 
-- Task N, step M · planned: … · did: … · why: …
-- **needs decision** · Task N · conflicts with: … · chose: … · alternative: … · why: …
+**Needs decision:** None.

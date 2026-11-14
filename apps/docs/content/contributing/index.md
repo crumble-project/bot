@@ -80,6 +80,65 @@ bun run openapi:generate
 `bun run openapi:check` fails if the generated files are out of date, and
 `bun run check` runs it for you.
 
+## Chat attention API
+
+Chat attention belongs to the authenticated account, independently of push
+registration or notification permission. A chat reference has a `kind` of
+`bot` or `group` and an `id`, such as `{ "kind": "bot", "id": "CHAT_ID" }`.
+Bot chats and group chats are separate namespaces.
+
+- Send `PUT /v1/chat-attention/views/{viewId}` with `{ "chat": CHAT }` when a
+  view becomes active. Send `{ "chat": null }` when it loses attention.
+- Give each tab or native window an independent random view ID. Refresh active
+  views every 30 seconds. The server timestamps reports and expires them after
+  120 seconds.
+- Serialize reports per view and discard obsolete queued refreshes. One view
+  must never clear another view.
+- Send `POST /v1/chat-attention/seen` with `{ "chat": CHAT, "eventIds": ["EVENT_ID"] }`
+  only after displaying the referenced content. Batch 1-100 distinct event IDs;
+  retry failed batches only while the same account remains signed in.
+
+Replace `CHAT_ID` with the bot or group chat ID and `CHAT` with that chat
+reference. Replace `EVENT_ID` with the reply event ID. Both routes return `204` on success. Unknown or inaccessible chats
+and mismatched events return `404`. Seen batches are atomic and idempotent.
+
+History and snapshot messages include `replyReferences`. Each reference has an
+`eventId` and a `surface`: `text`, `tool-card` with `toolCallId`, or
+`held-action` with `actionId`. The containing message's normalized `id`
+identifies the exact surface, not just its transcript entry.
+
+Acknowledge only ready content within the active viewport. For mixed text and
+request replies, the request card is the acknowledgement surface. Loading
+placeholders, unavailable cards, and collapsed summaries do not count. A
+confirmed settled card does count. Receiving a live event or fetching history
+is not proof that content was displayed.
+
+Associations and seen state persist in the account's `push.sqlite`, separately
+from devices and queued deliveries. Generate push schema migrations through
+`db:generate:push`; do not infer historical seen state from old presence rows.
+New deliveries wait a fixed three seconds after their first enqueue. Retries
+recheck attention without adding another grace period.
+
+### Native adoption follow-ups
+
+Apple and Android adoption remains separate work; native behavior has not been
+tested for this change. Device registration remains unchanged. The old
+`/v1/push/devices/{installationId}/presence` endpoint is removed.
+
+Native clients must implement:
+
+1. Independent view identities for each foreground chat window or view lifetime.
+2. Presence only while the matching chat is foreground-active, with a 30-second
+   refresh and a clear on backgrounding, navigation, logout, or account switch.
+3. Exact `replyReferences` matching, including loaded credential, login, call,
+   and held-action cards or their confirmed settled outcomes.
+4. Distinct acknowledgement batches, retry cancellation on account changes,
+   and serialized presence reports that cannot follow a clear with stale state.
+
+On macOS, a window losing activity must clear its own view. Verify web-to-native
+and native-to-native suppression locally after adoption, including group chats.
+No simulator, emulator, or native UI checks run in CI.
+
 ## Releasing
 
 `apps/server/package.json` holds the version. A release publishes

@@ -37,6 +37,13 @@ export function createChatAttention(): ChatAttentionController {
   let seenTimer: ReturnType<typeof setTimeout> | undefined;
   let seenSending = false;
   const pending = new Set<string>();
+
+  const failedBatches: {
+    chat: ChatReference;
+    eventIds: string[];
+    generation: number;
+  }[] = [];
+
   const acknowledged = new Set<string>();
 
   const active = () =>
@@ -66,7 +73,7 @@ export function createChatAttention(): ChatAttentionController {
     if (
       seenTimer !== undefined ||
       seenSending ||
-      pending.size === 0 ||
+      (pending.size === 0 && failedBatches.length === 0) ||
       disposed
     )
       return;
@@ -77,31 +84,39 @@ export function createChatAttention(): ChatAttentionController {
   }
 
   async function flushSeen() {
-    if (disposed || !chat || seenSending || pending.size === 0) return;
-    const target = chat;
-    const current = seenGeneration;
-    const eventIds = Array.from(pending).slice(0, 100);
+    if (disposed || seenSending) return;
 
-    for (const id of eventIds) pending.delete(id);
+    const batch =
+      chat && pending.size > 0
+        ? {
+            chat,
+            eventIds: Array.from(pending).slice(0, 100),
+            generation: seenGeneration,
+          }
+        : failedBatches.shift();
+
+    if (!batch) return;
+
+    if (batch.generation === seenGeneration)
+      batch.eventIds.forEach((id) => pending.delete(id));
     seenSending = true;
     let failed = false;
 
     try {
       await send<"postSeen">("/v1/chat-attention/seen", "POST", {
-        chat: target,
-        eventIds,
+        chat: batch.chat,
+        eventIds: batch.eventIds,
       });
 
-      if (!disposed && current === seenGeneration)
-        for (const id of eventIds) acknowledged.add(id);
+      if (!disposed && batch.generation === seenGeneration)
+        batch.eventIds.forEach((id) => acknowledged.add(id));
     } catch {
       failed = true;
 
-      if (!disposed && current === seenGeneration)
-        for (const id of eventIds) pending.add(id);
+      if (!disposed) failedBatches.push(batch);
     } finally {
       seenSending = false;
-      scheduleSeen(failed ? 1000 : 0);
+      scheduleSeen(failed && pending.size === 0 ? 1000 : 0);
     }
   }
 
@@ -124,6 +139,7 @@ export function createChatAttention(): ChatAttentionController {
       disposed = true;
       ++seenGeneration;
       pending.clear();
+      failedBatches.length = 0;
       clearTimeout(seenTimer);
       clearTimeout(reportRetry);
       clearInterval(heartbeat);
@@ -154,6 +170,7 @@ export function createChatAttention(): ChatAttentionController {
       clearTimeout(seenTimer);
       seenTimer = undefined;
       chat = next;
+      scheduleSeen(1000);
       updateActivity();
     },
     displayed(reference) {

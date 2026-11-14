@@ -132,6 +132,21 @@ Set all four `CRUMBLE_APNS_*` variables or none. A partial or invalid push
 configuration stops accounts from starting, with an error that begins
 `Push configuration:`. `GET /v1/push` shows which transports are active.
 
+New pushes become eligible at least three seconds after entering the server's
+queue. This delay is fixed, not configurable. Before each delivery or retry,
+the server suppresses pushes to every device when the reply was acknowledged
+as displayed or its bot or group chat is active in any reporting client.
+Suppressed pushes do not return when you leave the chat.
+
+The web app reports attention only while the chat is displayed in a visible,
+focused tab. It acknowledges the exact reply text or loaded request card when
+that content enters the viewport. Presence alone does not mark a reply seen.
+
+Apple and Android clients still register devices and receive pushes. Their
+foreground chats do not report attention until those clients adopt the new
+[chat attention API](/contributing#chat-attention-api). Browser notifications
+and unread counters are unchanged.
+
 ## Environment Variables
 
 | Variable                          | Default            | Purpose                                                                                                   |

@@ -51,6 +51,8 @@ import {
 } from "../credentials/credentials";
 import { loginExtension, loginsAccess } from "../logins/logins";
 import { parseEntryId } from "../shared/entry-ids";
+import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
+import { GroupTranscripts } from "../group-chats/group-transcripts";
 
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -753,6 +755,26 @@ test("respects grace retry and deletion boundaries", async () => {
   await runtime.dispose();
   expect(sent).toEqual([first.executionId, retry.executionId]);
 
+  const enqueueEntered = Promise.withResolvers<void>();
+  const finishEnqueue = Promise.withResolvers<void>();
+  const delayedEnqueueRepository = Layer.effect(
+    PushRepository,
+    Effect.gen(function* () {
+      const repository = yield* PushRepository;
+
+      return PushRepository.of({
+        ...repository,
+        enqueue: Effect.fnUntraced(function* (event: ReplyEvent) {
+          if (event.eventId === late.executionId) {
+            enqueueEntered.resolve();
+            yield* Effect.promise(() => finishEnqueue.promise);
+          }
+          yield* repository.enqueue(event);
+        }),
+      });
+    }),
+  ).pipe(Layer.provide(PushRepository.layerNoDeps));
+
   const restarted = ManagedRuntime.make(
     Push.layerNoDeps.pipe(
       Layer.provide(
@@ -764,7 +786,7 @@ test("respects grace retry and deletion boundaries", async () => {
             }),
         }),
       ),
-      Layer.provideMerge(PushRepository.layerNoDeps),
+      Layer.provideMerge(delayedEnqueueRepository),
       Layer.provideMerge(coreLayer(dir)),
       Layer.provideMerge(TestClock.layer()),
     ),
@@ -785,10 +807,16 @@ test("respects grace retry and deletion boundaries", async () => {
     }),
   );
   const restartedStore = new Store(restarted);
+  const delayedEnqueue = restarted.runPromise(
+    Push.use((push) => push.enqueue(late)),
+  );
+  await enqueueEntered.promise;
   restartedStore.deleteAgent(agent.id);
+  finishEnqueue.resolve();
+  await delayedEnqueue;
   await restarted.runPromise(
     Effect.gen(function* () {
-      yield* Push.use((push) => push.enqueue(late));
+      yield* Push.use((push) => push.enqueue(reply(agent.id, 0)));
       yield* TestClock.adjust(3000);
       yield* Push.use((push) => push.drain);
       expect(
@@ -1241,6 +1269,7 @@ test("acknowledges exact reply surfaces before enqueue and after restart", async
       fauxAssistantMessage(`Please provide ${name}.`),
     ]),
     fauxAssistantMessage("another answer"),
+    fauxAssistantMessage("A group answer."),
   ]);
   const models = createModels();
   models.setProvider(faux.provider);
@@ -1385,18 +1414,64 @@ test("acknowledges exact reply surfaces before enqueue and after restart", async
   );
   await push.runPromise(Push.use((p) => p.enqueue(held)));
   suppressed.push(held);
+  const groups = standaloneGroupChats(
+    service,
+    new GroupTranscripts(join(dir, "groups")),
+  );
+  const group = groups.create({ name: "Trip", memberIds: [agent.id] });
+  const groupChat = { kind: "group" as const, id: group.id };
+  await groups.post(group.id, "Plan the trip", id());
+  await until(() =>
+    activities.some((activity) => activity.groupId === group.id),
+  );
+  const groupActivity = activities.find(
+    (activity) => activity.groupId === group.id,
+  )!;
+  const groupMessages = (await groups.history(group.id, { limit: 200 }))
+    .messages;
+  const groupMessage = groupMessages.find(
+    (message) => message.content === "A group answer.",
+  )!;
+  expect(groupActivity.entryId).toBe(groupMessage.entryId);
+  expect(groupMessage.replyReferences).toEqual([
+    { eventId: groupActivity.executionId, surface: { kind: "text" } },
+  ]);
+  expect(
+    (await groups.snapshot(group.id, { limit: 200 })).messages.find(
+      (message) => message.id === groupMessage.id,
+    )?.replyReferences,
+  ).toEqual(groupMessage.replyReferences);
+  expect(
+    (await service.history(agent.id, { limit: 200 })).messages
+      .flatMap((message) => message.replyReferences)
+      .some((reference) => reference.eventId === groupActivity.executionId),
+  ).toBe(false);
+  await push.runPromise(
+    ChatAttention.use((attention) =>
+      attention.seen(groupChat, [groupActivity.executionId]),
+    ),
+  );
+  await push.runPromise(Push.use((p) => p.enqueue(groupActivity)));
+  await push.runPromise(
+    ChatAttention.use((attention) =>
+      Effect.gen(function* () {
+        yield* attention.seen(
+          chat,
+          suppressed.map((activity) => activity.executionId),
+        );
+        yield* attention.seen(groupChat, [groupActivity.executionId]);
+      }),
+    ),
+  );
+  await groups.close();
   await service.close();
   await push.dispose();
   const reopened = openPush();
   await reopened.runPromise(
     Effect.gen(function* () {
-      const attention = yield* ChatAttention;
       const p = yield* Push;
-      yield* attention.seen(
-        chat,
-        suppressed.map((activity) => activity.executionId),
-      );
       for (const activity of suppressed) yield* p.enqueue(activity);
+      yield* p.enqueue(groupActivity);
       yield* p.enqueue(secondActivity);
       yield* TestClock.adjust(3000);
       yield* p.drain;

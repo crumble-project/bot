@@ -3,6 +3,15 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { z } from "zod";
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor } from "@/test/wait-for";
@@ -10,6 +19,7 @@ import { settle, waitFor } from "@/test/wait-for";
 type RequestState = {
   failSeen: boolean;
   heldView?: ReturnType<typeof Promise.withResolvers<Response>>;
+  answers?: Map<string, Promise<Response>>;
 };
 
 function recordRequests(credentials: Promise<Response>) {
@@ -22,6 +32,9 @@ function recordRequests(credentials: Promise<Response>) {
         const path = input instanceof Request ? input.url : input.toString();
 
         if (path === "/v1/agents/bot/credentials") return credentials;
+        const answer = state.answers?.get(path);
+
+        if (answer) return answer;
 
         if (init?.method !== "PUT" && init?.method !== "POST")
           return new Response("unexpected request", { status: 500 });
@@ -49,6 +62,115 @@ function recordRequests(credentials: Promise<Response>) {
   );
 
   return { requests, state, fetch };
+}
+
+async function checkChatLoadingGate(
+  state: RequestState,
+  requests: { path: string; body: unknown }[],
+) {
+  queryClient.clear();
+  const bots = Promise.withResolvers<Response>();
+
+  const snapshot = {
+    messages: [
+      {
+        id: "bot:1:0",
+        entryId: "bot:1",
+        role: "user",
+        content: "Loaded snapshot",
+        replyReferences: [],
+      },
+    ],
+    hasMore: false,
+    oldestEntryId: "bot:1",
+    status: "idle",
+    working: "idle",
+    error: null,
+    partial: "",
+  };
+
+  state.answers = new Map([
+    ["/v1/agents", bots.promise],
+    ["/v1/agents/bot/chat", Promise.resolve(Response.json(snapshot))],
+    [
+      "/v1/agents/bot/events",
+      Promise.resolve(new Response(new ReadableStream())),
+    ],
+  ]);
+  const { createRoot } = await import("react-dom/client");
+  const { SidebarProvider } = await import("@/components/ui/sidebar");
+  const { TooltipProvider } = await import("@/components/ui/tooltip");
+  const { Chat } = await import("@/features/bot-chat/chat");
+  const { chatQuery } = await import("@/features/chat/api");
+  const route = createRootRoute({ component: Outlet });
+
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: ["/bots/bot"] }),
+    routeTree: route.addChildren([
+      createRoute({
+        getParentRoute: () => route,
+        path: "/bots/bot",
+        component: () => <Chat botId="bot" />,
+      }),
+    ]),
+  });
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+
+  const views = () =>
+    requests.filter(({ path }) => path.startsWith("/v1/chat-attention/views/"));
+
+  const before = views().length;
+  localStorage.setItem("crumble.details", "off");
+
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SidebarProvider>
+            <TooltipProvider>
+              <RouterProvider router={router} />
+            </TooltipProvider>
+          </SidebarProvider>
+        </QueryClientProvider>,
+      ),
+    );
+    await waitFor(
+      () => queryClient.getQueryData(chatQuery("bot").queryKey) !== undefined,
+      "snapshot before bot list",
+    );
+    expect(container.querySelector(".animate-pulse")).not.toBeNull();
+    await settle();
+    expect(views()).toHaveLength(before);
+    await act(async () =>
+      bots.resolve(
+        Response.json([
+          {
+            id: "bot",
+            name: "Bot",
+            avatar: defaultAvatarDefinition("bot"),
+            enabled: true,
+            tools: [],
+          },
+        ]),
+      ),
+    );
+    await waitFor(
+      () => container.textContent?.includes("Loaded snapshot") === true,
+      "mounted chat",
+    );
+    await waitFor(() => views().length > before, "active view");
+    expect(views()[before]!.body).toEqual({ chat: { kind: "bot", id: "bot" } });
+    await act(async () => root.render(null));
+    await waitFor(() => views().length > before + 1, "cleared view");
+    expect(views()[before + 1]!.body).toEqual({ chat: null });
+  } finally {
+    await act(async () => root.unmount());
+    queryClient.clear();
+    delete state.answers;
+  }
 }
 
 test("reports only active views and ready visible reply surfaces", async () => {
@@ -81,6 +203,15 @@ test("reports only active views and ready visible reply surfaces", async () => {
     Element: window.Element,
     Node: window.Node,
     MutationObserver: window.MutationObserver,
+    ResizeObserver: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+    matchMedia: window.matchMedia.bind(window),
+    localStorage: window.localStorage,
+    location: window.location,
+    scrollTo: () => {},
     IntersectionObserver: Observer,
     getComputedStyle: window.getComputedStyle.bind(window),
     IS_REACT_ACT_ENVIRONMENT: true,
@@ -343,16 +474,21 @@ test("reports only active views and ready visible reply surfaces", async () => {
     state.failSeen = true;
     retrying.displayed({ eventId: "retry", surface: { kind: "text" } });
     await waitFor(() => seen().length === 2 && retryCallbacks.length === 1);
-    retryCallbacks[0]!();
+    retrying.setChat(group);
+    retryCallbacks.at(-1)!();
     await waitFor(() => seen().length === 3);
     expect(seen()[1]?.body).toEqual({ chat: bot, eventIds: ["retry"] });
     expect(seen()[2]?.body).toEqual(seen()[1]?.body);
     state.failSeen = true;
+    const retriesBeforeReset = retryCallbacks.length;
     retrying.displayed({ eventId: "old-account", surface: { kind: "text" } });
-    await waitFor(() => seen().length === 4 && retryCallbacks.length === 2);
+    await waitFor(
+      () => seen().length === 4 && retryCallbacks.length > retriesBeforeReset,
+    );
+    const pendingRetry = retryCallbacks.at(-1)!;
     resetSession();
     const attempts = requests.length;
-    retryCallbacks[1]!();
+    pendingRetry();
     await settle();
     expect(requests).toHaveLength(attempts);
     expect(seen()).toHaveLength(4);
@@ -364,6 +500,7 @@ test("reports only active views and ready visible reply surfaces", async () => {
     await settle();
     expect(seen()).toHaveLength(4);
     expect(intervals.size).toBe(0);
+    await checkChatLoadingGate(state, requests);
   } finally {
     await act(async () => root.unmount());
     controller.dispose();
