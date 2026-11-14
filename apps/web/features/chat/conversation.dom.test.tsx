@@ -49,6 +49,7 @@ const owner = {
   entryId: "g:1",
   role: "user",
   content: "The original",
+  replyReferences: [],
 };
 
 const page = { messages: [owner], hasMore: false, oldestEntryId: "g:1" };
@@ -404,6 +405,7 @@ const jobResult = (id: number, toolName: string) => ({
   entryId: `bot:${id}`,
   role: "toolResult",
   content: "",
+  replyReferences: [],
   toolName,
   toolDetails: { name: "build", status: "idle" },
 });

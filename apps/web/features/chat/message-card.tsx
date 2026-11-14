@@ -1,8 +1,10 @@
 import type { ComponentType, ReactNode } from "react";
+import type { ReplyReference } from "@crumble/server/contract/push";
 import type { JobRef } from "@/features/jobs/api";
 import type { Message } from "./api";
 
 export type CardChat = {
+  replyReferences?: readonly ReplyReference[];
   botId: string;
   botName: string;
   attachmentPath: (entryId: string, index: number) => string;
@@ -26,5 +28,19 @@ export const messageCard =
 
     return result === null
       ? null
-      : (chat) => <Card result={result} chat={chat} />;
+      : (chat) => (
+          <Card
+            result={result}
+            chat={{
+              ...chat,
+              replyReferences: message.replyReferences.filter(
+                ({ surface }) =>
+                  (surface.kind === "tool-card" &&
+                    surface.toolCallId === message.toolCallId) ||
+                  (surface.kind === "held-action" &&
+                    surface.actionId === message.heldAction?.id),
+              ),
+            }}
+          />
+        );
   };

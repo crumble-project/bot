@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
+import { getChatAttention } from "@/lib/chat-attention";
+import { AttentionChatContext, selectAttentionChat } from "./reply-attention";
 import { type HistoryPage, type Message, historyPage } from "./api";
 import { api, type RoutePath } from "@/lib/api";
 import { useChatStream } from "./chat-stream";
@@ -123,6 +125,23 @@ export function useConversation<S extends HistoryPage>(
 
   useChatStream(target, leave);
 
+  useEffect(() => {
+    if (!snapshot.data || snapshot.isError) return;
+    const separator = target.key.indexOf(":");
+    const kind = target.key.slice(0, separator);
+    const id = target.key.slice(separator + 1);
+
+    if ((kind !== "bot" && kind !== "group") || !id) return;
+    const controller = getChatAttention();
+    const release = selectAttentionChat(target.key);
+
+    controller.setChat({ kind, id });
+
+    return () => {
+      if (release()) controller.setChat(null);
+    };
+  }, [target.key, Boolean(snapshot.data), snapshot.isError]);
+
   const live = snapshot.data?.messages;
   const { arrival, remember } = useArrivals(live);
   const { older, loadEarlier } = useHistory(target.history, remember);
@@ -144,6 +163,7 @@ export function useConversation<S extends HistoryPage>(
 
   return {
     snapshot,
+    attentionKey: target.key,
     outgoing,
     sending,
     stop,
@@ -350,7 +370,7 @@ export function ConversationMessages({
   const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;
 
   return (
-    <>
+    <AttentionChatContext value={conversation.attentionKey}>
       {hasMore && oldest && (
         <LoadEarlier
           pending={loadEarlier.isPending}
@@ -375,7 +395,7 @@ export function ConversationMessages({
           conversation={conversation}
         />
       ))}
-    </>
+    </AttentionChatContext>
   );
 }
 

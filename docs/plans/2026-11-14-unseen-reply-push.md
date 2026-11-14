@@ -207,13 +207,13 @@ Use happy-dom's `Window`, React `act`, and a controllable `IntersectionObserver`
 
 Create `apps/web/features/chat/reply-attention.tsx` as a nonvisual surface boundary. It receives the current controller, matching references, readiness, and observed element. Mount it at exact text/card surfaces, not around every row by default. Extend `MessageCard`'s context only to carry attention references and readiness plumbing; preserve unrelated card APIs.
 
-- [ ] Derive the chat kind and ID from `ConversationTarget.key`'s established `bot:`/`group:` identity, not from URL suffix matching. Report attention only when that chat is displayed, `visibilityState` is `visible`, and the document has focus. Start/stop heartbeats with that condition.
-- [ ] Clear only this view on blur, hide, route leave, logout, or account switch. Discard obsolete pending refreshes and never retry an old account's acknowledgements after reset.
-- [ ] Batch 1-100 distinct event IDs per chat and retry failures while the account remains active. Do not acknowledge a live event merely because it arrived.
-- [ ] Enrich rendering with exact-surface readiness signals. Text must be in the viewport; a request card must finish loading and display its matching pending or confirmed settled content. Collapsed summaries and placeholders do not count.
-- [ ] Refresh the relevant snapshot when a live event races ahead of its history references. Reuse existing query invalidation rather than introducing a separate event cache.
-- [ ] Implement allocated test 5, `reports only active views and ready visible reply surfaces`, using the existing DOM approach and a recording API. Assert focus/blur/hide/route behavior, heartbeat cancellation, no loading/offscreen/inactive acknowledgement, and the exact ID when the card becomes ready and visible.
-- [ ] Run `bun test apps/web/lib/chat-attention.dom.test.tsx` and `bun run check`. Expected: the new DOM test and all existing checks pass.
+- [x] Derive the chat kind and ID from `ConversationTarget.key`'s established `bot:`/`group:` identity, not from URL suffix matching. Report attention only when that chat is displayed, `visibilityState` is `visible`, and the document has focus. Start/stop heartbeats with that condition.
+- [x] Clear only this view on blur, hide, route leave, logout, or account switch. Discard obsolete pending refreshes and never retry an old account's acknowledgements after reset.
+- [x] Batch 1-100 distinct event IDs per chat and retry failures while the account remains active. Do not acknowledge a live event merely because it arrived.
+- [x] Enrich rendering with exact-surface readiness signals. Text must be in the viewport; a request card must finish loading and display its matching pending or confirmed settled content. Collapsed summaries and placeholders do not count.
+- [x] Refresh the relevant snapshot when a live event races ahead of its history references. Reuse existing query invalidation rather than introducing a separate event cache.
+- [x] Implement allocated test 5, `reports only active views and ready visible reply surfaces`, using the existing DOM approach and a recording API. Assert focus/blur/hide/route behavior, heartbeat cancellation, no loading/offscreen/inactive acknowledgement, and the exact ID when the card becomes ready and visible.
+- [x] Run `bun test apps/web/lib/chat-attention.dom.test.tsx` and `bun run check`. Expected: the new DOM test and all existing checks pass.
 
 ### Task 5: Document, verify, and hand off native adoption
 
@@ -232,6 +232,9 @@ Create `apps/web/features/chat/reply-attention.tsx` as a nonvisual surface bound
 
 Task 1: `core-layer.ts` provides the shared push database and attention service so standalone bot and API fixtures use the same tenant wiring, rather than constructing the shared layer in `tenant.ts`. Existing fixture service types and the migration schema expectation are adapted; no new tests are declared. Cleanup runs from the tenant. Delivery-side ownership revalidation was deferred to Task 3 delivery integration, which now validates live chats at enqueue and the final send check. The Task 1 intermediate checkpoint was not releasable.
 
+- Task 4 · Adapt existing `apps/web/features/chat/conversation.dom.test.tsx` response fixtures to include the required empty references. Zero-reference boundaries mount no observer or controller. Account switches already call `resetSession()` and reload the page in `app/shell.tsx`; boundaries retain their old controller until remount so stale callbacks cannot migrate across accounts.
+- Task 4 · Verification: full check passed (1,290 passed, 118 skipped, zero failed; suite 15.47 seconds locally). The one DOM test has 26 assertions, including serialized clears, successful acknowledgement retry, and cancellation after reset. A reversible mutation treating the loading card as ready failed the DOM test; restored sources pass.
+- Task 4 · Add matching snapshot invalidation in `apps/web/app/activity-stream.ts`, the existing account reply-event subscriber, because transcript-stream handling alone cannot repair an event/reference race. Keep browser notifications unchanged. A shared attention-chat context guards exact surfaces against stale route callbacks; one module-level session-reset listener owns controller cleanup.
 - Task 3 · Reuse the outbox's persisted server `createdAt` plus 3,000 milliseconds for first eligibility instead of adding a redundant timestamp column. Existing delivery rows retain their recorded due times. The final migration removes only the legacy presence table.
 - Task 3 · Verification: full check passed (1,289 passed, 118 skipped, zero failed; unit suite 17.31 seconds locally). Reversible mutations disabling account suppression failed tests 1 and 2; immediate eligibility failed test 3. Restored sources pass all 18 push/lifecycle tests. CI duration remains unverified.
 - Task 3 · Adapt the existing `apps/server/src/shared/database.test.ts` migration comparison for removal of `push_presence`, preserving fresh/upgrade equivalence and adding no test declarations.
