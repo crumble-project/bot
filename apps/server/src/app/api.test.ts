@@ -2055,13 +2055,18 @@ describe("held action notifications", () => {
       ),
     );
 
-    const held = await heldActionsAccess(store.runtime).hold({
+    const heldAccess = heldActionsAccess(store.runtime);
+    const held = await heldAccess.hold({
       agentId: agent.id,
       job: "github",
       action: "click Delete repository",
       page: null,
       ownerMessages: [],
       reason: "Irreversible",
+    });
+    await heldAccess.cardPosted(held, {
+      entryId: `${agent.id}:1`,
+      messageId: `${agent.id}:1:0`,
     });
 
     while (!heard.length)

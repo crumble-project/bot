@@ -258,6 +258,7 @@ const requestCard = async (
           role: "toolResult",
           content: "",
           entryId: "e1",
+          replyReferences: [],
           toolName,
           toolDetails,
         }}

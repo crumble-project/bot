@@ -521,6 +521,8 @@ function recordingIntent(seen: IntentRequest[]): DesktopIntent {
       list: () => [],
       decide: () => Promise.reject(new Error("nothing is held")),
       hold: () => Promise.reject(new Error("nothing is held")),
+      cardPosted: () => Promise.reject(new Error("nothing is held")),
+      expire: () => Promise.reject(new Error("nothing is held")),
       until: () => Promise.reject(new Error("nothing is held")),
     },
   };

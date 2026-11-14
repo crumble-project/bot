@@ -170,6 +170,24 @@ export const groupChatsService = (
     };
   });
 
+  const withReferences = Effect.fnUntraced(function* (
+    groupId: string,
+    page: TranscriptPage,
+  ) {
+    const references = yield* context.attention.references(
+      { kind: "group", id: groupId },
+      page.messages.map((message) => message.id),
+    );
+
+    return {
+      ...page,
+      messages: page.messages.map((message) => ({
+        ...message,
+        replyReferences: [...(references.get(message.id) ?? [])],
+      })),
+    };
+  });
+
   const forMember = Effect.fn("GroupChats.forMember")(function* (
     agentId: string,
   ) {
@@ -225,9 +243,12 @@ export const groupChatsService = (
   ) {
     yield* context.get(groupId);
 
-    return yield* currentFiles(
+    return yield* withReferences(
       groupId,
-      yield* pi(() => context.transcripts.history(groupId, options)),
+      yield* currentFiles(
+        groupId,
+        yield* pi(() => context.transcripts.history(groupId, options)),
+      ),
     );
   });
 
@@ -237,9 +258,12 @@ export const groupChatsService = (
   ) {
     const groupChat = yield* context.get(groupId);
 
-    const page = yield* currentFiles(
+    const page = yield* withReferences(
       groupId,
-      yield* pi(() => context.transcripts.history(groupId, options)),
+      yield* currentFiles(
+        groupId,
+        yield* pi(() => context.transcripts.history(groupId, options)),
+      ),
     );
 
     return {

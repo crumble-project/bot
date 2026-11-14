@@ -1384,6 +1384,78 @@
           "replyPreview": {
             "type": "string"
           },
+          "replyReferences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "eventId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "surface": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "text"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "tool-card"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "toolCallId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "held-action"
+                          ]
+                        },
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "actionId"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "eventId",
+                "surface"
+              ]
+            }
+          },
           "origin": {
             "$ref": "#/components/schemas/MessageOrigin"
           },
@@ -1547,7 +1619,8 @@
           "id",
           "entryId",
           "role",
-          "content"
+          "content",
+          "replyReferences"
         ]
       },
       "TranscriptBlock": {

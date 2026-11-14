@@ -77,6 +77,20 @@ export const botsAnnouncements = (
 
     if (quiet(latest, origin)) return;
 
+    const surface = waitingFor ? latest.waiting : reply;
+
+    if (surface && (!waitingFor || surface.toolCallId)) {
+      yield* context.attention.register({
+        eventId: execution.id,
+        chat: { kind: "bot", id: owner.id },
+        entryId: surface.entryId,
+        messageId: surface.id,
+        surface: waitingFor
+          ? { kind: "tool-card", toolCallId: surface.toolCallId! }
+          : { kind: "text" },
+      });
+    }
+
     yield* emit({
       type: "reply",
       executionId: execution.id,
@@ -88,6 +102,7 @@ export const botsAnnouncements = (
       createdAt: execution.createdAt,
       ...(waitingFor && { waitingFor }),
     });
+    yield* deps.notifications.changed(execution.conversationId);
   });
 
   return { forkPreview, announceReply };

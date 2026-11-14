@@ -40,7 +40,7 @@ test("projects steps with results from a newer page", () => {
       label: "Ran",
       icon: "terminal",
       subject: "pwd",
-      result,
+      result: { ...result, replyReferences: [] },
     },
   ]);
 });

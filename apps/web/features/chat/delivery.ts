@@ -17,6 +17,7 @@ export const outgoingMessage = (message: Outgoing): Message => ({
   entryId: "",
   role: "user",
   content: message.content,
+  replyReferences: [],
 });
 
 const outgoing = new Map<string, Outgoing[]>();

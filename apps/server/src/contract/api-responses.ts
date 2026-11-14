@@ -23,6 +23,7 @@ import { SCHEDULE_KINDS } from "./schedules";
 import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
 import { replyEvent } from "./reply-event";
+import { replyReference } from "./push";
 import {
   voiceCallCancelEvent,
   voiceCallEvent,
@@ -254,6 +255,7 @@ const message = z
     }),
     replyTo: z.string().optional(),
     replyPreview: z.string().optional(),
+    replyReferences: z.array(replyReference),
     origin: origin.optional(),
     communication: botCommunication.optional(),
     jobQuestion: z

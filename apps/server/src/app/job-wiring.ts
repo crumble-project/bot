@@ -30,7 +30,14 @@ export const jobAnswers = Layer.effectDiscard(
     yield* whileOpen(() =>
       jobKinds.map((kind) =>
         kind.onAnswer((answer) =>
-          Effect.runSync(bots.announceJobAnswer(answer)),
+          Effect.runPromise(
+            bots.announceJobAnswer(answer).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logError("Job answer announcement failed", cause),
+              ),
+              Effect.asVoid,
+            ),
+          ),
         ),
       ),
     );
