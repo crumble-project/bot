@@ -34,6 +34,7 @@ import {
 } from "../providers/providers-api";
 import { ProviderSignIns } from "../providers/provider-auth";
 import { Push } from "../push/push";
+import type { ChatAttention } from "../push/chat-attention";
 import { registerPushRoutes } from "../push/push-api";
 import { registerScheduleRoutes } from "../automations/schedules-api";
 import type { Scheduler } from "../automations/scheduler";
@@ -77,6 +78,7 @@ export type ApiServices =
   | Plugins
   | ProviderSignIns
   | Push
+  | ChatAttention
   | Scheduler
   | ScriptRuns
   | VoiceGateway;

@@ -18,6 +18,7 @@ import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
 import { Library } from "../files/library";
+import { ChatAttention } from "../push/chat-attention";
 
 export const isGroupTurn = (execution: Execution) =>
   parseRequestId(execution.requestId).kind === "group-turn";
@@ -31,6 +32,7 @@ export const isChatTurn = (execution: Execution) =>
   !isGroupTurn(execution) && !isCallTurn(execution);
 
 export type BotsContext = {
+  readonly attention: ChatAttention["Service"];
   readonly agents: AgentRepository["Service"];
   readonly conversations: ConversationRepository["Service"];
   readonly executions: ExecutionRepository["Service"];
@@ -55,6 +57,7 @@ export type BotsContext = {
 
 export const botsContext = Effect.gen(function* () {
   return {
+    attention: yield* ChatAttention,
     agents: yield* AgentRepository,
     conversations: yield* ConversationRepository,
     executions: yield* ExecutionRepository,

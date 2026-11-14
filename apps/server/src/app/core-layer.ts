@@ -1,4 +1,6 @@
 import { Layer } from "effect";
+import { ChatAttention } from "../push/chat-attention";
+import { PushDatabase } from "../push/push-database";
 import { DesktopControl } from "../bot-desktop/desktop-control";
 import { HeldActions } from "../bot-desktop/held-actions";
 import { BotDeletion } from "../bot-ports/bot-deletion";
@@ -32,6 +34,7 @@ assertVendorIds(
 
 export const coreLayer = (dataDir: string) =>
   Layer.mergeAll(
+    ChatAttention.layer,
     DesktopControl.layer,
     HeldActions.layer,
     Credentials.layer,
@@ -53,6 +56,7 @@ export const coreLayer = (dataDir: string) =>
       Layer.mergeAll(BotNotices.layer, BotDeletion.layer, CallNotes.layer),
     ),
     Layer.provideMerge(secretsLayer(passwordManagers)),
+    Layer.provideMerge(PushDatabase.layer(dataDir)),
     Layer.provideMerge(productLayer(dataDir)),
   );
 

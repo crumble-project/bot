@@ -5450,9 +5450,9 @@
         }
       }
     },
-    "/v1/push/devices/{installationId}/presence": {
+    "/v1/chat-attention/views/{viewId}": {
       "put": {
-        "operationId": "putPushPresence",
+        "operationId": "putChatAttentionView",
         "security": [
           {
             "BearerAuth": []
@@ -5465,10 +5465,10 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "minLength": 1
             },
             "required": true,
-            "name": "installationId",
+            "name": "viewId",
             "in": "path"
           }
         ],
@@ -5479,20 +5479,175 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "active": {
-                    "type": "boolean"
-                  },
-                  "agentId": {
+                  "chat": {
                     "type": [
-                      "string",
+                      "object",
                       "null"
                     ],
-                    "format": "uuid"
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "bot",
+                          "group"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
                   }
                 },
                 "required": [
-                  "active",
-                  "agentId"
+                  "chat"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat-attention/seen": {
+      "post": {
+        "operationId": "postChatAttentionSeen",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "chat": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "bot",
+                          "group"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  "eventIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "chat",
+                  "eventIds"
                 ]
               }
             }

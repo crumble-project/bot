@@ -77,6 +77,7 @@ export const groupChatsService = (
           { kind: "group", groupId },
           context.groups.delete(groupId),
         );
+        yield* context.attention.removeChat({ kind: "group", id: groupId });
         yield* context.changed(groupId);
       }),
     );

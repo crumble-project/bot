@@ -71,6 +71,7 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
       { kind: "bot", agentId: id },
       agents.delete(id),
     );
+    yield* context.attention.removeChat({ kind: "bot", id });
     yield* clear;
   });
 

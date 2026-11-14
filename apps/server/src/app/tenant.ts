@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { Effect, Layer, ManagedRuntime, type Scope } from "effect";
+import { Effect, Layer, ManagedRuntime, Schedule, type Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
@@ -48,6 +48,9 @@ import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
 import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
+import { PushRepository } from "../push/push-repository";
+import { PushTransports } from "../push/push-transports";
+import { ChatAttention } from "../push/chat-attention";
 import { ProviderModels, accountModels } from "../providers/providers";
 import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
@@ -269,7 +272,21 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   const schedules = BotSchedules.layer;
   const botRequests = BotRequests.layer;
 
-  const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
+  const attentionCleanup = Layer.effectDiscard(
+    Effect.gen(function* () {
+      const attention = yield* ChatAttention;
+      yield* attention.cleanup.pipe(
+        Effect.repeat(Schedule.spaced("1 minute")),
+        Effect.forkScoped,
+      );
+    }),
+  );
+
+  const push = Layer.mergeAll(PushDelivery, attentionCleanup).pipe(
+    Layer.provideMerge(Push.layerNoDeps),
+    Layer.provideMerge(PushTransports.layer),
+    Layer.provideMerge(PushRepository.layerNoDeps),
+  );
 
   const leaves = Layer.mergeAll(
     reviews,

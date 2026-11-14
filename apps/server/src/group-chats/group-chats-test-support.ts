@@ -5,6 +5,7 @@ import type { ConversationRepository } from "../bot-store/conversation-repositor
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
 import type { Library } from "../files/library";
+import type { ChatAttention } from "../push/chat-attention";
 import { layerOfRunner, type Runner } from "../shared/runner";
 import type { GroupChatRepository } from "./group-chat-repository";
 import {
@@ -23,6 +24,7 @@ export function standaloneGroupChats(
       | AgentRepository
       | ExecutionRepository
       | ConversationRepository
+      | ChatAttention
     >;
     store: { runtime: Runner<GroupChatRepository | Library> };
   },

@@ -1,0 +1,476 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "8cb2f69b-8f65-405c-be7e-c373a4643b9a",
+  "prevIds": ["99d5c599-f6b6-4d28-8528-a8cfab5b4150"],
+  "ddl": [
+    {
+      "name": "chat_views",
+      "entityType": "tables"
+    },
+    {
+      "name": "push_delivery",
+      "entityType": "tables"
+    },
+    {
+      "name": "push_devices",
+      "entityType": "tables"
+    },
+    {
+      "name": "push_outbox",
+      "entityType": "tables"
+    },
+    {
+      "name": "push_presence",
+      "entityType": "tables"
+    },
+    {
+      "name": "push_settings",
+      "entityType": "tables"
+    },
+    {
+      "name": "reply_associations",
+      "entityType": "tables"
+    },
+    {
+      "table": "chat_views",
+      "name": "view_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "chat_views",
+      "name": "chat_kind",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "chat_views",
+      "name": "chat_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "chat_views",
+      "name": "refreshed_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "outbox_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "installation_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "attempts",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "next_attempt_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "delivered",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "installation_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "platform",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "transport",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "token",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "environment",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "bundle_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "enabled",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_devices",
+      "name": "updated_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_outbox",
+      "name": "id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_outbox",
+      "name": "event_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_outbox",
+      "name": "event_json",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_outbox",
+      "name": "created_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_outbox",
+      "name": "expires_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_presence",
+      "name": "installation_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_presence",
+      "name": "active",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_presence",
+      "name": "agent_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_presence",
+      "name": "refreshed_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_settings",
+      "name": "key",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_settings",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "event_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "chat_kind",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "chat_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "message_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "entry_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "surface_json",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "reply_associations",
+      "name": "seen",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "push_delivery",
+      "name": "fk_push_delivery_outbox_id_push_outbox_id_fk",
+      "columns": ["outbox_id"],
+      "tableTo": "push_outbox",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "push_delivery",
+      "name": "fk_push_delivery_installation_id_push_devices_installation_id_fk",
+      "columns": ["installation_id"],
+      "tableTo": "push_devices",
+      "columnsTo": ["installation_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "push_presence",
+      "name": "fk_push_presence_installation_id_push_devices_installation_id_fk",
+      "columns": ["installation_id"],
+      "tableTo": "push_devices",
+      "columnsTo": ["installation_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "push_delivery",
+      "name": "push_delivery_pk",
+      "columns": ["outbox_id", "installation_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "chat_views",
+      "name": "chat_views_pk",
+      "columns": ["view_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "push_devices",
+      "name": "push_devices_pk",
+      "columns": ["installation_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "push_outbox",
+      "name": "push_outbox_pk",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "push_presence",
+      "name": "push_presence_pk",
+      "columns": ["installation_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "push_settings",
+      "name": "push_settings_pk",
+      "columns": ["key"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "reply_associations",
+      "name": "reply_associations_pk",
+      "columns": ["event_id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "push_outbox",
+      "name": "push_outbox_event_id_unique",
+      "columns": ["event_id"],
+      "nameExplicit": false,
+      "entityType": "uniques"
+    }
+  ],
+  "renames": []
+}

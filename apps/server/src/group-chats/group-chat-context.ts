@@ -14,8 +14,10 @@ import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
 import type { Library } from "../files/library";
+import type { ChatAttention } from "../push/chat-attention";
 
 export type GroupChatServices = {
+  readonly attention: ChatAttention["Service"];
   readonly groups: GroupChatRepository["Service"];
   readonly agents: AgentRepository["Service"];
   readonly executions: ExecutionRepository["Service"];

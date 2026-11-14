@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { accessOf, noServices, type Access } from "../shared/runner";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { Bots } from "../bots/bots";
+import { ChatAttention } from "../push/chat-attention";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "../bots/runtime";
@@ -50,6 +51,7 @@ export class GroupChats extends Context.Service<
     GroupChats,
     Effect.gen(function* () {
       const services: GroupChatServices = {
+        attention: yield* ChatAttention,
         groups: yield* GroupChatRepository,
         agents: yield* AgentRepository,
         executions: yield* ExecutionRepository,

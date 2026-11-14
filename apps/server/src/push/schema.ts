@@ -35,6 +35,23 @@ export const pushPresence = sqliteTable("push_presence", {
   refreshedAt: integer("refreshed_at").notNull(),
 });
 
+export const chatViews = sqliteTable("chat_views", {
+  viewId: text("view_id").primaryKey(),
+  chatKind: text("chat_kind", { enum: ["bot", "group"] }).notNull(),
+  chatId: text("chat_id").notNull(),
+  refreshedAt: integer("refreshed_at").notNull(),
+});
+
+export const replyAssociations = sqliteTable("reply_associations", {
+  eventId: text("event_id").primaryKey(),
+  chatKind: text("chat_kind", { enum: ["bot", "group"] }).notNull(),
+  chatId: text("chat_id").notNull(),
+  messageId: text("message_id").notNull(),
+  entryId: text("entry_id").notNull(),
+  surfaceJson: text("surface_json").notNull(),
+  seen: integer("seen", { mode: "boolean" }).notNull().default(false),
+});
+
 export const pushOutbox = sqliteTable("push_outbox", {
   id: text("id").primaryKey(),
   eventId: text("event_id").notNull().unique(),
