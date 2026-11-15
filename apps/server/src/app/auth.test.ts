@@ -258,3 +258,23 @@ test("rejects more than nine pins, duplicates, and malformed keys", async () => 
     accounts.close();
   }
 });
+
+test("updating pins tells the account's listener", async () => {
+  const calls: [string, string[]][] = [];
+  const accounts = await createAuth(
+    mkdtempSync(join(tmpdir(), "auth-")),
+    ORIGIN,
+    { onPinsChanged: (userId, pins) => calls.push([userId, pins]) },
+  );
+
+  try {
+    const { token, user } = await signUp(accounts, "pins@example.com");
+    await authRequest(accounts, token!, "update-user", {
+      pinnedConversations: ["agent:b1"],
+    });
+
+    expect(calls).toEqual([[user.id, ["agent:b1"]]]);
+  } finally {
+    accounts.close();
+  }
+});

@@ -213,6 +213,23 @@
         ],
         "description": "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record."
       },
+      "PinsEvent": {
+        "type": "object",
+        "properties": {
+          "pinnedConversations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(agent|group):\\S+$"
+            },
+            "maxItems": 9
+          }
+        },
+        "required": [
+          "pinnedConversations"
+        ],
+        "description": "The account's pinned conversations changed, sent as the `pins` event on /v1/events with the whole list, first pin first. Not replayed: read the session on connect."
+      },
       "VoiceGatewayConfigEvent": {
         "type": "object",
         "properties": {
@@ -17134,11 +17151,14 @@
           "learned": {
             "$ref": "#/components/schemas/LearnedEvent"
           },
+          "pins": {
+            "$ref": "#/components/schemas/PinsEvent"
+          },
           "heartbeat": {
             "$ref": "#/components/schemas/HeartbeatEvent"
           }
         },
-        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Current chat previews replay on connection; finished replies and learned events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Current chat previews replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
         "security": [
           {
             "BearerAuth": []

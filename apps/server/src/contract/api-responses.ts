@@ -24,6 +24,7 @@ import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
 import { replyEvent } from "./reply-event";
 import { replyReference } from "./push";
+import { pinnedConversations } from "./user-preferences";
 import {
   voiceCallCancelEvent,
   voiceCallEvent,
@@ -1228,6 +1229,13 @@ export const activityEvent = z
   .discriminatedUnion("type", [replyEvent, chatPreviewEvent])
   .openapi("ActivityEvent");
 
+export const pinsEvent = z
+  .object({ pinnedConversations })
+  .openapi("PinsEvent", {
+    description:
+      "The account's pinned conversations changed, sent as the `pins` event on /v1/events with the whole list, first pin first. Not replayed: read the session on connect.",
+  });
+
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
 
 export const eventSchemas: {
@@ -1251,6 +1259,11 @@ export const eventSchemas: {
     schema: learnedEvent,
     component: "LearnedEvent",
     artifact: "learned-event.schema.json",
+  },
+  {
+    schema: pinsEvent,
+    component: "PinsEvent",
+    artifact: "pins-event.schema.json",
   },
   { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
   {
