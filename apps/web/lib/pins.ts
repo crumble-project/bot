@@ -44,8 +44,13 @@ export function usePins(
 
   const { refetch } = session;
 
-  // A list filtered to conversations that haven't loaded would wipe every pin.
-  const ready = bots !== undefined && groups !== undefined;
+  // A list filtered to conversations that haven't loaded would wipe every pin, and so would one
+  // written before the session's list arrives. A server too old to keep pins never sends one.
+  const ready =
+    bots !== undefined &&
+    groups !== undefined &&
+    pinnedConversations.safeParse(session.data?.user.pinnedConversations)
+      .success;
 
   const existing = new Set([
     ...(bots ?? []).map(({ id }) => botPin(id)),

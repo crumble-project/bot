@@ -29,6 +29,10 @@ const values = {
 let stored: string[] = [];
 let written: string[][] = [];
 let failWrites = false;
+
+/** Answers sessions without a pins list, as before it loads or from an older server. */
+let omitPins = false;
+
 let release = () => {};
 let pins: Pins | undefined;
 let root: Root;
@@ -72,7 +76,9 @@ const stubServer = () =>
         if (path.endsWith("/get-session"))
           return Response.json({
             session: { id: "s", userId: "u" },
-            user: { id: "u", pinnedConversations: stored },
+            user: omitPins
+              ? { id: "u" }
+              : { id: "u", pinnedConversations: stored },
           });
 
         return Response.json(null);
@@ -133,6 +139,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   failWrites = false;
+  omitPins = false;
   await renderPins(bots, groups);
 });
 
@@ -225,4 +232,15 @@ test("a failed write rolls back to the session's list", async () => {
   await act(async () => release());
   await waitFor(shows(["agent:a"]), "the rollback");
   expect(written).toEqual([["agent:a", "agent:b"]]);
+});
+
+test("changes wait until the session's list has loaded", async () => {
+  await load(["agent:a"]);
+  omitPins = true;
+  await act(async () => notifySession());
+  await waitFor(() => !current().ready, "the list to go");
+  await act(async () => current().pin("agent:b"));
+  await settle();
+  expect(written).toEqual([]);
+  expect(stored).toEqual(["agent:a"]);
 });
