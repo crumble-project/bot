@@ -278,3 +278,20 @@ test("updating pins tells the account's listener", async () => {
     accounts.close();
   }
 });
+
+test("an account from before pins reads as no pins", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "auth-"));
+  const accounts = await createAuth(dataDir, ORIGIN);
+
+  try {
+    const { token } = await signUp(accounts, "older@example.com");
+    // Accounts made before the column existed have NULL there, not the default.
+    const database = new Database(join(dataDir, "auth.sqlite"));
+    database.run('update user set "pinnedConversations" = NULL');
+    database.close();
+
+    expect(await pinsOf(accounts, token!)).toEqual([]);
+  } finally {
+    accounts.close();
+  }
+});

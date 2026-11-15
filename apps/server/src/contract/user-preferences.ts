@@ -36,5 +36,8 @@ export const userPreferenceFields = {
     defaultValue: [],
     input: true,
     validator: { input: pinnedConversations },
+    // Accounts from before this field hold NULL, not the default; they have no pins yet. Clients
+    // read a missing field as a server too old to keep pins, so NULL must not look like that.
+    transform: { output: (value) => value ?? [] },
   },
 } satisfies Record<string, DBFieldAttribute>;
