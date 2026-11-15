@@ -162,3 +162,99 @@ test("closed sign-up needs an open invite, which works once", async () => {
     accounts.close();
   }
 });
+
+const ORIGIN = "http://localhost:7337";
+
+/** Calls an auth endpoint as a client does: over HTTP, with the account's bearer token. */
+const authRequest = (
+  accounts: Awaited<ReturnType<typeof createAuth>>,
+  token: string,
+  path: string,
+  body?: unknown,
+) =>
+  accounts.auth.handler(
+    new Request(`${ORIGIN}/api/auth/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        origin: ORIGIN,
+      },
+      body: body === undefined ? null : JSON.stringify(body),
+    }),
+  );
+
+const pinsOf = async (
+  accounts: Awaited<ReturnType<typeof createAuth>>,
+  token: string,
+) => {
+  const session = (await (
+    await authRequest(accounts, token, "get-session")
+  ).json()) as { user: { pinnedConversations?: unknown } };
+
+  return session.user.pinnedConversations;
+};
+
+test("a new account has no pins", async () => {
+  const accounts = await createAuth(
+    mkdtempSync(join(tmpdir(), "auth-")),
+    ORIGIN,
+  );
+
+  try {
+    const { token } = await signUp(accounts, "pins@example.com");
+
+    expect(await pinsOf(accounts, token!)).toEqual([]);
+  } finally {
+    accounts.close();
+  }
+});
+
+test("saves pins in order", async () => {
+  const accounts = await createAuth(
+    mkdtempSync(join(tmpdir(), "auth-")),
+    ORIGIN,
+  );
+
+  try {
+    const { token } = await signUp(accounts, "pins@example.com");
+    const saved = await authRequest(accounts, token!, "update-user", {
+      pinnedConversations: ["group:g1", "agent:b1"],
+    });
+
+    expect(saved.status).toBe(200);
+    expect(await pinsOf(accounts, token!)).toEqual(["group:g1", "agent:b1"]);
+  } finally {
+    accounts.close();
+  }
+});
+
+test("rejects more than nine pins, duplicates, and malformed keys", async () => {
+  const accounts = await createAuth(
+    mkdtempSync(join(tmpdir(), "auth-")),
+    ORIGIN,
+  );
+
+  try {
+    const { token } = await signUp(accounts, "pins@example.com");
+    await authRequest(accounts, token!, "update-user", {
+      pinnedConversations: ["agent:kept"],
+    });
+    const tooMany = Array.from({ length: 10 }, (_, index) => `agent:${index}`);
+
+    for (const pinnedConversations of [
+      tooMany,
+      ["agent:a", "agent:a"],
+      ["bot:a"],
+    ]) {
+      const response = await authRequest(accounts, token!, "update-user", {
+        pinnedConversations,
+      });
+
+      expect(response.status).toBe(400);
+    }
+    expect(await pinsOf(accounts, token!)).toEqual(["agent:kept"]);
+  } finally {
+    accounts.close();
+  }
+});
