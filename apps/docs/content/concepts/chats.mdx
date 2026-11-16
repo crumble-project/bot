@@ -46,6 +46,15 @@ flowchart LR
 **Compaction never deletes anything you can see.** It only changes what the
 bot reads on its next turn.
 
+## Usage
+
+In the web client, a bot's details show **Usage** for its bot chat: the tokens
+and cost of each model the chat has used, including the vision model, and of
+tools that call a model of their own, such as questions to the vision model.
+Providers that bill by subscription, such as Claude Code, report no cost, so
+only their tokens show. Jobs keep their own usage, including their intent
+checks, shown in each job's pane.
+
 ## Files
 
 In the web client, attach any file up to 100 MB, with at most eight files per
