@@ -4508,6 +4508,10 @@
               ]
             },
             "description": "The thinking levels this model takes, from lowest to highest. A bot's level outside them runs at the nearest one."
+          },
+          "images": {
+            "type": "boolean",
+            "description": "Whether this model reads images. True when the provider's catalog lists no input types."
           }
         },
         "required": [
@@ -4516,7 +4520,8 @@
           "name",
           "contextWindow",
           "reasoning",
-          "thinkingLevels"
+          "thinkingLevels",
+          "images"
         ]
       },
       "ProviderConfigured": {

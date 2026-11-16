@@ -40,6 +40,7 @@ import { uploadFile } from "@/features/library/api";
 export type Upload = {
   name: string;
   mimeType: string;
+  size?: number;
   id?: string;
   status: "pending" | "ready" | "error";
   existed?: boolean;
@@ -82,6 +83,7 @@ function useAttachments(path: string) {
         const upload: Upload = {
           name: file.name,
           mimeType: file.type,
+          size: file.size,
           status: file.size > MAX_FILE_BYTES ? "error" : "pending",
           ...(file.size > MAX_FILE_BYTES && { error: "Larger than 100 MB" }),
         };
@@ -584,6 +586,8 @@ type ComposerProps = {
   onCancelReply?: () => void;
   mentionable?: Mentionable[];
   actions?: ReactNode;
+  /** Shown above the composer for the files attached so far. */
+  notice?: (uploads: Upload[]) => ReactNode;
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
 };
@@ -716,6 +720,7 @@ export function Composer({
   onCancelReply,
   mentionable = [],
   actions,
+  notice,
   onSend,
   onStop,
 }: ComposerProps) {
@@ -745,6 +750,7 @@ export function Composer({
     >
       <ReplyBanner replyingTo={replyingTo} onCancel={onCancelReply} />
       <ComposerErrors uploads={uploads.length} errors={errors} />
+      {notice?.(uploads)}
       <MentionSuggestions
         suggestions={mentions.suggestions}
         suggestion={mentions.suggestion}
