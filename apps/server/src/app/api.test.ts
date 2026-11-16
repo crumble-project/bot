@@ -737,6 +737,20 @@ describe("HTTP API for bots, chats, and activity", () => {
     );
   });
 
+  test("/v1/events sends pins as their own event", async () => {
+    const { app, service } = setup();
+
+    const response: Response = await req(app, "/v1/events");
+    const reader = response.body!.getReader();
+    service.announce({ type: "pins", pinnedConversations: ["group:g1"] });
+    const text = await readUntil(reader, '"group:g1"');
+    expect(text).toContain(
+      'event: pins\ndata: {"pinnedConversations":["group:g1"]}',
+    );
+    expect(text).not.toContain('event: activity\ndata: {"type":"pins"');
+    await reader.cancel();
+  });
+
   test("streams server-wide activity", async () => {
     const { app } = setup();
 

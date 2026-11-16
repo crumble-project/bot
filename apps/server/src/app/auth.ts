@@ -1,3 +1,4 @@
+import { z } from "@hono/zod-openapi";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -19,7 +20,10 @@ import { getMigrations } from "better-auth/db/migration";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { authUsers } from "./auth-schema";
-import { userPreferenceFields } from "../contract/user-preferences";
+import {
+  pinnedConversations,
+  userPreferenceFields,
+} from "../contract/user-preferences";
 import { INVITE_HEADER, invites, type Invites } from "./invites";
 import {
   serverSettingsStore,
@@ -117,9 +121,38 @@ function signUpGate() {
 
 type SignUpGate = ReturnType<typeof signUpGate>;
 
-const userDatabaseHooks = (gate: SignUpGate) =>
+/** What the server does when an account changes, beyond saving it. */
+export type AccountHooks = {
+  /** Every saved account update, with the pins it now has: a theme change reports unchanged pins. */
+  onPinsChanged?: (userId: string, pins: string[]) => void;
+};
+
+/** The pins on a saved user row: Better Auth hands hooks the stored JSON text, not the array. */
+const storedPins = z
+  .string()
+  .transform((text, context) => {
+    try {
+      return pinnedConversations.parse(JSON.parse(text));
+    } catch {
+      context.addIssue({ code: "custom", message: "Unreadable pins" });
+
+      return z.NEVER;
+    }
+  })
+  .or(pinnedConversations)
+  .catch([]);
+
+const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
   ({
     user: {
+      update: {
+        async after(user) {
+          hooks.onPinsChanged?.(
+            user.id,
+            storedPins.parse(user["pinnedConversations"]),
+          );
+        },
+      },
       create: {
         // Every way to create a user passes here: the gate for closed sign-up and the first admin.
         async before(user, context) {
@@ -209,6 +242,7 @@ function authOptions(
   baseURL: string,
   secretPath: string,
   gate: SignUpGate,
+  hooks: AccountHooks,
 ) {
   const passkeyOrigin = passkeyOriginFor(baseURL);
 
@@ -222,7 +256,7 @@ function authOptions(
     session: { cookieCache: { enabled: false } },
     rateLimit: { enabled: true, storage: "database" },
     user: { additionalFields: userPreferenceFields },
-    databaseHooks: userDatabaseHooks(gate),
+    databaseHooks: userDatabaseHooks(gate, hooks),
     plugins: [
       bearer(),
       admin(),
@@ -237,7 +271,11 @@ function authOptions(
   } satisfies BetterAuthOptions;
 }
 
-export async function createAuth(dataDir: string, baseURL: string) {
+export async function createAuth(
+  dataDir: string,
+  baseURL: string,
+  hooks: AccountHooks = {},
+) {
   const secretPath = join(dataDir, ".auth-secret");
 
   if (!existsSync(secretPath))
@@ -249,7 +287,7 @@ export async function createAuth(dataDir: string, baseURL: string) {
   const database = new Database(join(dataDir, "auth.sqlite"));
   database.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   const gate = signUpGate();
-  const options = authOptions(database, baseURL, secretPath, gate);
+  const options = authOptions(database, baseURL, secretPath, gate, hooks);
 
   try {
     const { runMigrations } = await getMigrations(options);

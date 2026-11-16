@@ -47,7 +47,17 @@ export type LearnedActivity = {
   createdAt: string;
 };
 
-export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
+/** The account's pinned conversations changed; the whole list, first pin first. */
+export type PinsActivity = {
+  type: "pins";
+  pinnedConversations: string[];
+};
+
+export type Activity =
+  | ReplyActivity
+  | ChatPreviewActivity
+  | LearnedActivity
+  | PinsActivity;
 
 type ReferencedMessage = TranscriptMessage & {
   replyReferences: ReplyReference[];
@@ -98,7 +108,7 @@ export class Bots extends Context.Service<
       answer: JobAnswer,
     ) => Effect.Effect<void, AppError>;
     readonly announce: (
-      event: ReplyActivity | LearnedActivity,
+      event: ReplyActivity | LearnedActivity | PinsActivity,
     ) => Effect.Effect<void>;
     readonly snapshot: (
       conversationId: string,
