@@ -21,6 +21,7 @@ import { DesktopPreview } from "@/features/bot-desktop/desktop";
 import { finished } from "@/features/automations/timing";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 import { RecentFiles } from "@/features/library/recent";
+import { ChatUsage } from "./chat-usage";
 
 function Automation({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation(toggleScheduleOptions(schedule.id));
@@ -111,6 +112,7 @@ function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <AutomationList schedules={schedules} automations={automations} />
       </section>
       <RecentFiles botId={bot.id} onNavigate={onClose} />
+      <ChatUsage botId={bot.id} />
     </div>
   );
 }

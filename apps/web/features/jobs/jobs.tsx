@@ -33,19 +33,9 @@ import { api } from "@/lib/api";
 import { JOB_KINDS } from "./kinds";
 import { type JobRef } from "./api";
 import { Reply } from "@/components/markdown";
-import { usageDocument } from "@crumble/server/contract/tool-details";
 import { blocksOf } from "@/features/chat/tool-details";
-
-/** A job's cost over its models. Subscription providers such as Claude Code report zero, which says nothing. */
-export function costLine(usage: Job["usage"]) {
-  const models = Object.values(
-    usageDocument.safeParse(usage).data?.models ?? {},
-  );
-
-  const cost = models.reduce((sum, model) => sum + (model.cost?.total ?? 0), 0);
-
-  return cost > 0 ? `$${cost.toFixed(4)}` : null;
-}
+import { costLine } from "@/features/chat/usage";
+import { usageDocument } from "@crumble/server/contract/tool-details";
 
 const STEP_ICONS = {
   terminal: IconTerminal2,
@@ -313,7 +303,10 @@ async function downloadTranscript(botId: string, job: JobRef) {
 function JobTitle({ job, current }: { job: JobRef; current: Job | undefined }) {
   const { icon: Icon } = JOB_KINDS[job.kind];
 
-  const subtitle = [current?.model?.model, costLine(current?.usage)];
+  const subtitle = [
+    current?.model?.model,
+    costLine(usageDocument.safeParse(current?.usage).data),
+  ];
 
   return (
     <>
