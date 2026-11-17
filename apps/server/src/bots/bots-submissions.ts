@@ -1,15 +1,23 @@
 import { Effect } from "effect";
+import type { Agent } from "../contract/agents";
+import { pi } from "../shared/app-errors";
+import { MAX_IMAGE_BYTES, attachmentKind } from "../shared/attachment-rules";
 import { fileIdDigest } from "../shared/attachments";
 import { groupTurnScope } from "../shared/request-ids";
 import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
-import { Conflict, REQUEST_ID_REUSED, type AppError } from "../shared/errors";
+import {
+  Conflict,
+  InvalidInput,
+  REQUEST_ID_REUSED,
+  type AppError,
+} from "../shared/errors";
 import type { BotsAnnouncements } from "./bots-announcements";
 import type { BotsChat } from "./bots-chat";
 import { isChatTurn, type BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
-import { OWNER_TIMEZONE } from "./runtime";
+import { OWNER_TIMEZONE, unreadableImages } from "./runtime";
 
 export type SendOptions = {
   scheduleId?: string;
@@ -45,11 +53,33 @@ const differsFrom = (
   (existing.attachmentsDigest ?? null) !== attachmentsDigest;
 
 export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
-  const { executions, runtime, settings } = context;
+  const { executions, runtime, settings, library } = context;
   const { conversation, withAgent } = deps.lookup;
   const { changed } = deps.notifications;
   const { forkPreview } = deps.announcements;
   const { admit, chat } = deps;
+
+  // Refuses before the turn is recorded, so the owner sees one error and the message goes back to the composer.
+  const refuseUnreadableImages = Effect.fnUntraced(function* (
+    owner: Agent,
+    files: readonly string[],
+  ) {
+    const entries = yield* library.entries(
+      { kind: "bot", agentId: owner.id },
+      files,
+    );
+
+    const images = [...entries.values()].some(
+      (entry) =>
+        attachmentKind(entry.mimeType) === "image" &&
+        entry.size <= MAX_IMAGE_BYTES,
+    );
+
+    if (images && !(yield* pi(() => runtime.acceptsImages(owner))))
+      return yield* Effect.fail(
+        new InvalidInput({ message: unreadableImages(owner) }),
+      );
+  });
 
   const send = Effect.fn("Bots.send")(function* (
     conversationId: string,
@@ -70,8 +100,10 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
       return yield* conflict(REQUEST_ID_REUSED);
 
-    if (!existing && files.length && !groupTurnScope(requestId, owner.id))
+    if (!existing && files.length && !groupTurnScope(requestId, owner.id)) {
       yield* runtime.validateFiles(owner.id, files);
+      yield* refuseUnreadableImages(owner, files);
+    }
 
     const execution =
       existing ??

@@ -88,6 +88,9 @@ PNG, JPEG, GIF, and WebP images up to 5 MB reach the model as images; larger
 images arrive as references. A bot whose model reads images sees them as they
 are. A bot whose model can't read images refuses a message with an inline image,
 unless the account has a [vision model](/getting-started/providers#vision-model).
+The web chat warns you as soon as you attach such an image, with links to the
+bot's profile and the vision model setting. A refused message goes back to the
+composer so you can remove the image or send it again after changing the model.
 
 With a vision model set, the vision model reads each image and describes it,
 including any visible text. The bot works from the description, and the
