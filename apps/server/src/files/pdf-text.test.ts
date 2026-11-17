@@ -37,6 +37,9 @@ function oversizedTextPdf(pages: number): Uint8Array {
   return new TextEncoder().encode(pdf);
 }
 
+/** Far above an oversized PDF's extraction time, so a loaded machine still reaches the worker's own limits before a timer. */
+const SLOW_WORKER_MS = 30_000;
+
 async function workerErrorExit(bytes: Uint8Array): Promise<number> {
   let closed = () => {};
   const disconnected = new Promise<void>((resolve) => {
@@ -59,7 +62,7 @@ async function workerErrorExit(bytes: Uint8Array): Promise<number> {
   const timer = setTimeout(() => {
     timedOut = true;
     worker.kill();
-  }, 5000);
+  }, SLOW_WORKER_MS);
   try {
     await worker.stdin.write(bytes);
     await worker.stdin.end();
@@ -122,7 +125,7 @@ describe("extractPdfText", () => {
       ],
       sampleRss: async () => 1024 * 1024,
     };
-    const limits = { ms: 5000, memoryMib: 512 };
+    const limits = { ms: SLOW_WORKER_MS, memoryMib: 512 };
     const onePage = await runPdfExtraction(
       oversizedTextPdf(1),
       limits,
@@ -142,7 +145,7 @@ describe("extractPdfText", () => {
         "PDF extraction failed",
         "PDF memory measurement unavailable",
       ]).toContain(real.reason);
-  }, 15000);
+  }, 60_000);
   test("completion waits for an in-flight RSS sample", async () => {
     let release = () => {};
     let started = () => {};

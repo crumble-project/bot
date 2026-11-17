@@ -50,7 +50,7 @@ export function ChatUsage({ botId }: { botId: string }) {
               <Row key={`${row.kind}:${row.name}`} row={row} />
             ))}
           </ul>
-          {total && (
+          {total !== null && (
             <p className="text-xs text-muted-foreground">
               Total {total}. Jobs have their own usage.
             </p>
