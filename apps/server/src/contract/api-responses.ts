@@ -1102,6 +1102,10 @@ export const modelResponse = z
       description:
         "The thinking levels this model takes, from lowest to highest. A bot's level outside them runs at the nearest one.",
     }),
+    images: z.boolean().openapi({
+      description:
+        "Whether this model reads images. True when the provider's catalog lists no input types.",
+    }),
   })
   .openapi("Model");
 

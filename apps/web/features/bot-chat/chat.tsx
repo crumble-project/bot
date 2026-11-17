@@ -32,6 +32,7 @@ import {
 } from "@/features/chat/conversation";
 import type { ConversationTarget } from "@/features/chat/conversation-target";
 import { DetailsPanel, DetailsSheet } from "./details";
+import { ImageWarning } from "./image-warning";
 import { JobPanel } from "@/features/jobs/jobs";
 import { CallPanel } from "@/features/call-requests/call-panel";
 import { CallNotice } from "@/features/call-requests/call-request-card";
@@ -322,6 +323,7 @@ function ChatComposer({
         onCancelReply={() => setReplyTo(null)}
         mentionable={mentionableBots(bot, bots)}
         actions={<BotReasoning bot={bot} />}
+        notice={(uploads) => <ImageWarning bot={bot} uploads={uploads} />}
         onSend={(content, uploads) => sendMessage(content, uploads)}
         onStop={onStop}
       />

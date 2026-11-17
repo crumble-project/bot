@@ -970,7 +970,17 @@ describe("library files", () => {
 
     await expect(
       service.sendChat(agent.id, "look", uuid(11), undefined, [small.file.id]),
-    ).rejects.toThrow("can't read images");
+    ).rejects.toThrow(
+      "Chat's model (chat) can't read images. Choose a model that accepts images in Chat's profile",
+    );
+
+    // Refused before a turn is recorded, so the chat shows no failed turn beside the send error.
+    const refused = await service.chatSnapshot(agent.id);
+
+    expect(refused.error).toBeNull();
+    expect(refused.messages.some((message) => message.role === "user")).toBe(
+      false,
+    );
 
     const accepted = await service.sendChat(
       agent.id,
