@@ -14,7 +14,8 @@ import {
   invalidateBots,
 } from "@/features/bots/api";
 import { send } from "@/lib/api";
-import { BotAvatar, type BotState } from "@/components/bot-avatar";
+import { STATES } from "open-bot-avatar";
+import { BotAvatar } from "@/components/bot-avatar";
 import { AvatarEditor } from "./avatar-editor";
 
 function useAvatarDraft() {
@@ -48,19 +49,10 @@ function useAvatarDraft() {
   return { bots, selected, value, save, select, edit };
 }
 
-const PREVIEW_STATES: BotState[] = [
-  "idle",
-  "thinking",
-  "working",
-  "waiting",
-  "blocked",
-  "done",
-];
-
 function AvatarStatePreviews({ value }: { value: BotAvatarDefinition }) {
   return (
     <div className="mx-auto flex max-w-92 flex-wrap justify-center gap-4">
-      {PREVIEW_STATES.map((state) => (
+      {STATES.map((state) => (
         <div
           key={state}
           className="flex w-20 flex-col items-center gap-2 text-sm capitalize"
