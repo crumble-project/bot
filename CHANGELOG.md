@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bot avatars show what their bot is doing, using `open-bot-avatar` 0.3.0: three hopping dots while it thinks, bent over the work while it writes, searches, remembers, or uses tools, an exclamation mark while it retries, a short celebration when a reply finishes, and waiting in a group chat while it answers next. Live avatars ease from one state to the next instead of restarting. The `/avatars` page previews every state.
 - A bot's details in the web chat show **Usage**: tokens and cost for each model and tool its bot chat has used, with a total. Job panes now include tool costs, such as intent checks, in their cost.
 - When a bot's model can't read images and no vision model is set, the web chat warns as soon as an image is attached and links to the bot's profile and the vision model setting. The server refuses such a message before recording a turn, so the error shows once, names the bot, and the message goes back to the composer. `GET /v1/models` returns `images` for each model.
 - Pinned conversations are saved on the account, so every app shows the same pins in the same order. The session returns them as `pinnedConversations`, `update-user` saves the whole list (up to nine `agent:<id>` or `group:<id>` keys), and `/v1/events` sends a `pins` event to the account's open apps when they change. On the web, pin or unpin a bot chat or group chat from its **More** menu in the sidebar, and drag pins in the **Pinned** section to reorder them.
