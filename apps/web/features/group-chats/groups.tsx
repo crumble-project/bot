@@ -35,7 +35,7 @@ import {
 } from "./api";
 import type { Message } from "@/features/chat/api";
 import { call, queryClient, send } from "@/lib/api";
-import { BotAvatar, botColor } from "@/components/bot-avatar";
+import { BotAvatar, type BotState, botColor } from "@/components/bot-avatar";
 import { ConfirmDeleteContent, MobileSidebarTrigger } from "@/components/page";
 import {
   ConversationEmpty,
@@ -76,6 +76,12 @@ const MEMBER_STATUS = {
   queued: "answers next",
   disabled: "is disabled and skipped",
   idle: "is here",
+};
+
+const memberAvatar = (status: keyof typeof MEMBER_STATUS): BotState => {
+  if (status === "running") return "working";
+
+  return status === "queued" ? "waiting" : "idle";
 };
 
 const groupConversation = (
@@ -124,7 +130,7 @@ function GroupHeader({
                 <BotAvatar
                   bot={member}
                   size={26}
-                  state={status === "running" ? "working" : "idle"}
+                  state={memberAvatar(status)}
                   className={cn(status === "disabled" && "opacity-40")}
                 />
               </TooltipTrigger>

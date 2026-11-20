@@ -1,10 +1,10 @@
 import { type CSSProperties, useLayoutEffect, useMemo, useRef } from "react";
-import { renderAvatarSvg } from "open-bot-avatar";
-import { mountAvatar } from "open-bot-avatar/dom";
+import { type AvatarState, renderAvatarSvg } from "open-bot-avatar";
+import { type MountedAvatar, mountAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
-export type BotState = "idle" | "working" | "sleeping";
+export type BotState = AvatarState;
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
 
@@ -20,23 +20,35 @@ export function botStyle(color: string) {
 function useLiveAvatar(
   still: boolean,
   look: BotAvatarDefinition,
-  mood: "thinking" | "idle",
+  state: AvatarState,
 ) {
   const host = useRef<HTMLSpanElement>(null);
+  const avatar = useRef<MountedAvatar | null>(null);
+  const latest = useRef(state);
 
   useLayoutEffect(() => {
     if (still || !host.current) return;
 
-    const avatar = mountAvatar(host.current, {
+    const mounted = mountAvatar(host.current, {
       ...look,
-      mood,
+      state: latest.current,
       reducedMotion: "system",
       followPointer: true,
       label: "",
     });
 
-    return () => avatar.destroy();
-  }, [still, look, mood]);
+    avatar.current = mounted;
+
+    return () => {
+      mounted.destroy();
+      avatar.current = null;
+    };
+  }, [still, look]);
+
+  useLayoutEffect(() => {
+    latest.current = state;
+    avatar.current?.update({ state });
+  }, [state]);
 
   return host;
 }
@@ -57,9 +69,8 @@ export function BotAvatar({
 }) {
   const look = bot.avatar;
 
-  const still = !live || state === "sleeping";
-  const mood = state === "working" ? "thinking" : "idle";
-  const host = useLiveAvatar(still, look, mood);
+  const still = !live;
+  const host = useLiveAvatar(still, look, state);
 
   const svg = useMemo(
     () =>
@@ -67,11 +78,11 @@ export function BotAvatar({
         ? renderAvatarSvg(look.definition, {
             color: look.color,
             eyeColor: look.eyeColor,
-            motion: mood,
+            state,
             reducedMotion: true,
           })
         : "",
-    [still, look, mood],
+    [still, look, state],
   );
 
   return (
@@ -79,11 +90,7 @@ export function BotAvatar({
       aria-hidden="true"
       data-state={state}
       className={cn("inline-block shrink-0", className)}
-      style={{
-        width: size,
-        height: size,
-        opacity: state === "sleeping" ? 0.45 : 1,
-      }}
+      style={{ width: size, height: size }}
     >
       {still ? (
         <img
