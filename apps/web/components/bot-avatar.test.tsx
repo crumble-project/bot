@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
-test("static and live avatars update geometry, moods and colors, stop sleeping, and honor reduced motion", async () => {
+test("static and live avatars update geometry, moods and colors, and honor reduced motion", async () => {
   const window = new Window();
   const globals = Object.getOwnPropertyDescriptors(globalThis);
   const frames = new Map<number, FrameRequestCallback>();
@@ -82,17 +82,6 @@ test("static and live avatars update geometry, moods and colors, stop sleeping, 
     for (const fn of changes) fn();
     await tick();
     expect(frames.size).toBe(1);
-    await act(async () =>
-      root.render(<BotAvatar bot={bot} live state="sleeping" />),
-    );
-    expect(container.querySelector("[data-avatar-scene]")).toBeNull();
-    expect(container.querySelector("img")!.src).toBe(idle);
-    expect(
-      Number(
-        container.querySelector<HTMLElement>("[data-state]")!.style.opacity,
-      ),
-    ).toBeLessThan(1);
-    expect(frames.size).toBe(0);
 
     const next = {
       ...bot,

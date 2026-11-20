@@ -32,9 +32,8 @@ Crumble doesn't call a model from the avatar editor. A bot can also suggest its
 own definition in chat for you to import.
 
 The `/avatars` page previews the idle, thinking, working, waiting, blocked,
-done, and sleeping states. Select a bot and click **Save avatar to bot** to apply your
-choice. Sleeping avatars use a dimmed still image. Live avatars respect your
-system's reduced-motion setting.
+and done states. Select a bot and click **Save avatar to bot** to apply your
+choice. Live avatars respect your system's reduced-motion setting.
 
 An avatar shows what its bot is doing. While the bot thinks, its body turns
 into three hopping dots. While it writes, searches, remembers, or uses tools, it

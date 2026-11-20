@@ -4,7 +4,6 @@ import {
   type BotState,
   BotAvatar,
 } from "@/components/bot-avatar";
-import type { Bot } from "@/features/bots/api";
 import { type Working, isBusy, useWorking, workingAvatar } from "./working";
 
 const DONE_MS = 4000;
@@ -34,31 +33,22 @@ function useJustFinished(working: Working) {
   return finished;
 }
 
-const avatarState = (
-  enabled: boolean,
-  working: Working,
-  finished: boolean,
-): BotState => {
-  if (!enabled) return "sleeping";
-
-  if (finished) return "done";
-
-  return workingAvatar(working);
-};
+const avatarState = (working: Working, finished: boolean): BotState =>
+  finished ? "done" : workingAvatar(working);
 
 export function LiveBotAvatar({
   bot,
   size,
   className,
 }: {
-  bot: AvatarBot & Pick<Bot, "enabled">;
+  bot: AvatarBot;
   size: number;
   className?: string;
 }) {
   const working = useWorking(bot.id);
   const finished = useJustFinished(working);
 
-  const state = avatarState(bot.enabled, working, finished);
+  const state = avatarState(working, finished);
 
   return (
     <BotAvatar

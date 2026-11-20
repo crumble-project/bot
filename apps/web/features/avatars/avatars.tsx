@@ -55,7 +55,6 @@ const PREVIEW_STATES: BotState[] = [
   "waiting",
   "blocked",
   "done",
-  "sleeping",
 ];
 
 function AvatarStatePreviews({ value }: { value: BotAvatarDefinition }) {

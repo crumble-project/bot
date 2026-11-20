@@ -4,7 +4,7 @@ import { type MountedAvatar, mountAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
-export type BotState = AvatarState | "sleeping";
+export type BotState = AvatarState;
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
 
@@ -69,9 +69,8 @@ export function BotAvatar({
 }) {
   const look = bot.avatar;
 
-  const still = !live || state === "sleeping";
-  const shown = state === "sleeping" ? "idle" : state;
-  const host = useLiveAvatar(still, look, shown);
+  const still = !live;
+  const host = useLiveAvatar(still, look, state);
 
   const svg = useMemo(
     () =>
@@ -79,11 +78,11 @@ export function BotAvatar({
         ? renderAvatarSvg(look.definition, {
             color: look.color,
             eyeColor: look.eyeColor,
-            state: shown,
+            state,
             reducedMotion: true,
           })
         : "",
-    [still, look, shown],
+    [still, look, state],
   );
 
   return (
@@ -91,11 +90,7 @@ export function BotAvatar({
       aria-hidden="true"
       data-state={state}
       className={cn("inline-block shrink-0", className)}
-      style={{
-        width: size,
-        height: size,
-        opacity: state === "sleeping" ? 0.45 : 1,
-      }}
+      style={{ width: size, height: size }}
     >
       {still ? (
         <img
