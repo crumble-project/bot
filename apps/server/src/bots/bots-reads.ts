@@ -18,6 +18,7 @@ import {
   type TranscriptMessage,
 } from "../transcript/transcript";
 import type { JobKindName } from "../shared/job-kinds";
+import { usageSummary } from "./usage-summary";
 
 export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
   const { agents, conversations, events, executions, runtime, schedules } =
@@ -145,10 +146,26 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     );
   });
 
+  // A bot with no conversation has never called a model; skipping it leaves its harness unopened.
+  const usage = Effect.gen(function* () {
+    const states = yield* Effect.forEach(
+      yield* agents.list,
+      Effect.fnUntraced(function* (each) {
+        const [first] = yield* conversations.list(each.id, true);
+
+        return first ? [yield* pi(() => runtime.usage(each))] : [];
+      }),
+      { concurrency: "unbounded" },
+    );
+
+    return usageSummary(states.flat());
+  }).pipe(Effect.withSpan("Bots.usage"));
+
   return {
     origin,
     snapshot,
     agentPreviews,
+    usage,
     history: Effect.fn("Bots.history")(function* (
       agentId: string,
       options: PageOptions,

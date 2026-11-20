@@ -5,6 +5,7 @@ import type {
   chatSnapshotResponse,
   codingJobsResponse,
   desktopJobsResponse,
+  usageResponse,
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { attachmentHeaders } from "../shared/attachments";
@@ -29,6 +30,11 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
       await service.chatSnapshot(c.req.param("id"), c.req.valid("query"));
 
     return c.json(snapshot, 200);
+  });
+  register.plain(routes.usage, async (c) => {
+    const usage: z.output<typeof usageResponse> = await service.usage();
+
+    return c.json(usage, 200);
   });
   register.plain(routes.history, async (c) =>
     c.json(await service.history(c.req.param("id"), c.req.valid("query")), 200),

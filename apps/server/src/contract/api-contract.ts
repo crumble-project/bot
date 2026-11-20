@@ -1580,6 +1580,14 @@ export const routes = {
     operationId: "listProviders",
     responses: { 200: json(z.array(response.providerResponse)) },
   }),
+  usage: define({
+    method: "get",
+    path: "/v1/usage",
+    operationId: "getUsage",
+    description:
+      "Tokens and cost of each model and tool across all of the account's bots: their chats, jobs, and other conversations, since each started. Most tokens first. A deleted bot's usage is gone with it.",
+    responses: { 200: json(response.usageResponse) },
+  }),
   previewReasoning: define({
     method: "post",
     path: "/v1/reasoning/preview",

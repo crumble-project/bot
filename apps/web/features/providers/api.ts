@@ -5,6 +5,7 @@ import type {
   loginSessionResponse,
   modelResponse,
   providerResponse,
+  usageResponse,
   visionModelResponse,
 } from "@crumble/server/contract/api-responses";
 import { api, queryClient } from "@/lib/api";
@@ -14,6 +15,8 @@ export type Model = z.infer<typeof modelResponse>;
 export type ProviderSignIn = z.infer<typeof loginSessionResponse>;
 
 export type Provider = z.infer<typeof providerResponse>;
+
+export type Usage = z.infer<typeof usageResponse>;
 
 export type JudgeModel = z.infer<typeof judgeModelResponse>;
 
@@ -34,6 +37,11 @@ export const modelsQuery = (provider: string) =>
 export const providersQuery = queryOptions({
   queryKey: ["providers"],
   queryFn: ({ signal }) => api<"providers">("/v1/providers", { signal }),
+});
+
+export const usageQuery = queryOptions({
+  queryKey: ["usage"],
+  queryFn: ({ signal }) => api<"usage">("/v1/usage", { signal }),
 });
 
 export async function invalidateProviders() {

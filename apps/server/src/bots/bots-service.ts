@@ -58,6 +58,7 @@ export const botsService = (context: BotsContext): Bots["Service"] => {
     changed: notifications.changed,
     onSettled: notifications.onSettled,
     agentPreviews: reads.agentPreviews,
+    usage: reads.usage,
     announceJobAnswer: notifications.announceJobAnswer,
     announce: notifications.emit,
     snapshot: reads.snapshot,
