@@ -78,12 +78,11 @@ const MEMBER_STATUS = {
   idle: "is here",
 };
 
-const MEMBER_AVATAR = {
-  running: "working",
-  queued: "waiting",
-  disabled: "idle",
-  idle: "idle",
-} satisfies Record<keyof typeof MEMBER_STATUS, BotState>;
+const memberAvatar = (status: keyof typeof MEMBER_STATUS): BotState => {
+  if (status === "running") return "working";
+
+  return status === "queued" ? "waiting" : "idle";
+};
 
 const groupConversation = (
   id: string,
@@ -131,7 +130,7 @@ function GroupHeader({
                 <BotAvatar
                   bot={member}
                   size={26}
-                  state={MEMBER_AVATAR[status]}
+                  state={memberAvatar(status)}
                   className={cn(status === "disabled" && "opacity-40")}
                 />
               </TooltipTrigger>

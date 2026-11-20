@@ -20,16 +20,12 @@ export function useWorking(id: string) {
 export const isBusy = (working: Working) =>
   working !== "idle" && working !== "failed";
 
-/** Thinking shows the dots, a retry the warning mark; a finished or failed run rests. */
-export const workingAvatar: Record<Working, BotState> = {
-  idle: "idle",
-  thinking: "thinking",
-  writing: "working",
-  searching: "working",
-  remembering: "working",
-  tinkering: "working",
-  struggling: "blocked",
-  failed: "idle",
+export const workingAvatar = (working: Working): BotState => {
+  if (working === "thinking") return "thinking";
+
+  if (working === "struggling") return "blocked";
+
+  return isBusy(working) ? "working" : "idle";
 };
 
 export const workingLabel: Record<Working, string> = {

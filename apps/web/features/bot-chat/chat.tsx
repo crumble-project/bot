@@ -284,7 +284,7 @@ function WorkingStatus({ bot }: { bot: Bot }) {
         bot={bot}
         size={32}
         live
-        state={isBusy(activity) ? workingAvatar[activity] : "working"}
+        state={isBusy(activity) ? workingAvatar(activity) : "working"}
       />
       <span className="animate-pulse text-sm text-muted-foreground">
         {workingLabel[activity]}…

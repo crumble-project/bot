@@ -4,7 +4,6 @@ import { type MountedAvatar, mountAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
-/** An avatar state, or `sleeping`: a paused bot drawn still and dimmed. */
 export type BotState = AvatarState | "sleeping";
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
@@ -27,7 +26,6 @@ function useLiveAvatar(
   const avatar = useRef<MountedAvatar | null>(null);
   const latest = useRef(state);
 
-  // Remount only for a new look; state changes ease on the mounted avatar.
   useLayoutEffect(() => {
     if (still || !host.current) return;
 

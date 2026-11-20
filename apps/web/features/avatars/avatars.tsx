@@ -48,20 +48,20 @@ function useAvatarDraft() {
   return { bots, selected, value, save, select, edit };
 }
 
+const PREVIEW_STATES: BotState[] = [
+  "idle",
+  "thinking",
+  "working",
+  "waiting",
+  "blocked",
+  "done",
+  "sleeping",
+];
+
 function AvatarStatePreviews({ value }: { value: BotAvatarDefinition }) {
   return (
     <div className="mx-auto flex max-w-92 flex-wrap justify-center gap-4">
-      {(
-        [
-          "idle",
-          "thinking",
-          "working",
-          "waiting",
-          "blocked",
-          "done",
-          "sleeping",
-        ] satisfies BotState[]
-      ).map((state) => (
+      {PREVIEW_STATES.map((state) => (
         <div
           key={state}
           className="flex w-20 flex-col items-center gap-2 text-sm capitalize"

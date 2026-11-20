@@ -7,10 +7,8 @@ import {
 import type { Bot } from "@/features/bots/api";
 import { type Working, isBusy, useWorking, workingAvatar } from "./working";
 
-/** How long an avatar celebrates after a reply finishes. */
 const DONE_MS = 4000;
 
-/** True for a few seconds after a run ends well; never for a bot that was already idle on load. */
 function useJustFinished(working: Working) {
   const [finished, setFinished] = useState(false);
   const previous = useRef(working);
@@ -45,7 +43,7 @@ const avatarState = (
 
   if (finished) return "done";
 
-  return workingAvatar[working];
+  return workingAvatar(working);
 };
 
 export function LiveBotAvatar({
