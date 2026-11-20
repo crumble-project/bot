@@ -12,15 +12,16 @@ Sign in with the account you created when you
 
 ## Sidebar
 
-| Section         | What's there                                                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Bots**        | Each bot's chat, with its jobs and desktop.                                                                                               |
-| **Group chats** | Chats with several bots.                                                                                                                  |
-| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                  |
-| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                           |
-| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                             |
-| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                            |
-| **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out. |
+| Section         | What's there                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pinned**      | Up to nine bot chats and group chats. Pin or unpin one from its **More** menu, and drag pins to reorder them. Your other apps show the same pins. |
+| **Bots**        | Each bot's chat, with its jobs and desktop.                                                                                                       |
+| **Group chats** | Chats with several bots.                                                                                                                          |
+| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                          |
+| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                                   |
+| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                                     |
+| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                                    |
+| **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out.         |
 
 Press `⌘K`, or `Ctrl+K`, or select **Search** in the sidebar to open the
 command palette. It jumps to a bot, group chat, workspace page, or settings

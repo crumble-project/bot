@@ -725,3 +725,65 @@ test.serial(
     }
   },
 );
+
+/** Reads a stream until `text` arrives or `ms` pass, and returns what it saw. */
+async function readFor(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  text: string,
+  ms: number,
+) {
+  const decoder = new TextDecoder();
+  const deadline = Date.now() + ms;
+  let seen = "";
+
+  while (!seen.includes(text) && Date.now() < deadline) {
+    const next = await Promise.race([
+      reader.read(),
+      Bun.sleep(deadline - Date.now()).then(() => undefined),
+    ]);
+
+    if (!next || next.done) break;
+    seen += decoder.decode(next.value, { stream: true });
+  }
+
+  return seen;
+}
+
+test.serial("pins reach only their own account", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-multi-user-"));
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+  try {
+    running = await startServer({ dataDir, port: 0 });
+    const first = await signUp(running, `first-${crypto.randomUUID()}`);
+    const second = await signUp(running, `second-${crypto.randomUUID()}`);
+    const open = async (headers: Record<string, string>) =>
+      (
+        await fetch(new URL("/v1/events", running!.server.url), { headers })
+      ).body!.getReader();
+    const firstEvents = await open(first);
+    const secondEvents = await open(second);
+
+    const saved = await fetch(
+      new URL("/api/auth/update-user", running.server.url),
+      {
+        method: "POST",
+        headers: { ...json(first), origin: running.server.url.origin },
+        body: JSON.stringify({ pinnedConversations: ["agent:b1"] }),
+      },
+    );
+
+    expect(saved.status).toBe(200);
+    const firstSaw = await readFor(firstEvents, '"agent:b1"', 5_000);
+    expect(firstSaw).toContain("event: pins");
+    expect(firstSaw).toContain('{"pinnedConversations":["agent:b1"]}');
+    expect(await readFor(secondEvents, "event: pins", 1_000)).not.toContain(
+      "event: pins",
+    );
+    await firstEvents.cancel();
+    await secondEvents.cancel();
+  } finally {
+    await running?.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});

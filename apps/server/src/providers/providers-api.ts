@@ -17,6 +17,7 @@ import {
   NotFound,
   Unavailable,
 } from "../shared/errors";
+import { readsImages } from "../vision/vision";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
 
 export function previewReasoning(
@@ -107,6 +108,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
         contextWindow: model.contextWindow,
         reasoning: model.reasoning,
         thinkingLevels: getSupportedThinkingLevels(model),
+        images: readsImages(model),
       })),
       200,
     );

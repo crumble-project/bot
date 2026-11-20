@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   Link,
@@ -8,7 +8,14 @@ import {
   useRouterState,
   Outlet,
 } from "@tanstack/react-router";
-import { IconPlus, IconSearch, IconSettings } from "@tabler/icons-react";
+import {
+  IconDots,
+  IconPin,
+  IconPinnedOff,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+} from "@tabler/icons-react";
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +27,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
@@ -30,6 +38,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -51,6 +60,7 @@ import {
   useTheme,
 } from "@/lib/theme";
 import { resetSession, signedOut } from "@/lib/session";
+import { botPin, groupPin, type Pins, usePins } from "@/lib/pins";
 import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
 import { followActivity, useConnectionStatus } from "./activity-stream";
 import { markSeen, useUnreadCount } from "@/lib/notifications";
@@ -160,6 +170,7 @@ export function Shell() {
   const bots = useQuery(botsQuery);
   const groups = useQuery(groupsQuery);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const pins = usePins(bots.data, groups.data);
   const userId = session.data?.user.id;
   useResetOnUserChange(userId);
   useFollowActivity(userId);
@@ -178,8 +189,9 @@ export function Shell() {
             <SearchButton onOpen={() => setPaletteOpen(true)} />
           </SidebarHeader>
           <SidebarContent>
-            <BotsSection bots={bots} />
-            <GroupsSection bots={bots.data} groups={groups.data} />
+            <PinnedSection pins={pins} bots={bots.data} groups={groups.data} />
+            <BotsSection bots={bots} pins={pins} />
+            <GroupsSection bots={bots.data} groups={groups.data} pins={pins} />
             <WorkspaceSection />
           </SidebarContent>
           <SettingsFooter />
@@ -197,7 +209,140 @@ export function Shell() {
   );
 }
 
-function BotsSection({ bots }: { bots: UseQueryResult<Bot[]> }) {
+type DragProps = Pick<
+  ComponentProps<"li">,
+  "draggable" | "onDragStart" | "onDragOver" | "onDrop" | "onDragEnd"
+>;
+
+function PinnedSection({
+  pins,
+  bots,
+  groups,
+}: {
+  pins: Pins;
+  bots: Bot[] | undefined;
+  groups: GroupChat[] | undefined;
+}) {
+  const matchRoute = useMatchRoute();
+  const dragged = useRef<string | null>(null);
+
+  if (pins.pinned.length === 0) return null;
+
+  const botsById = new Map(bots?.map((bot) => [bot.id, bot]));
+  const botsByPin = new Map(bots?.map((bot) => [botPin(bot.id), bot]));
+
+  const groupsByPin = new Map(
+    groups?.map((group) => [groupPin(group.id), group]),
+  );
+
+  const drag = (key: string): DragProps => ({
+    draggable: true,
+    onDragStart: (event) => {
+      dragged.current = key;
+      event.dataTransfer.effectAllowed = "move";
+    },
+    onDragOver: (event) => {
+      if (!dragged.current || dragged.current === key) return;
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    onDrop: (event) => {
+      event.preventDefault();
+
+      if (dragged.current) pins.move(dragged.current, key);
+
+      dragged.current = null;
+    },
+    onDragEnd: () => {
+      dragged.current = null;
+    },
+  });
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Pinned</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {pins.pinned.map((key) => {
+            const bot = botsByPin.get(key);
+            const group = groupsByPin.get(key);
+
+            if (bot)
+              return (
+                <BotRow
+                  key={key}
+                  bot={bot}
+                  active={Boolean(
+                    matchRoute({
+                      to: "/bots/$botId",
+                      params: { botId: bot.id },
+                      fuzzy: true,
+                    }),
+                  )}
+                  pins={pins}
+                  drag={drag(key)}
+                />
+              );
+
+            return (
+              group && (
+                <GroupRow
+                  key={key}
+                  group={group}
+                  members={membersOf(group.memberIds, botsById)}
+                  pins={pins}
+                  drag={drag(key)}
+                />
+              )
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function PinAction({
+  conversation,
+  pins,
+}: {
+  conversation: string;
+  pins: Pins;
+}) {
+  if (!pins.ready) return null;
+
+  const pinned = pins.isPinned(conversation);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<SidebarMenuAction showOnHover title="More" />}
+      >
+        <IconDots />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-32">
+        <DropdownMenuItem
+          disabled={!pinned && !pins.canPin(conversation)}
+          onClick={() =>
+            pinned ? pins.unpin(conversation) : pins.pin(conversation)
+          }
+        >
+          {pinned ? <IconPinnedOff /> : <IconPin />}
+          {pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function BotsSection({
+  bots,
+  pins,
+}: {
+  bots: UseQueryResult<Bot[]>;
+  pins: Pins;
+}) {
   const matchRoute = useMatchRoute();
 
   return (
@@ -215,19 +360,22 @@ function BotsSection({ bots }: { bots: UseQueryResult<Bot[]> }) {
                 <SidebarMenuSkeleton showIcon />
               </SidebarMenuItem>
             ))}
-          {bots.data?.map((bot) => (
-            <BotRow
-              key={bot.id}
-              bot={bot}
-              active={Boolean(
-                matchRoute({
-                  to: "/bots/$botId",
-                  params: { botId: bot.id },
-                  fuzzy: true,
-                }),
-              )}
-            />
-          ))}
+          {bots.data
+            ?.filter((bot) => !pins.isPinned(botPin(bot.id)))
+            .map((bot) => (
+              <BotRow
+                key={bot.id}
+                bot={bot}
+                active={Boolean(
+                  matchRoute({
+                    to: "/bots/$botId",
+                    params: { botId: bot.id },
+                    fuzzy: true,
+                  }),
+                )}
+                pins={pins}
+              />
+            ))}
           {bots.data?.length === 0 && (
             <p className="px-2 text-xs text-muted-foreground">No bots yet</p>
           )}
@@ -243,9 +391,11 @@ function BotsSection({ bots }: { bots: UseQueryResult<Bot[]> }) {
 function GroupsSection({
   bots,
   groups,
+  pins,
 }: {
   bots: Bot[] | undefined;
   groups: GroupChat[] | undefined;
+  pins: Pins;
 }) {
   const byId = new Map(bots?.map((bot) => [bot.id, bot]));
   const canGroup = (bots?.length ?? 0) >= MIN_GROUP_MEMBERS;
@@ -264,13 +414,16 @@ function GroupsSection({
       )}
       <SidebarGroupContent>
         <SidebarMenu>
-          {groups?.map((group) => (
-            <GroupRow
-              key={group.id}
-              group={group}
-              members={membersOf(group.memberIds, byId)}
-            />
-          ))}
+          {groups
+            ?.filter((group) => !pins.isPinned(groupPin(group.id)))
+            .map((group) => (
+              <GroupRow
+                key={group.id}
+                group={group}
+                members={membersOf(group.memberIds, byId)}
+                pins={pins}
+              />
+            ))}
           {groups?.length === 0 && (
             <p className="px-2 text-xs text-muted-foreground">
               {canGroup
@@ -284,11 +437,21 @@ function GroupsSection({
   );
 }
 
-function GroupRow({ group, members }: { group: GroupChat; members: Bot[] }) {
+function GroupRow({
+  group,
+  members,
+  pins,
+  drag,
+}: {
+  group: GroupChat;
+  members: Bot[];
+  pins: Pins;
+  drag?: DragProps;
+}) {
   const matchRoute = useMatchRoute();
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem {...drag}>
       <SidebarMenuButton
         size="lg"
         isActive={Boolean(
@@ -312,6 +475,7 @@ function GroupRow({ group, members }: { group: GroupChat; members: Bot[] }) {
           </span>
         </span>
       </SidebarMenuButton>
+      <PinAction conversation={groupPin(group.id)} pins={pins} />
     </SidebarMenuItem>
   );
 }
@@ -433,11 +597,21 @@ function ConnectionStatus() {
   );
 }
 
-function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
+function BotRow({
+  bot,
+  active,
+  pins,
+  drag,
+}: {
+  bot: Bot;
+  active: boolean;
+  pins: Pins;
+  drag?: DragProps;
+}) {
   const working = isBusy(useWorking(bot.id));
 
   return (
-    <SidebarMenuItem style={botStyle(botColor(bot))}>
+    <SidebarMenuItem style={botStyle(botColor(bot))} {...drag}>
       <SidebarMenuButton
         size="lg"
         isActive={active}
@@ -465,6 +639,7 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
           </span>
         </span>
       </SidebarMenuButton>
+      <PinAction conversation={botPin(bot.id)} pins={pins} />
     </SidebarMenuItem>
   );
 }

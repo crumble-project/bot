@@ -46,6 +46,15 @@ flowchart LR
 **Compaction never deletes anything you can see.** It only changes what the
 bot reads on its next turn.
 
+## Usage
+
+In the web client, a bot's details show **Usage** for its bot chat: the tokens
+and cost of each model the chat has used, including the vision model, and of
+tools that call a model of their own, such as questions to the vision model.
+Providers that bill by subscription, such as Claude Code, report no cost, so
+only their tokens show. Jobs keep their own usage, including their intent
+checks, shown in each job's pane.
+
 ## Files
 
 In the web client, attach any file up to 100 MB, with at most eight files per
@@ -79,6 +88,9 @@ PNG, JPEG, GIF, and WebP images up to 5 MB reach the model as images; larger
 images arrive as references. A bot whose model reads images sees them as they
 are. A bot whose model can't read images refuses a message with an inline image,
 unless the account has a [vision model](/getting-started/providers#vision-model).
+The web chat warns you as soon as you attach such an image, with links to the
+bot's profile and the vision model setting. A refused message goes back to the
+composer so you can remove the image or send it again after changing the model.
 
 With a vision model set, the vision model reads each image and describes it,
 including any visible text. The bot works from the description, and the

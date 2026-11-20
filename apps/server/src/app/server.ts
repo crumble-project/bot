@@ -225,6 +225,13 @@ function tenantPool(pool: {
       rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
     },
     restore: (accounts: Accounts) => restoreTenants(dataDir, accounts, tenant),
+    /** Only an account that is running has streams to tell; this never starts one. */
+    announcePins: (userId: string, pins: string[]) => {
+      void tenants
+        .get(userId)
+        ?.then((context) => context.announcePins(pins))
+        .catch(() => {});
+    },
     outdatedWorkspaces: () => outdatedWorkspaces(tenants),
     close: () => closeTenants(tenants.values()),
   };
@@ -408,7 +415,9 @@ async function connectAccounts(
   dataDir: string,
   origin: string,
 ) {
-  state.identity = await createAuth(dataDir, origin);
+  state.identity = await createAuth(dataDir, origin, {
+    onPinsChanged: pool.announcePins,
+  });
   state.admin = adminAPI({
     accounts: state.identity,
     origin: () => origin,
