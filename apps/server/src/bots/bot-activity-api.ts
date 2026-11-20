@@ -1,7 +1,7 @@
 import type { SSEStreamingApi } from "hono/streaming";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { sendHeartbeat, streamEvents } from "../shared/event-stream";
+import { streamEvents } from "../shared/event-stream";
 import { canonicalReplyEvent } from "../contract/reply-event";
 import type { Activity, BotsAccess } from "./bots";
 
@@ -34,9 +34,6 @@ export function registerBotActivityRoutes(options: {
       const send = activitySender(serverId, stream, close);
 
       onClose(service.onActivity(send));
-
-      // Without bots to preview, the first activity could take 15 seconds to arrive.
-      await sendHeartbeat(stream);
 
       // Replay current previews on every connection so a sidebar can recover missed events.
       for (const { agent, lastMessage } of await service.agentPreviews())

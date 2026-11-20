@@ -289,7 +289,9 @@ const show = (toolDetails: Message["toolDetails"]): Message => ({
 });
 
 test("a stored chart keeps its compiled layouts; details that don't parse show nothing", () => {
-  const layouts = [{ width: 320, height: 200, nodes: [], points: [{ x: 1 }] }];
+  const layouts = [
+    { width: 320, height: 200, nodes: [], points: [{ x: 1, y: 2, rows: [] }] },
+  ];
 
   expect(shownInChat(show({ kind: "chart", layouts }))).toBe(true);
   expect(shownInChat(show({ kind: "chart", layouts: [{}] }))).toBe(false);

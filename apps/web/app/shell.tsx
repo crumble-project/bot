@@ -63,6 +63,7 @@ import type { ReplyChat } from "@/lib/notifications";
 
 function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (
@@ -71,14 +72,13 @@ function useResetOnUserChange(userId: string | undefined) {
     ) {
       if (!userId) signedOut();
       else {
-        // Streams only start on page load, so a new account needs a fresh page.
         resetSession();
-        window.location.assign("/");
+        void navigate({ to: "/" });
       }
     }
 
     previousUserId.current = userId;
-  }, [userId]);
+  }, [navigate, userId]);
 }
 
 const chatLocation = ({ kind, id }: ReplyChat) =>
@@ -86,7 +86,7 @@ const chatLocation = ({ kind, id }: ReplyChat) =>
     ? ({ to: "/groups/$groupId", params: { groupId: id } } as const)
     : ({ to: "/bots/$botId", params: { botId: id } } as const);
 
-function useFollowActivity() {
+function useFollowActivity(userId: string | undefined) {
   const navigate = useNavigate();
   const router = useRouter();
   const path = useRouterState({ select: (state) => state.location.pathname });
@@ -94,6 +94,8 @@ function useFollowActivity() {
   useEffect(markSeen, [path]);
 
   useEffect(() => {
+    if (!userId) return;
+
     const controller = new AbortController();
 
     followActivity(
@@ -105,7 +107,7 @@ function useFollowActivity() {
     );
 
     return () => controller.abort();
-  }, [navigate, router]);
+  }, [navigate, router, userId]);
 }
 
 function useDocumentTitle(
@@ -158,8 +160,9 @@ export function Shell() {
   const bots = useQuery(botsQuery);
   const groups = useQuery(groupsQuery);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  useResetOnUserChange(session.data?.user.id);
-  useFollowActivity();
+  const userId = session.data?.user.id;
+  useResetOnUserChange(userId);
+  useFollowActivity(userId);
   useDocumentTitle(bots.data, groups.data);
   useAccountTheme();
 
