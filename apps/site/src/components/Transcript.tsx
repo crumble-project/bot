@@ -1330,12 +1330,7 @@ function TranscriptHeader({
             type="button"
             className={tab}
             aria-pressed={index === active}
-            // SAFETY: CSSProperties has no index for custom properties.
-            style={
-              {
-                "--progress": index === active ? progress : 0,
-              } as CSSProperties
-            }
+            style={{ "--progress": index === active ? progress : 0 }}
             onClick={() => play(index)}
           >
             {item.name}

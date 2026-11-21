@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { error } from "../contract/route";
+import { openWebSocket } from "../shared/web-socket";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 
@@ -420,14 +421,7 @@ test.serial(
       const wsUrl = new URL(`${ticketPath}/websockify`, running.server.url);
       wsUrl.protocol = "ws:";
 
-      // SAFETY: Bun's WebSocket constructor accepts request headers in its second argument.
-      const WebSocketWithHeaders = WebSocket as typeof WebSocket &
-        (new (
-          url: string,
-          options: { headers: Record<string, string> },
-        ) => WebSocket);
-
-      socket = new WebSocketWithHeaders(wsUrl.toString(), { headers: owner });
+      socket = openWebSocket(wsUrl.toString(), { headers: owner });
       await new Promise<void>((resolve, reject) => {
         socket!.addEventListener("open", () => resolve());
         socket!.addEventListener("error", () =>

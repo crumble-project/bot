@@ -12,9 +12,8 @@ export function botColor(bot: AvatarBot) {
   return bot.avatar.color;
 }
 
-export function botStyle(color: string) {
-  // SAFETY: CSSProperties has no index for custom properties; `--bot` takes a color string.
-  return { "--bot": color } as CSSProperties;
+export function botStyle(color: string): CSSProperties {
+  return { "--bot": color };
 }
 
 function useLiveAvatar(

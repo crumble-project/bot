@@ -23,6 +23,7 @@ import {
 } from "../shared/reconnecting";
 import { SettingsRepository } from "../shared/settings-repository";
 import { pruneHourly, startTicking } from "../shared/ticker";
+import { openWebSocket } from "../shared/web-socket";
 import { connectUrl, type RelayAccess } from "./doorstep-client";
 import { EventRepository, type RelayEvent } from "./event-repository";
 
@@ -45,13 +46,6 @@ const relayUrlOf = z.string().nullable().catch(null);
 const textFrame = z.string();
 
 const jsonValue = z.json();
-
-// SAFETY: lib.dom's WebSocket type hides Bun's constructor options; Bun's WebSocket accepts `headers`.
-// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- lib.dom and Bun declare the same global
-const RelaySocket = WebSocket as unknown as new (
-  url: string,
-  options: Bun.WebSocketOptions,
-) => WebSocket;
 
 type Connection = {
   socket: WebSocket;
@@ -170,7 +164,7 @@ export class EventRelay extends Context.Service<
         });
 
       const connect = (access: RelayAccess) => {
-        const socket = new RelaySocket(connectUrl(access.url), {
+        const socket = openWebSocket(connectUrl(access.url), {
           headers: { Authorization: `Bearer ${access.token}` },
         });
 
