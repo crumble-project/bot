@@ -1025,6 +1025,26 @@ export const providerResponse = z
   })
   .openapi("Provider");
 
+const usageTotals = {
+  tokens: z.number(),
+  cost: z.number().openapi({
+    description:
+      "US dollars. Zero for providers that bill by subscription, such as Claude Code.",
+  }),
+};
+
+export const usageResponse = z
+  .object({
+    models: z.array(
+      z.object({ provider: z.string(), model: z.string(), ...usageTotals }),
+    ),
+    tools: z.array(z.object({ name: z.string(), ...usageTotals })).openapi({
+      description:
+        "Tools that call a model of their own, such as vision questions and intent checks.",
+    }),
+  })
+  .openapi("Usage");
+
 /** One object rather than a union, so generated clients keep the nullable prompt. */
 export const loginPrompt = z.object({
   id: z.string(),

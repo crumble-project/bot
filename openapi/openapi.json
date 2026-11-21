@@ -4424,6 +4424,66 @@
           "message"
         ]
       },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "tokens": {
+                  "type": "number"
+                },
+                "cost": {
+                  "type": "number",
+                  "description": "US dollars. Zero for providers that bill by subscription, such as Claude Code."
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "tokens",
+                "cost"
+              ]
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tokens": {
+                  "type": "number"
+                },
+                "cost": {
+                  "type": "number",
+                  "description": "US dollars. Zero for providers that bill by subscription, such as Claude Code."
+                }
+              },
+              "required": [
+                "name",
+                "tokens",
+                "cost"
+              ]
+            },
+            "description": "Tools that call a model of their own, such as vision questions and intent checks."
+          }
+        },
+        "required": [
+          "models",
+          "tools"
+        ]
+      },
       "ReasoningPreview": {
         "type": "object",
         "properties": {
@@ -26276,6 +26336,112 @@
                   "items": {
                     "$ref": "#/components/schemas/Provider"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "description": "Tokens and cost of each model and tool across all of the account's bots: their chats, jobs, and other conversations, since each started. Most tokens first. A deleted bot's usage is gone with it.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Usage"
                 }
               }
             }

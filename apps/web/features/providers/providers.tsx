@@ -1,5 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import {
   IconCheck,
   IconCopy,
@@ -7,7 +11,6 @@ import {
   IconLogin,
   IconTrash,
 } from "@tabler/icons-react";
-import { MarkupLogo } from "@/components/brand-logo";
 import { EditorSheet } from "@/components/form-fields";
 import {
   SecretSourceField,
@@ -25,9 +28,9 @@ import {
 } from "@/components/ui/empty";
 import { FieldError } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   RowMenu,
-  RowTile,
   Section,
   SettingRow,
   StatusDot,
@@ -44,9 +47,11 @@ import {
   providersQuery,
   providerPath,
   invalidateProviders,
+  usageQuery,
 } from "./api";
 import { SignInDialog } from "./provider-sign-in";
-import { providerLogo } from "./provider-logos";
+import { ProviderTile } from "./provider-tile";
+import { UsageView } from "./usage";
 
 const EXTERNAL_STATUS = {
   signed_in: "Signed in",
@@ -113,20 +118,6 @@ function providerSignInAvailable(provider: Provider) {
 function providerKeyAvailable(provider: Provider, editing: boolean) {
   return (
     !editing && provider.authMethods.some((method) => method.type === "api_key")
-  );
-}
-
-function ProviderTile({ provider }: { provider: Provider }) {
-  const logo = providerLogo(provider.provider);
-
-  return logo ? (
-    <RowTile className="text-foreground">
-      <MarkupLogo svg={logo} />
-    </RowTile>
-  ) : (
-    <RowTile className="font-heading text-sm font-semibold text-foreground">
-      {provider.name.slice(0, 1).toUpperCase()}
-    </RowTile>
   );
 }
 
@@ -375,24 +366,79 @@ function ProviderSection({
   );
 }
 
+type ProvidersView = "setup" | "usage";
+
+function ProvidersTabs({
+  view,
+  onView,
+}: {
+  view: ProvidersView;
+  onView: (view: ProvidersView) => void;
+}) {
+  return (
+    <Tabs
+      value={view}
+      onValueChange={(value) => onView(value === "usage" ? "usage" : "setup")}
+    >
+      <TabsList>
+        <TabsTrigger value="setup">Setup</TabsTrigger>
+        <TabsTrigger value="usage">Usage</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+}
+
 export function ProvidersSettings() {
   const providers = useQuery(providersQuery);
+  const [view, setView] = useState<ProvidersView>("setup");
+  const usage = useQuery({ ...usageQuery, enabled: view === "usage" });
+  const refreshed = view === "usage" ? usage : providers;
+
+  return (
+    <Page
+      title="Providers"
+      onRefresh={() => void refreshed.refetch()}
+      refreshing={refreshed.isFetching}
+    >
+      {view === "usage" ? (
+        <>
+          <ProvidersTabs view={view} onView={setView} />
+          <UsageView usage={usage} providers={providers.data ?? []} />
+        </>
+      ) : (
+        <ProvidersSetup
+          providers={providers}
+          tabs={<ProvidersTabs view={view} onView={setView} />}
+        />
+      )}
+    </Page>
+  );
+}
+
+function ProvidersSetup({
+  providers,
+  tabs,
+}: {
+  providers: UseQueryResult<Provider[]>;
+  tabs: ReactNode;
+}) {
   const [search, setSearch] = useState("");
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const shown = matching(providers.data ?? [], search.trim().toLowerCase());
   const ready = shown.filter((provider) => provider.configured);
 
   return (
-    <Page
-      title="Providers"
-      onRefresh={() => void providers.refetch()}
-      refreshing={providers.isFetching}
-    >
-      <PageToolbar
-        search={search}
-        searchLabel="Search providers"
-        onSearch={setSearch}
-      />
+    <>
+      <div className="flex items-center gap-2">
+        {tabs}
+        <div className="flex-1">
+          <PageToolbar
+            search={search}
+            searchLabel="Search providers"
+            onSearch={setSearch}
+          />
+        </div>
+      </div>
       {providers.isPending && <Skeleton className="h-40 rounded-xl" />}
       {providers.isError && <FieldError>{providers.error.message}</FieldError>}
       {providers.isSuccess && shown.length === 0 && (
@@ -421,6 +467,6 @@ export function ProvidersSettings() {
           onClose={() => setSigningIn(null)}
         />
       )}
-    </Page>
+    </>
   );
 }

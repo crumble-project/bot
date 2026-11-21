@@ -436,6 +436,11 @@ export class AgentRuntime {
     return (await this.open(agent)).harness;
   }
 
+  /** Every conversation's `pi.usage` in the bot's harness, summed: its chat, jobs, and any other conversation. */
+  async usage(agent: Agent) {
+    return (await this.open(agent)).harness.usage(BACKGROUND_CONTEXT);
+  }
+
   private skillTools(agent: Agent) {
     const currentAgent = () => {
       const current = this.callbacks.currentAgent(agent);

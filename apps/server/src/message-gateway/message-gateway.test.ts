@@ -190,6 +190,7 @@ async function fixture(
           changed: unexpected,
           onSettled: unsubscribe,
           agentPreviews: unexpected(),
+          usage: unexpected(),
           announceJobAnswer: unexpected,
           announce: unexpected,
           snapshot: unexpected,
