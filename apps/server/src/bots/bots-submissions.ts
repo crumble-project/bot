@@ -3,7 +3,6 @@ import type { Agent } from "../contract/agents";
 import { pi } from "../shared/app-errors";
 import { MAX_IMAGE_BYTES, attachmentKind } from "../shared/attachment-rules";
 import { fileIdDigest } from "../shared/attachments";
-import { groupTurnScope } from "../shared/request-ids";
 import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
 import {
@@ -100,7 +99,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
       return yield* conflict(REQUEST_ID_REUSED);
 
-    if (!existing && files.length && !groupTurnScope(requestId, owner.id)) {
+    if (!existing && files.length) {
       yield* runtime.validateFiles(owner.id, files);
       yield* refuseUnreadableImages(owner, files);
     }

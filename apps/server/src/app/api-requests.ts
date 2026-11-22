@@ -104,12 +104,12 @@ export function pathRegister<E extends Env, S>(
   return run ? registerWith(app, run) : registerWith(app, noServices);
 }
 
-const messagePaths = [routes.sendMessage, routes.sendGroupMessage].map(
+const messagePaths = [routes.sendMessage].map(
   (route) =>
     new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
 );
 
-const uploadPaths = [routes.uploadFile, routes.uploadGroupFile].map(
+const uploadPaths = [routes.uploadFile].map(
   (route) =>
     new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
 );

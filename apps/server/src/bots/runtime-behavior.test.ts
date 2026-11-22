@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { openGroupConversation } from "../group-chats/group-turns";
+import { defineAnchorTask } from "../shared/anchor-task";
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -714,15 +714,19 @@ test("a turn running in another conversation leaves the chat's answers in its hi
 
   const a = makeAgent();
   const chat = await runtime.openChat(a);
-  const group = await openGroupConversation(runtime, a, "group-1");
+  const other = await runtime.openAnchored(
+    a,
+    defineAnchorTask("test.concurrent-anchor"),
+    async () => {},
+  );
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall("blocked", {})], {
       stopReason: "toolUse",
     }),
     fauxAssistantMessage("The chat's answer."),
-    fauxAssistantMessage("The group turn's answer."),
+    fauxAssistantMessage("The private turn's answer."),
   ]);
-  const turn = await runtime.submit(a, group, "group turn", "group-input");
+  const turn = await runtime.submit(a, other, "private turn", "private-input");
   await started;
 
   const asked = await runtime.submit(a, chat, "chat turn", "chat-input");

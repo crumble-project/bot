@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { groupConversations } from "../../src/group-chats/group-turns";
 import { reviewConversations } from "../../src/learning/review-kind";
 import { callConversations } from "../../src/voice-gateway/call-conversation";
 import { hostModels } from "../../src/providers/providers";
@@ -60,11 +59,7 @@ export const runtimeCallbacks = (
   visionModel: () => {},
   extensions: () => [],
   jobExtensions: () => [],
-  conversationKinds: () => [
-    groupConversations(),
-    reviewConversations(),
-    callConversations(),
-  ],
+  conversationKinds: () => [reviewConversations(), callConversations()],
   env: () => {},
   ...overrides,
 });

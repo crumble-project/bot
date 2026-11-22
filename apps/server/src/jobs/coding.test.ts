@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { openGroupConversation } from "../group-chats/group-turns";
 import { inertCredentials } from "../../test/support/job-wiring";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -641,7 +640,7 @@ async function directWork() {
   return { runtime, agent, workspace, workspaces, offered, sections, say };
 }
 
-test("the bot works in its workspace itself, in its chat and group chats", async () => {
+test("the bot works in its workspace itself, in its chat", async () => {
   const { runtime, agent, workspace, workspaces, offered, say } =
     await directWork();
 
@@ -659,23 +658,6 @@ test("the bot works in its workspace itself, in its chat and group chats", async
     "bash",
     "coding",
     "request_credential",
-  ]);
-
-  rmSync(join(workspace, "direct.txt"));
-  const group = await openGroupConversation(runtime, agent, "group-1");
-  await say(group, "Write it in the group");
-
-  expect(readFileSync(join(workspace, "direct.txt"), "utf8")).toBe("direct");
-  expect(workspaces.synced).toEqual([agent.id, agent.id]);
-  expect(offered.at(-1)).toEqual([
-    "skill_manage",
-    "library",
-    "read",
-    "write",
-    "edit",
-    "bash",
-    "request_credential",
-    "pass",
   ]);
 });
 

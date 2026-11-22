@@ -41,14 +41,11 @@ function setup() {
     });
   const agent = make("Ada");
   const other = make("Grace");
-  const group = store.createGroupChat({
-    name: "Group",
-    memberIds: [agent.id, other.id],
-  });
+  const sharedOwner = make("Hopper");
   const library = store.run(Library.use(Effect.succeed));
   const bot: LibraryRef = { kind: "bot", agentId: agent.id };
   const ownOther: LibraryRef = { kind: "bot", agentId: other.id };
-  const shared: LibraryRef = { kind: "group", groupId: group.id };
+  const shared: LibraryRef = { kind: "bot", agentId: sharedOwner.id };
   const scope = (libraries: LibraryRef[] = [bot], workspace = false) => ({
     library,
     libraries,
@@ -159,10 +156,10 @@ test("search bounds matches and returns continuation offsets", async () => {
   expect(next.matches[0]?.offset).toBe(parsed.nextOffset);
 });
 
-test("bot and group scopes expose only the allowed libraries with labels", async () => {
+test("bot scopes expose only the allowed libraries with labels", async () => {
   const { bot, ownOther, shared, scope, upload } = setup();
   const own = await upload(bot, "own.txt", "own");
-  const group = await upload(shared, "group.txt", "group");
+  const sharedFile = await upload(shared, "shared.txt", "shared");
   const foreign = await upload(ownOther, "foreign.txt", "foreign");
   expect(
     listSchema
@@ -173,11 +170,11 @@ test("bot and group scopes expose only the allowed libraries with labels", async
     await libraryAction(scope([bot, shared]), { action: "list" }),
   );
   expect(combined.files.map((file) => file.id)).toEqual([
-    group.file.id,
+    sharedFile.file.id,
     own.file.id,
   ]);
   expect(combined.files.map((file) => file.library.kind)).toEqual([
-    "group",
+    "bot",
     "bot",
   ]);
   await expect(
@@ -447,7 +444,9 @@ test("listing two interleaved libraries returns every file exactly once", async 
     ids.push((await upload(bot, `own-${i}.txt`, `own ${i}`)).file.id);
 
     if (i % 3 === 0)
-      ids.push((await upload(shared, `group-${i}.txt`, `group ${i}`)).file.id);
+      ids.push(
+        (await upload(shared, `shared-${i}.txt`, `shared ${i}`)).file.id,
+      );
   }
 
   const seen: string[] = [];

@@ -292,6 +292,28 @@ export async function createAuth(
   try {
     const { runMigrations } = await getMigrations(options);
     await runMigrations();
+    database.transaction(() => {
+      const rows = database
+        .query<{ id: string; pins: string | null }, []>(
+          "SELECT id, pinnedConversations AS pins FROM user",
+        )
+        .all();
+
+      for (const row of rows) {
+        if (row.pins === null) continue;
+
+        const pins = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Array(Schema.String)),
+        )(row.pins);
+
+        const retained = pins.filter((pin) => !pin.startsWith("group:"));
+
+        if (retained.length !== pins.length)
+          database
+            .query("UPDATE user SET pinnedConversations = ? WHERE id = ?")
+            .run(JSON.stringify(retained), row.id);
+      }
+    })();
     const auth = betterAuth(options);
     const users = drizzle({ client: database });
     const { adapter } = await auth.$context;

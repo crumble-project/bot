@@ -51,7 +51,6 @@ The token reaches no other route.
 | **Message gateways**     | `GET /v1/message-gateways`, `PUT /v1/message-gateways/{id}`                                                                                                                                                                                                                     |
 | **Bots**                 | `/v1/agents`, `/v1/agents/{id}`, `POST /v1/agents/{id}/duplicate`                                                                                                                                                                                                               |
 | **Bot chat**             | `/v1/agents/{id}/chat`, `/v1/agents/{id}/chat/history`, `POST /v1/agents/{id}/messages`, `POST /v1/agents/{id}/abort`, `POST /v1/agents/{id}/compact`, `/v1/agents/{id}/attachments/{entryId}/{index}`                                                                          |
-| **Group chats**          | `/v1/group-chats`, `/v1/group-chats/{id}`, `/v1/group-chats/{id}/chat`, `/v1/group-chats/{id}/history`, `POST /v1/group-chats/{id}/messages`, `POST /v1/group-chats/{id}/stop`                                                                                                  |
 | **Jobs**                 | `/v1/agents/{id}/coding-jobs`, `/v1/agents/{id}/coding-jobs/{name}/history`, `/v1/agents/{id}/desktop-jobs`, `/v1/agents/{id}/desktop-jobs/{name}/history`                                                                                                                      |
 | **Bot desktop**          | `POST /v1/agents/{id}/desktop/viewer`, `/v1/agents/{id}/desktop/control`, `GET /v1/agents/{id}/desktop/status`                                                                                                                                                                  |
 | **Credentials**          | `/v1/agents/{id}/credentials`, `/v1/agents/{id}/credentials/{name}`, `/v1/agents/{id}/credentials/{name}/uses`                                                                                                                                                                  |
@@ -71,15 +70,15 @@ The token reaches no other route.
 
 ## Library files
 
-Each bot and each group chat has its own library. Use the same account session
+Each bot has its own library. Use the same account session
 as for messages. File IDs belong to one library and can't be sent in another.
 
-| Operation | Bot library                             | Group library                                |
-| --------- | --------------------------------------- | -------------------------------------------- |
-| Upload    | `POST /v1/agents/{id}/files`            | `POST /v1/group-chats/{id}/files`            |
-| List      | `GET /v1/agents/{id}/files`             | `GET /v1/group-chats/{id}/files`             |
-| Download  | `GET /v1/agents/{id}/files/{fileId}`    | `GET /v1/group-chats/{id}/files/{fileId}`    |
-| Delete    | `DELETE /v1/agents/{id}/files/{fileId}` | `DELETE /v1/group-chats/{id}/files/{fileId}` |
+| Operation | Bot library                             |
+| --------- | --------------------------------------- |
+| Upload    | `POST /v1/agents/{id}/files`            |
+| List      | `GET /v1/agents/{id}/files`             |
+| Download  | `GET /v1/agents/{id}/files/{fileId}`    |
+| Delete    | `DELETE /v1/agents/{id}/files/{fileId}` |
 
 Upload raw bytes, not JSON or multipart data. Set `Content-Type` to the file's
 MIME type and `X-File-Name` to its percent-encoded UTF-8 name. Any file type is
@@ -118,7 +117,7 @@ type; other downloads use `application/octet-stream`. A deleted file returns
 Transcript messages expose `files` with each file's ID, name, MIME type, and
 size, or `{ "id": "...", "deleted": true }`. Legacy attachments appear as
 deleted files. The bot attachment endpoint remains only for desktop screenshots;
-the group attachment endpoint is removed.
+Other file downloads use the bot library endpoints.
 
 ## Transcript and display fields
 
@@ -168,7 +167,6 @@ Streams use Server-Sent Events:
 | Stream                              | Event                                  | JSON Schema                                                                                                                                                         |
 | ----------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/agents/{id}/events`            | `snapshot`                             | `openapi/chat-snapshot.schema.json`                                                                                                                                 |
-| `/v1/group-chats/{id}/events`       | `snapshot`                             | `openapi/group-chat-snapshot.schema.json`                                                                                                                           |
 | `/v1/agents/{id}/desktop/events`    | `control`                              | `openapi/desktop-control.schema.json`                                                                                                                               |
 | `/v1/events`                        | `activity`, `learned`                  | `openapi/activity-event.schema.json`, `openapi/learned-event.schema.json`                                                                                           |
 | `/v1/voice/events`                  | `config`, `call`, `cancel`, `replaced` | `openapi/voice-gateway-config.schema.json`, `openapi/voice-call.schema.json`, `openapi/voice-call-cancel.schema.json`, `openapi/voice-gateway-replaced.schema.json` |

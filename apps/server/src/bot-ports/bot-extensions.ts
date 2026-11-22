@@ -53,7 +53,6 @@ export class BotExtensions extends Context.Service<
 export const ExtensionPosition = {
   integrations: 10,
   coordination: 20,
-  groupLookup: 30,
   historyTools: 40,
   schedules: 50,
   eventPayload: 55,

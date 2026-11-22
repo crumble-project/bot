@@ -38,10 +38,7 @@ let pins: Pins | undefined;
 let root: Root;
 let notifySession: () => void;
 
-let renderPins: (
-  bots?: Conversation[],
-  groups?: Conversation[],
-) => Promise<void>;
+let renderPins: (bots?: Conversation[]) => Promise<void>;
 
 let fetch: ReturnType<typeof stubServer>;
 
@@ -87,8 +84,7 @@ const stubServer = () =>
     ),
   );
 
-const bots = [{ id: "a" }, { id: "b" }];
-const groups = [{ id: "g" }];
+const bots = [{ id: "a" }, { id: "b" }, { id: "c" }];
 
 const current = () => {
   if (!pins) throw new Error("usePins has not rendered");
@@ -121,26 +117,21 @@ beforeAll(async () => {
   root = createRoot(container);
   notifySession = () => authClient.$store.notify("$sessionSignal");
 
-  function Harness(props: {
-    bots: Conversation[] | undefined;
-    groups: Conversation[] | undefined;
-  }) {
-    pins = usePins(props.bots, props.groups);
+  function Harness(props: { bots: Conversation[] | undefined }) {
+    pins = usePins(props.bots);
 
     return null;
   }
 
-  renderPins = async (nextBots, nextGroups) => {
-    await act(async () =>
-      root.render(<Harness bots={nextBots} groups={nextGroups} />),
-    );
+  renderPins = async (nextBots) => {
+    await act(async () => root.render(<Harness bots={nextBots} />));
   };
 });
 
 beforeEach(async () => {
   failWrites = false;
   omitPins = false;
-  await renderPins(bots, groups);
+  await renderPins(bots);
 });
 
 afterAll(async () => {
@@ -161,44 +152,44 @@ afterAll(async () => {
 });
 
 test("pin adds the conversation at the end", async () => {
-  await load(["group:g"]);
+  await load(["agent:c"]);
   await act(async () => current().pin("agent:a"));
-  expect(current().pinned).toEqual(["group:g", "agent:a"]);
+  expect(current().pinned).toEqual(["agent:c", "agent:a"]);
   await waitFor(() => stored.length === 2, "the write");
-  expect(written).toEqual([["group:g", "agent:a"]]);
+  expect(written).toEqual([["agent:c", "agent:a"]]);
   await settle();
-  expect(current().pinned).toEqual(["group:g", "agent:a"]);
+  expect(current().pinned).toEqual(["agent:c", "agent:a"]);
 });
 
 test("unpin removes the conversation", async () => {
-  await load(["agent:a", "group:g"]);
+  await load(["agent:a", "agent:c"]);
   await act(async () => current().unpin("agent:a"));
-  expect(current().pinned).toEqual(["group:g"]);
+  expect(current().pinned).toEqual(["agent:c"]);
   await waitFor(() => written.length === 1, "the write");
-  expect(written).toEqual([["group:g"]]);
+  expect(written).toEqual([["agent:c"]]);
 });
 
 test("move puts the conversation at the target's place", async () => {
-  await load(["agent:a", "agent:b", "group:g"]);
-  await act(async () => current().move("agent:a", "group:g"));
-  expect(current().pinned).toEqual(["agent:b", "group:g", "agent:a"]);
+  await load(["agent:a", "agent:b", "agent:c"]);
+  await act(async () => current().move("agent:a", "agent:c"));
+  expect(current().pinned).toEqual(["agent:b", "agent:c", "agent:a"]);
   await act(async () => current().move("agent:a", "agent:b"));
-  expect(current().pinned).toEqual(["agent:a", "agent:b", "group:g"]);
-  await waitFor(shows(["agent:a", "agent:b", "group:g"]), "the saved order");
+  expect(current().pinned).toEqual(["agent:a", "agent:b", "agent:c"]);
+  await waitFor(shows(["agent:a", "agent:b", "agent:c"]), "the saved order");
   await waitFor(() => stored[0] === "agent:a", "the last write");
-  expect(written.at(-1)).toEqual(["agent:a", "agent:b", "group:g"]);
+  expect(written.at(-1)).toEqual(["agent:a", "agent:b", "agent:c"]);
 });
 
 test("a write drops pins for conversations that are gone", async () => {
   await load(["agent:gone", "agent:a"], ["agent:a"]);
-  await act(async () => current().pin("group:g"));
+  await act(async () => current().pin("agent:c"));
   await waitFor(() => written.length === 1, "the write");
-  expect(written).toEqual([["agent:a", "group:g"]]);
+  expect(written).toEqual([["agent:a", "agent:c"]]);
 });
 
 test("a tenth pin is refused", async () => {
   const many = Array.from({ length: 10 }, (_, index) => ({ id: `${index}` }));
-  await renderPins(many, groups);
+  await renderPins(many);
 
   const nine = many.slice(0, 9).map(({ id }) => `agent:${id}`);
   await load(nine);
@@ -209,9 +200,9 @@ test("a tenth pin is refused", async () => {
   expect(current().pinned).toEqual(nine);
 });
 
-test("changes wait until bots and groups have loaded", async () => {
+test("changes wait until bots have loaded", async () => {
   await load(["agent:a"]);
-  await renderPins(bots, undefined);
+  await renderPins(undefined);
   expect(current().ready).toBe(false);
   expect(current().canPin("agent:b")).toBe(false);
   await act(async () => {

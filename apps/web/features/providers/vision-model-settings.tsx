@@ -7,7 +7,7 @@ import { ModelChoiceRow, modelKey } from "./model-choice";
 
 function statusText({ visionModel, choices }: VisionModel) {
   if (!visionModel)
-    return "Off. A bot whose model can't read images refuses them in its chat and gets only their names in group chats.";
+    return "Off. A bot whose model can't read images refuses them in its bot chat.";
 
   const chosen = choices.find(
     (item) => modelKey(item) === modelKey(visionModel),

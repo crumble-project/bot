@@ -5,9 +5,7 @@ import { nowIso } from "../shared/time";
 import { newFileId } from "./ids";
 import { deletedLibraryFiles, libraryFiles } from "./schema";
 
-export type LibraryRef =
-  | { kind: "bot"; agentId: string }
-  | { kind: "group"; groupId: string };
+export type LibraryRef = { kind: "bot"; agentId: string };
 
 export type LibraryEntry = {
   id: string;
@@ -22,16 +20,11 @@ export type LibraryEntry = {
 };
 
 const owner = (library: LibraryRef) =>
-  library.kind === "bot"
-    ? eq(libraryFiles.agentId, library.agentId)
-    : eq(libraryFiles.groupId, library.groupId);
+  eq(libraryFiles.agentId, library.agentId);
 
 const entryOf = (row: typeof libraryFiles.$inferSelect): LibraryEntry => ({
   id: row.id,
-  library:
-    row.agentId !== null
-      ? { kind: "bot", agentId: row.agentId }
-      : { kind: "group", groupId: row.groupId! },
+  library: { kind: "bot", agentId: row.agentId },
   name: row.name,
   mimeType: row.mimeType,
   size: row.size,
@@ -100,10 +93,7 @@ export class LibraryRepository extends Context.Service<
           .insert(libraryFiles)
           .values({
             id: newFileId(),
-            agentId:
-              input.library.kind === "bot" ? input.library.agentId : null,
-            groupId:
-              input.library.kind === "group" ? input.library.groupId : null,
+            agentId: input.library.agentId,
             name: input.name,
             mimeType: input.mimeType,
             size: input.size,
@@ -175,7 +165,6 @@ export class LibraryRepository extends Context.Service<
             yield* db.insert(deletedLibraryFiles).values({
               id: row.id,
               agentId: row.agentId,
-              groupId: row.groupId,
               name: row.name,
             });
 
@@ -209,9 +198,7 @@ export class LibraryRepository extends Context.Service<
           .where(
             and(
               eq(deletedLibraryFiles.id, id),
-              library.kind === "bot"
-                ? eq(deletedLibraryFiles.agentId, library.agentId)
-                : eq(deletedLibraryFiles.groupId, library.groupId),
+              eq(deletedLibraryFiles.agentId, library.agentId),
             ),
           );
 

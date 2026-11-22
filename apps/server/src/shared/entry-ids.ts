@@ -9,7 +9,7 @@ export const positiveId = (raw: string) =>
     ? Number(raw)
     : undefined;
 
-/** `<owner>:<n>`: a durable entry or conversation of a bot or group. Entry numbers are unique across its conversations. */
+/** `<owner>:<n>`: a durable entry or conversation of a bot. Entry numbers are unique across its conversations. */
 export const formatEntryId = (owner: string, id: number) => `${owner}:${id}`;
 
 export const formatMessageId = (entryId: string, index: number) =>

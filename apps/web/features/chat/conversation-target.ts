@@ -3,12 +3,12 @@ import type { RoutePath } from "@/lib/api";
 import type { HistoryPage, Message } from "./api";
 import type { ReactionTarget } from "./transcript";
 
-export type HistoryRoute = "history" | "groupChatHistory";
+export type HistoryRoute = "history";
 
 export type ConversationTarget<S extends HistoryPage> = {
-  /** `bot:<id>` or `group:<id>`, which keys its drafts and outgoing messages. */
+  /** `bot:<id>`, which keys its drafts and outgoing messages. */
   key: string;
-  path: `/v1/agents/${string}` | `/v1/group-chats/${string}`;
+  path: `/v1/agents/${string}`;
   history: RoutePath<HistoryRoute>;
   query: UseQueryOptions<S, Error, S, string[]>;
   shown: (message: Message) => boolean;

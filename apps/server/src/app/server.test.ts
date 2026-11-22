@@ -7,12 +7,16 @@ import { scheduleInput } from "../contract/schedules";
 import { ScriptRunRepository } from "../automations/script-run-repository";
 import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
+import { createAuth } from "./auth";
+import { Database } from "bun:sqlite";
 import { CLIENT_DOCUMENT_PATH } from "../integrations/mcp-oauth";
 import { ownerRecord } from "./data-lock";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -20,7 +24,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   agentResponse,
-  groupChatResponse,
   historyResponse,
   modelResponse,
   providerResponse,
@@ -331,66 +334,215 @@ test.serial(
   },
 );
 
-test.serial("serves group chats and keeps them across restarts", async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-groups-"));
-
+async function upgradeAccounts(dataDir: string) {
+  const accounts = await createAuth(dataDir, "http://localhost:7337");
+  const paths: string[] = [];
   try {
-    const running = await startServer({ dataDir, port: 0 });
-    const headers = await signUp(running);
-    const memberIds: string[] = [];
-
-    for (const name of ["Planner", "Researcher"]) {
-      const response = await fetch(new URL("/v1/agents", running.server.url), {
-        method: "POST",
-        headers: json(headers),
-        body: JSON.stringify({ name }),
+    for (const name of ["first", "second"]) {
+      const { user } = await accounts.auth.api.signUpEmail({
+        body: {
+          name,
+          email: `${name}@example.test`,
+          password: "correct horse battery staple",
+        },
+        headers: new Headers(),
       });
-
-      expect(response.status).toBe(201);
-      memberIds.push(agentResponse.parse(await response.json()).id);
+      const path = join(dataDir, "users", user.id);
+      mkdirSync(join(path, "groups"), { recursive: true });
+      writeFileSync(
+        join(path, "groups", "orphan.sqlite-wal"),
+        "legacy transcript",
+      );
+      paths.push(path);
     }
-
-    const created = await fetch(
-      new URL("/v1/group-chats", running.server.url),
-      {
-        method: "POST",
-        headers: json(headers),
-        body: JSON.stringify({ name: "Trip", memberIds }),
-      },
-    );
-
-    expect(created.status).toBe(201);
-    const group = groupChatResponse.parse(await created.json());
-
-    const message = await fetch(
-      new URL(`/v1/group-chats/${group.id}/messages`, running.server.url),
-      {
-        method: "POST",
-        headers: json(headers),
-        body: JSON.stringify({
-          content: "Hello",
-          requestId: crypto.randomUUID(),
-        }),
-      },
-    );
-
-    expect(message.status).toBe(201);
-    await running.close();
-    const reopened = await startServer({ dataDir, port: 0 });
-
-    const history = await fetch(
-      new URL(`/v1/group-chats/${group.id}/history`, reopened.server.url),
-      { headers },
-    );
-
-    expect(historyResponse.parse(await history.json()).messages).toMatchObject([
-      { content: "Hello" },
-    ]);
-    await reopened.close();
   } finally {
-    rmSync(dataDir, { recursive: true, force: true });
+    accounts.close();
   }
-});
+  return paths;
+}
+
+test.serial(
+  "all accounts finish offline cleanup before the first worker starts",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-upgrade-barrier-"));
+    let running: Running | undefined;
+    try {
+      const paths = await upgradeAccounts(dataDir);
+      let started = 0;
+      running = await startServer({
+        dataDir,
+        port: 0,
+        workspaces: () =>
+          Effect.sync(() => {
+            for (const path of paths) {
+              expect(
+                existsSync(join(path, "groups", "orphan.sqlite-wal")),
+              ).toBe(false);
+              expect(existsSync(join(path, "group-chat-removal.json"))).toBe(
+                false,
+              );
+            }
+            started++;
+            return undefined;
+          }),
+      });
+      expect(started).toBe(2);
+    } finally {
+      await running?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "failed cleanup in any account prevents every tenant and push database from starting",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-upgrade-failed-"));
+    try {
+      const paths = await upgradeAccounts(dataDir);
+      const last = [...paths].sort().at(-1)!;
+      writeFileSync(
+        join(last, "group-chat-removal.json"),
+        "interrupted invalid manifest",
+      );
+      let started = 0;
+      await expect(
+        startServer({
+          dataDir,
+          port: 0,
+          workspaces: () =>
+            Effect.sync(() => {
+              started++;
+              return undefined;
+            }),
+        }),
+      ).rejects.toThrow();
+      expect(started).toBe(0);
+      for (const path of paths) {
+        expect(existsSync(join(path, "store.sqlite"))).toBe(false);
+        expect(existsSync(join(path, "push.sqlite"))).toBe(false);
+      }
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "direct tenant initialization fails before migrations or workers on unsafe legacy data",
+  async () => {
+    const dataDir = mkdtempSync(
+      join(tmpdir(), "crumble-tenant-upgrade-failed-"),
+    );
+    let started = 0;
+    try {
+      mkdirSync(join(dataDir, "agents"));
+      const unsupported = new Database(join(dataDir, "agents", "bot.sqlite"));
+      unsupported.run(
+        "CREATE TABLE durable_schema (version INTEGER); INSERT INTO durable_schema VALUES (99)",
+      );
+      unsupported.close();
+      await expect(
+        createTenant({
+          dataDir,
+          tenantId: "test",
+          workspaceEnv: {},
+          serverSettings: () => DEFAULT_SERVER_SETTINGS,
+          workspaces: Effect.sync(() => {
+            started++;
+            return undefined;
+          }),
+        }),
+      ).rejects.toThrow("Unsupported Pi");
+      expect(started).toBe(0);
+      expect(existsSync(join(dataDir, "store.sqlite"))).toBe(false);
+      expect(existsSync(join(dataDir, "push.sqlite"))).toBe(false);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "restart deletes legacy groups but preserves their member bots",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-groups-"));
+
+    try {
+      const running = await startServer({ dataDir, port: 0 });
+      const headers = await signUp(running);
+      const memberIds: string[] = [];
+
+      for (const name of ["Planner", "Researcher"]) {
+        const response = await fetch(
+          new URL("/v1/agents", running.server.url),
+          {
+            method: "POST",
+            headers: json(headers),
+            body: JSON.stringify({ name }),
+          },
+        );
+
+        expect(response.status).toBe(201);
+        memberIds.push(agentResponse.parse(await response.json()).id);
+      }
+
+      await running.close();
+      const account = readdirSync(join(dataDir, "users"))[0]!;
+      const accountPath = join(dataDir, "users", account);
+      const legacy = readFileSync(
+        new URL("../../test/fixtures/legacy-store-schema.sql", import.meta.url),
+        "utf8",
+      );
+      const database = new Database(join(accountPath, "store.sqlite"));
+      for (const table of ["group_chats", "group_members", "group_turns"])
+        database.run(
+          legacy
+            .split("\n")
+            .find((line) => line.startsWith(`CREATE TABLE ${table} `))!,
+        );
+      database.run(
+        "DELETE FROM __drizzle_migrations WHERE name = '20261122205418_remove_group_chats'; INSERT INTO group_chats (id, name, created_at, updated_at) VALUES ('legacy', 'Trip', 'now', 'now')",
+      );
+      database.close();
+      mkdirSync(join(accountPath, "groups"), { recursive: true });
+      writeFileSync(
+        join(accountPath, "groups", "legacy.sqlite"),
+        "legacy shared transcript",
+      );
+      const reopened = await startServer({ dataDir, port: 0 });
+
+      const history = await fetch(
+        new URL("/v1/group-chats/legacy/history", reopened.server.url),
+        { headers },
+      );
+
+      try {
+        expect(history.status).toBe(404);
+        const groups = await fetch(
+          new URL("/v1/group-chats", reopened.server.url),
+          { headers },
+        );
+        expect(groups.status).toBe(404);
+        expect(existsSync(join(accountPath, "groups", "legacy.sqlite"))).toBe(
+          false,
+        );
+        for (const id of memberIds) {
+          const bot = await fetch(
+            new URL(`/v1/agents/${id}`, reopened.server.url),
+            { headers },
+          );
+          expect(bot.status).toBe(200);
+          expect(agentResponse.parse(await bot.json()).id).toBe(id);
+        }
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
 
 test.serial(
   "a desktop viewer link opens without the owner's session",

@@ -4,7 +4,6 @@ import { EXECUTION_STATUSES } from "../shared/domain";
 import { type Agent } from "../contract/agents";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
-import { chatOnly } from "../shared/chat-only";
 import { BotMessaging } from "./bot-messaging";
 import { toolOutput } from "../shared/tool-output";
 import { BOT_TOOL } from "../contract/tools";
@@ -165,12 +164,10 @@ export function coordinationExtension(agent: Agent, messaging: Messaging) {
     answerJobQuestionTool(agent, messaging),
   ];
 
-  return chatOnly(
-    defineExtension({
-      name: "coordination",
-      tools: agent.tools.includes(BOT_TOOL.delegate) ? tools : [],
-    }),
-  );
+  return defineExtension({
+    name: "coordination",
+    tools: agent.tools.includes(BOT_TOOL.delegate) ? tools : [],
+  });
 }
 
 export const coordinationTools = Layer.effectDiscard(

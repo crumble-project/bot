@@ -3,7 +3,7 @@ import { Cause, Effect, FiberMap, Option } from "effect";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import { errorText } from "../shared/errors";
-import { groupTurnScope, parseRequestId } from "../shared/request-ids";
+import { parseRequestId } from "../shared/request-ids";
 import type { InputOrigin } from "../transcript/origins";
 import { frameInput } from "./input-framing";
 import { isChatTurn, type BotsContext } from "./bots-context";
@@ -68,11 +68,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
 
     const files =
       attachments.kind === "files" && attachments.ids.length
-        ? yield* runtime.resolveFiles(
-            owner.id,
-            attachments.ids,
-            groupTurnScope(execution.requestId, owner.id),
-          )
+        ? yield* runtime.resolveFiles(owner.id, attachments.ids)
         : [];
 
     const event = yield* eventInput(execution);

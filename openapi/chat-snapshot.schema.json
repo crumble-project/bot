@@ -303,25 +303,6 @@
           "toolDetails": {},
           "presentation": {
             "$ref": "#/$defs/MessagePresentation"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "url": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "url",
-                "title"
-              ],
-              "additionalProperties": true
-            }
           }
         },
         "required": [

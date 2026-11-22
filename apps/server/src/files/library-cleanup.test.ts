@@ -7,8 +7,6 @@ import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots-test-support";
-import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
-import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { Library } from "./library";
 import { FileStore } from "./file-store";
 import { AgentRepository } from "../bot-store/agent-repository";
@@ -23,12 +21,8 @@ function setup() {
   const store = new Store(dir);
   const runtime = new AgentRuntime(join(dir, "agents"), runtimeCallbacks());
   const bots = standaloneBots(store, runtime);
-  const transcripts = new GroupTranscripts(join(dir, "groups"));
-  const groups = standaloneGroupChats(bots, transcripts);
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   cleanups.push(() => bots.close());
-  cleanups.push(() => transcripts.close());
-  cleanups.push(() => groups.close());
   const agent = store.createAgent({
     name: "Ada",
     description: "",
@@ -41,11 +35,11 @@ function setup() {
     mcpServers: [],
     delegates: [],
   });
-  const group = store.createGroupChat({ name: "Group", memberIds: [agent.id] });
+  const otherBot = store.duplicateAgent(agent.id, "Grace")!;
   const library = store.run(Library);
   const files = store.run(FileStore);
   const bot: LibraryRef = { kind: "bot", agentId: agent.id };
-  const shared: LibraryRef = { kind: "group", groupId: group.id };
+  const shared: LibraryRef = { kind: "bot", agentId: otherBot.id };
   const upload = (ref: LibraryRef) =>
     Effect.runPromise(
       library.upload(ref, {
@@ -57,14 +51,12 @@ function setup() {
   return {
     store,
     bots,
-    groups,
     library,
     files,
     bot,
     shared,
     upload,
     agent,
-    group,
   };
 }
 
@@ -108,7 +100,7 @@ test("owner deletion holds the lock until new uploads can no longer create entri
   expect((await next)._tag).toBe("NotFound");
 });
 
-for (const kind of ["bot", "group"] as const) {
+for (const kind of ["bot"] as const) {
   test(`deleting a ${kind} removes its library and unshared bytes`, async () => {
     const fixture = setup();
     const ref = kind === "bot" ? fixture.bot : fixture.shared;
@@ -116,8 +108,7 @@ for (const kind of ["bot", "group"] as const) {
     const entry = (
       await Effect.runPromise(fixture.library.entries(ref, [uploaded.file.id]))
     ).get(uploaded.file.id)!;
-    if (kind === "bot") await fixture.bots.deleteAgent(fixture.agent.id);
-    else await fixture.groups.delete(fixture.group.id);
+    await fixture.bots.deleteAgent(fixture.agent.id);
     expect(
       (await Effect.runPromise(fixture.library.entries(ref, [entry.id]))).size,
     ).toBe(0);
@@ -137,8 +128,7 @@ for (const kind of ["bot", "group"] as const) {
     const other = kind === "bot" ? fixture.shared : fixture.bot;
     await fixture.upload(own);
     const retained = await fixture.upload(other);
-    if (kind === "bot") await fixture.bots.deleteAgent(fixture.agent.id);
-    else await fixture.groups.delete(fixture.group.id);
+    await fixture.bots.deleteAgent(fixture.agent.id);
     const download = await Effect.runPromise(
       fixture.library.download(other, retained.file.id),
     );

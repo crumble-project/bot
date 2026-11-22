@@ -166,7 +166,7 @@ async function withLibrary(
         path: "/",
         component: () => (
           <SidebarProvider>
-            <Library kind="bot" id="bot" />
+            <Library id="bot" />
           </SidebarProvider>
         ),
       }),

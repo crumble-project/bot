@@ -305,7 +305,7 @@ test("reports only active views and ready visible reply surfaces", async () => {
   document.body.append(text);
   const controller = getChatAttention();
   const bot = { kind: "bot", id: "bot" } as const;
-  const group = { kind: "group", id: "group" } as const;
+  const otherBot = { kind: "bot", id: "other-bot" } as const;
 
   const reference: ReplyReference = {
     eventId: "card-event",
@@ -438,11 +438,11 @@ test("reports only active views and ready visible reply surfaces", async () => {
     await waitFor(() => views().length === 6);
     expect(views()[5]!.body).toEqual({ chat: bot });
     controller.displayed({ eventId: "old", surface: { kind: "text" } });
-    controller.setChat(group);
+    controller.setChat(otherBot);
     await waitFor(() => views().length === 7);
     await settle();
     expect(seen()).toHaveLength(1);
-    expect(views()[6]!.body).toEqual({ chat: group });
+    expect(views()[6]!.body).toEqual({ chat: otherBot });
     controller.displayed({ eventId: "other", surface: { kind: "text" } });
     controller.setChat(null);
     await waitFor(() => views().length === 8);
@@ -474,7 +474,7 @@ test("reports only active views and ready visible reply surfaces", async () => {
     state.failSeen = true;
     retrying.displayed({ eventId: "retry", surface: { kind: "text" } });
     await waitFor(() => seen().length === 2 && retryCallbacks.length === 1);
-    retrying.setChat(group);
+    retrying.setChat(otherBot);
     retryCallbacks.at(-1)!();
     await waitFor(() => seen().length === 3);
     expect(seen()[1]?.body).toEqual({ chat: bot, eventIds: ["retry"] });

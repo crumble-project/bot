@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { openGroupConversation } from "../group-chats/group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -167,92 +166,72 @@ async function settle(
   return status();
 }
 
-for (const groupTurn of [false, true]) {
-  test(`library tool reads only allowed files in a ${groupTurn ? "group turn" : "bot chat"}`, async () => {
-    const seen: string[] = [];
-    let selected = "";
-    const { service, agent, store, library } = setup([
-      () =>
-        fauxAssistantMessage(fauxToolCall("library", { action: "list" }), {
-          stopReason: "toolUse",
-        }),
-      (context) => {
-        seen.push(JSON.stringify(context.messages.at(-1)?.content));
-        return fauxAssistantMessage(
-          fauxToolCall("library", { action: "read", id: selected }),
-          { stopReason: "toolUse" },
-        );
-      },
-      (context) => {
-        seen.push(JSON.stringify(context.messages.at(-1)?.content));
-        return fauxAssistantMessage("Read it.");
-      },
-    ]);
-    const other = store.createAgent({
-      name: "Other",
-      description: "",
-      instructions: "",
-      provider: "faux",
-      model: "chat",
-      enabled: true,
-      tools: [],
-      skills: [],
-      mcpServers: [],
-      delegates: [],
-    });
-    const group = store.createGroupChat({
-      name: "Shared",
-      memberIds: [agent.id, other.id],
-    });
-    const own = await Effect.runPromise(
-      library.upload(
-        { kind: "bot", agentId: agent.id },
-        {
-          name: "own-notes.txt",
-          mimeType: "text/plain",
-          body: new Blob(["own secret"]).stream(),
-        },
-      ),
-    );
-    const shared = await Effect.runPromise(
-      library.upload(
-        { kind: "group", groupId: group.id },
-        {
-          name: "group-notes.txt",
-          mimeType: "text/plain",
-          body: new Blob(["group secret"]).stream(),
-        },
-      ),
-    );
-    await Effect.runPromise(
-      library.upload(
-        { kind: "bot", agentId: other.id },
-        {
-          name: "foreign-notes.txt",
-          mimeType: "text/plain",
-          body: new Blob(["foreign secret"]).stream(),
-        },
-      ),
-    );
-    selected = groupTurn ? shared.file.id : own.file.id;
-    const chat = groupTurn
-      ? await openGroupConversation(service.runtime, agent, group.id)
-      : (await service.chat(agent.id)).id;
-    const submission = await service.runtime.submit(
-      agent,
-      chat,
-      "Read my file",
-      crypto.randomUUID(),
-    );
-    expect((await service.runtime.wait(submission, agent)).status).toBe("done");
-    expect(seen[0]).toContain("own-notes.txt");
-    expect(seen[0]).not.toContain("foreign-notes.txt");
-    if (groupTurn) expect(seen[0]).toContain("group-notes.txt");
-    else expect(seen[0]).not.toContain("group-notes.txt");
-    expect(seen[1]).toContain(groupTurn ? "group secret" : "own secret");
-    await service.close();
+test("library tool reads only the bot chat library", async () => {
+  const seen: string[] = [];
+  let selected = "";
+  const { service, agent, store, library } = setup([
+    () =>
+      fauxAssistantMessage(fauxToolCall("library", { action: "list" }), {
+        stopReason: "toolUse",
+      }),
+    (context) => {
+      seen.push(JSON.stringify(context.messages.at(-1)?.content));
+      return fauxAssistantMessage(
+        fauxToolCall("library", { action: "read", id: selected }),
+        { stopReason: "toolUse" },
+      );
+    },
+    (context) => {
+      seen.push(JSON.stringify(context.messages.at(-1)?.content));
+      return fauxAssistantMessage("Read it.");
+    },
+  ]);
+  const other = store.createAgent({
+    name: "Other",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "chat",
+    enabled: true,
+    tools: [],
+    skills: [],
+    mcpServers: [],
+    delegates: [],
   });
-}
+  const own = await Effect.runPromise(
+    library.upload(
+      { kind: "bot", agentId: agent.id },
+      {
+        name: "own-notes.txt",
+        mimeType: "text/plain",
+        body: new Blob(["own secret"]).stream(),
+      },
+    ),
+  );
+  await Effect.runPromise(
+    library.upload(
+      { kind: "bot", agentId: other.id },
+      {
+        name: "foreign-notes.txt",
+        mimeType: "text/plain",
+        body: new Blob(["foreign secret"]).stream(),
+      },
+    ),
+  );
+  selected = own.file.id;
+  const chat = (await service.chat(agent.id)).id;
+  const submission = await service.runtime.submit(
+    agent,
+    chat,
+    "Read my file",
+    crypto.randomUUID(),
+  );
+  expect((await service.runtime.wait(submission, agent)).status).toBe("done");
+  expect(seen[0]).toContain("own-notes.txt");
+  expect(seen[0]).not.toContain("foreign-notes.txt");
+  expect(seen[1]).toContain("own secret");
+  await service.close();
+});
 
 describe("continuous bot chat", () => {
   test("keeps the full transcript visible after compaction", async () => {
@@ -662,60 +641,6 @@ describe("activity", () => {
       },
     ]);
     await service.close();
-  });
-});
-
-describe("group turns", () => {
-  test("announce nothing and report when they settle", async () => {
-    const { service, store, agent } = setup([
-      fauxAssistantMessage("For the group."),
-    ]);
-
-    const reference = await openGroupConversation(
-      service.runtime,
-      agent,
-      "group-1",
-    );
-
-    store.createConversation({ agentId: agent.id, title: "Group" }, reference);
-    const events: unknown[] = [];
-    const settled: string[] = [];
-    service.onActivity((event) => events.push(event));
-    service.onSettled((execution) => {
-      settled.push(execution.status);
-    });
-
-    const execution = await service.send(reference, "hello", "group-turn:1");
-
-    expect(await settle(service, execution.id)).toBe("done");
-
-    await until(() => settled.length > 0);
-    expect(settled).toEqual(["done"]);
-    expect(events).toEqual([]);
-    await service.close();
-  });
-
-  test("report a cancelled execution as settled", async () => {
-    const { service, store, agent } = setup([() => new Promise(() => {})]);
-
-    const reference = await openGroupConversation(
-      service.runtime,
-      agent,
-      "group-1",
-    );
-
-    store.createConversation({ agentId: agent.id, title: "Group" }, reference);
-    const settled: string[] = [];
-    service.onSettled((execution) => {
-      settled.push(execution.status);
-    });
-
-    const execution = await service.send(reference, "hello", "group-turn:1");
-
-    await service.abort(reference);
-    expect(store.getExecution(execution.id)?.status).toBe("cancelled");
-    await service.close();
-    expect(settled).toEqual(["cancelled"]);
   });
 });
 

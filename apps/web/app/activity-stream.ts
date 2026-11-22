@@ -5,7 +5,6 @@ import {
 } from "@crumble/server/contract/api-responses";
 import { authClient } from "@/lib/auth-client";
 import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
-import { groupChatQuery, invalidateGroups } from "@/features/group-chats/api";
 import { chatQuery } from "@/features/chat/api";
 import { follow, queryClient } from "@/lib/api";
 import { type ChatLinks, notifyReply } from "@/lib/notifications";
@@ -68,10 +67,9 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
     {
       onStatus: report,
       onOpen: () => {
-        // Bots, groups, and pins may have changed while the stream was down.
+        // Bots and pins may have changed while the stream was down.
         if (connections++ > 0) {
           void invalidateBots();
-          void invalidateGroups();
           authClient.$store.notify("$sessionSignal");
         }
       },
@@ -91,9 +89,7 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
         if (event.type === "chat-preview")
           preview(event.agentId, event.lastMessage);
         else {
-          const queryKey = event.groupId
-            ? groupChatQuery(event.groupId).queryKey
-            : chatQuery(event.agentId).queryKey;
+          const queryKey = chatQuery(event.agentId).queryKey;
 
           void queryClient.invalidateQueries({ queryKey });
           notifyReply(event, links);

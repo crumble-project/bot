@@ -135,7 +135,7 @@ configuration stops accounts from starting, with an error that begins
 New pushes become eligible at least three seconds after entering the server's
 queue. This delay is fixed, not configurable. Before each delivery or retry,
 the server suppresses pushes to every device when the reply was acknowledged
-as displayed or its bot or group chat is active in any reporting client.
+as displayed or its bot chat is active in any reporting client.
 Suppressed pushes do not return when you leave the chat.
 
 The web app reports attention only while the chat is displayed in a visible,
@@ -165,3 +165,11 @@ and unread counters are unchanged.
 | `CRUMBLE_CLAUDE_COMMAND`          | `claude`           | Path to the Claude Code executable, if it isn't on `PATH`.                                                |
 | `CRUMBLE_CLAUDE_TELEMETRY`        | Enabled            | Set to `0`, `false`, `no`, or `off` to turn off Claude Code telemetry.                                    |
 | `NODE_ENV`                        | Unset              | Set to `production` to minify the web app.                                                                |
+
+## Upgrade from group chats
+
+Back up the complete data directory before upgrading. Group chats are removed permanently during startup, including their histories, pins, queued notifications, and group-only uploads. This includes private group histories inside member bots' stores.
+
+Member bots, direct bot chats, memories, skills, and bot libraries remain. Files still referenced by a bot library are preserved. The upgrade removes group provenance from retained memories and learned changes, but keeps their content and revert history.
+
+Group APIs and older clients' group features no longer work. There is no export or conversion into bot chats. Cleanup finishes before bots or notification workers start and retries after interruption. A cleanup failure prevents startup. Restore the backup with the previous server version to recover removed data.

@@ -53,7 +53,6 @@ export function useFileDownload() {
       if (error instanceof HttpError && error.status === 404) {
         void queryClient.invalidateQueries({ queryKey: ["library"] });
         void queryClient.invalidateQueries({ queryKey: ["chat"] });
-        void queryClient.invalidateQueries({ queryKey: ["group-chat"] });
       }
     },
   });

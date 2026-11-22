@@ -74,15 +74,12 @@ test("add with the same hash in one library twice returns existed: true and keep
   ).toEqual([first.entry]);
 });
 
-test("removeUnreferenced preserves bytes shared between bot and group libraries", async () => {
+test("removeUnreferenced preserves bytes shared between bot libraries", async () => {
   const { runtime, library, store, agent } = setup();
 
-  const group = store.createGroupChat({
-    name: "Shared",
-    memberIds: [agent.id],
-  });
+  const otherBot = store.duplicateAgent(agent.id, "Grace")!;
 
-  const groupLibrary: LibraryRef = { kind: "group", groupId: group.id };
+  const otherLibrary: LibraryRef = { kind: "bot", agentId: otherBot.id };
   await runtime.runPromise(
     Effect.gen(function* () {
       const files = yield* FileStore;
@@ -106,9 +103,9 @@ test("removeUnreferenced preserves bytes shared between bot and group libraries"
 
           const botEntry = yield* repo.add({ ...input, library });
 
-          const groupEntry = yield* repo.add({
+          const otherEntry = yield* repo.add({
             ...input,
-            library: groupLibrary,
+            library: otherLibrary,
           });
 
           yield* repo.remove(library, botEntry.entry.id);
@@ -118,7 +115,7 @@ test("removeUnreferenced preserves bytes shared between bot and group libraries"
             "shared bytes",
           );
           expect(yield* files.text(hash)).toBe("extracted text");
-          yield* repo.remove(groupLibrary, groupEntry.entry.id);
+          yield* repo.remove(otherLibrary, otherEntry.entry.id);
           yield* files.removeUnreferenced(hash);
           expect((yield* files.bytes(hash).pipe(Effect.flip))._tag).toBe(
             "NotFound",

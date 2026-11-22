@@ -44,32 +44,6 @@ export const botMessageRequest = (executionId: string, status: string) =>
 
 export const reviewRequest = (executionId: string) => `review:${executionId}`;
 
-export const groupTurnRequest = (
-  groupId: string,
-  agentId: string,
-  through: number,
-) => `group-turn:${groupId}:${agentId}:${through}`;
-
-export const groupPostRequest = (executionId: string) =>
-  `group-turn:${executionId}`;
-
-export function groupTurnScope(requestId: string, agentId: string) {
-  const [prefix, groupId, memberId, through, ...extra] = requestId.split(":");
-
-  if (
-    prefix !== "group-turn" ||
-    !groupId ||
-    memberId !== agentId ||
-    !through ||
-    !/^(0|[1-9]\d*)$/.test(through) ||
-    !Number.isSafeInteger(Number(through)) ||
-    extra.length > 0
-  )
-    return;
-
-  return { kind: "group" as const, groupId };
-}
-
 /** The ID a job's turn is reviewed under: it has no execution, so nothing resolves this as one. */
 export const jobTurnId = (
   jobKind: string,
@@ -98,7 +72,6 @@ export type ParsedRequest =
   | { kind: "outside-call"; callId: string; id: string }
   | { kind: "call-request"; callRequestId: string }
   | { kind: "review"; executionId: string }
-  | { kind: "group-turn" }
   /** A client's own ID. Job deliveries and reports land here too: they never become executions, so nothing decodes them. */
   | { kind: "other" };
 
@@ -161,8 +134,6 @@ const PREFIXES = new Map<string, PrefixParser>([
 export function parseRequestId(requestId: string): ParsedRequest {
   const [prefix, subject, ...rest] = requestId.split(":");
   const detail = rest.join(":");
-
-  if (prefix === "group-turn") return { kind: "group-turn" };
 
   if (!subject || !prefix) return { kind: "other" };
 

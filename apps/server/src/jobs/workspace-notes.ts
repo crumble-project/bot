@@ -13,7 +13,7 @@ export const WORKSPACE_NOTES_MAX_BYTES = 4096;
 
 export const WORKSPACE_NOTES_SECTION = "workspace_notes";
 
-/** The bot's own workspace section, in its chat and group chats; job sections use other keys, which it must not shadow. */
+/** The bot's own workspace section, in its chat; job sections use other keys, which it must not shadow. */
 export const WORKSPACE_SECTION = "workspace";
 
 const NOTES_PATH = `${WORKSPACE_PATH}/${WORKSPACE_NOTES_FILE}`;

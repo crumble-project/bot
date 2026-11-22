@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: remove group chats from the server, web client, and API. Upgrading permanently deletes group histories, group pins, queued group notifications, and files used only by groups. Member bots, direct chats, memories, skills, and bot-library files remain. Back up the complete data directory before upgrading; recovering removed groups requires restoring that backup with the previous server version.
+
 - Remove Fallow from development dependencies, Git hooks, and CI. Lint, formatting, type checks, tests, and documentation checks remain in place.
 - Add `bun run dev:emulate` for credential-free local bot chat with scripted replies, streaming, tool calls, errors, and cancellation. Run emulator-backed verification separately with the local-only `bun run check:emulate` command.
 - Bot avatars show what their bot is doing, using `open-bot-avatar` 0.3.0: three hopping dots while it thinks, bent over the work while it writes, searches, remembers, or uses tools, an exclamation mark while it retries, a short celebration when a reply finishes, and waiting in a group chat while it answers next. Live avatars ease from one state to the next instead of restarting. The `/avatars` page previews every state. Paused bots and disabled automations no longer show a dimmed, still avatar.

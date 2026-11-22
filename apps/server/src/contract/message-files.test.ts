@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { groupMessageInput, messageInput } from "./api-contract";
+import { messageInput } from "./api-contract";
 
-test("bot and group messages accept file IDs and reject base64 attachments", () => {
+test("bot messages accept file IDs and reject base64 attachments", () => {
   const requestId = crypto.randomUUID();
   const fileId = crypto.randomUUID();
   expect(
@@ -12,11 +12,7 @@ test("bot and group messages accept file IDs and reject base64 attachments", () 
       .success,
   ).toBe(false);
   expect(
-    groupMessageInput.safeParse({ requestId, content: "", files: [fileId] })
-      .success,
-  ).toBe(true);
-  expect(
-    groupMessageInput.safeParse({
+    messageInput.safeParse({
       requestId,
       content: "",
       attachments: [{ name: "a.txt", mimeType: "text/plain", data: "YQ==" }],

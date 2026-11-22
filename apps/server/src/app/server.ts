@@ -18,6 +18,7 @@ import {
   viewerPathOwner,
 } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
+import { removeLegacyGroupChats } from "./group-chat-upgrade";
 import {
   emulateDirectoriesOverlap,
   type EmulateProfile,
@@ -206,10 +207,14 @@ async function restoreTenants(
 
   if (!existsSync(usersDir)) return;
 
-  for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
-    if (entry.isDirectory() && accounts.hasUser(entry.name))
-      await tenant(entry.name);
-  }
+  const accountsToRestore = readdirSync(usersDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && accounts.hasUser(entry.name))
+    .map((entry) => entry.name);
+
+  for (const id of accountsToRestore)
+    await removeLegacyGroupChats(accountDir(dataDir, id));
+
+  for (const id of accountsToRestore) await tenant(id);
 }
 
 const outdatedWorkspaces = async (tenants: Map<string, Promise<Tenant>>) =>

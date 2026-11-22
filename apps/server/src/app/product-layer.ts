@@ -10,7 +10,6 @@ import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { AgentCredentialRepository } from "../credentials/agent-credential-repository";
 import { SecretRepository } from "../secrets/secret-repository";
-import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { MemoryRepository } from "../memory/memory-repository";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
@@ -68,7 +67,6 @@ export const productLayer = (dataDir: string) => {
     DesktopControlRepository.layer,
     ConversationRepository.layer,
     ExecutionRepository.layer,
-    GroupChatRepository.layer,
     LibraryRepository.layer,
   ).pipe(Layer.provideMerge(database));
 

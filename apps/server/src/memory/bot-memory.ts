@@ -3,11 +3,10 @@ import { type ChangeBy, type Memory } from "../shared/domain";
 import type { MemoryContext } from "./memory-tool";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
-import type { GroupChatRepository } from "../group-chats/group-chat-repository";
 import type { ScheduleRepository } from "../automations/schedule-repository";
 import { changeByOf } from "../learned-changes/change-source";
 import { MemoryRepository } from "./memory-repository";
-import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
+import { memorySourceOf } from "./memory-sources";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
 
@@ -52,10 +51,7 @@ export class BotMemory extends Context.Service<
       const agents = yield* AgentRepository;
 
       const sources = yield* Effect.context<
-        | AgentRepository
-        | ExecutionRepository
-        | GroupChatRepository
-        | ScheduleRepository
+        AgentRepository | ExecutionRepository | ScheduleRepository
       >();
 
       const usesSharedMemory = (agentId: string) =>
@@ -101,7 +97,6 @@ export class BotMemory extends Context.Service<
         create: Effect.fn("BotMemory.create")(
           function* (agentId, content, shared, context) {
             yield* validContent(content);
-            yield* assertOwnMemoryInGroup(context, shared);
 
             const source = yield* memorySourceOf(agentId, context).pipe(
               Effect.provideContext(sources),
@@ -116,8 +111,7 @@ export class BotMemory extends Context.Service<
         ),
         update: Effect.fn("BotMemory.update")(
           function* (agentId, id, content, context) {
-            const memory = yield* reachable(agentId, id);
-            yield* assertOwnMemoryInGroup(context, memory.agentId === null);
+            yield* reachable(agentId, id);
             yield* validContent(content);
 
             const updated = yield* memories.update(
@@ -135,8 +129,7 @@ export class BotMemory extends Context.Service<
           },
         ),
         delete: Effect.fn("BotMemory.delete")(function* (agentId, id, context) {
-          const memory = yield* reachable(agentId, id);
-          yield* assertOwnMemoryInGroup(context, memory.agentId === null);
+          yield* reachable(agentId, id);
           yield* memories.delete(id, yield* changeBy(agentId, context));
         }),
       });

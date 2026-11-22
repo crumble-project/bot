@@ -12,7 +12,6 @@ export const UNKNOWN_SCHEDULE_NAME = "Deleted automation";
  */
 export type InputOrigin =
   | { kind: "owner"; via?: string }
-  | { kind: "group" }
   | { kind: "task"; name: string }
   | { kind: "event"; name: string; source: string }
   | { kind: "script"; name: string }
@@ -44,7 +43,6 @@ const REQUEST_SOURCES: Record<
   owner: "owner",
   task: "automation",
   event: "automation",
-  group: undefined,
   script: undefined,
   bot: undefined,
   credential: undefined,
@@ -69,7 +67,6 @@ export const messageTag = (
 ) => (requestSource(originKind) ? `[message ${requestId}]\n${text}` : text);
 
 export type TurnSource =
-  | { kind: "group" }
   | { kind: "event"; eventId: string; scheduleId: string }
   | { kind: "task"; scheduleId: string }
   | { kind: "bot"; agentId: string }
@@ -88,8 +85,6 @@ export function turnSource({
   scheduleId,
 }: Pick<Execution, "requestId" | "scheduleId">): TurnSource {
   const request = parseRequestId(requestId);
-
-  if (request.kind === "group-turn") return { kind: "group" };
 
   if (request.kind === "event") return request;
 

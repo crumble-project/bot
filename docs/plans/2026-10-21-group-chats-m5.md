@@ -1,5 +1,7 @@
 # Group chats milestone 5: group snapshot event schema
 
+> Superseded by [Remove group chats](../designs/remove-group-chats.md). This document records the original design.
+
 > Implement one task at a time. Review each deliverable before starting the next. Steps use `- [ ]`.
 
 **Goal:** Clients can generate and validate group chat stream events from an exported schema, as they do for bot chats.

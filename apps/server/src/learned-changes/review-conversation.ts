@@ -7,7 +7,6 @@ import {
 
 export const ReviewConversation = defineDoc<{
   executionId: string | null;
-  groupId: string | null;
   skills: boolean;
   memory: boolean;
   budgetChars: number;
@@ -19,7 +18,6 @@ export const ReviewConversation = defineDoc<{
   fork: "initial",
   initial: () => ({
     executionId: null,
-    groupId: null,
     skills: false,
     memory: false,
     budgetChars: 0,

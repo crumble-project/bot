@@ -210,6 +210,30 @@ test("a new account has no pins", async () => {
   }
 });
 
+test("restart removes only group pins and preserves bot order and sessions", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "auth-group-pins-"));
+  let accounts = await createAuth(dataDir, ORIGIN);
+  const { token } = await signUp(accounts, "upgrade-pins@example.com");
+  accounts.close();
+  const database = new Database(join(dataDir, "auth.sqlite"));
+  database
+    .query("UPDATE user SET pinnedConversations = ?")
+    .run(JSON.stringify(["agent:second", "group:old", "agent:first"]));
+  database.close();
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    accounts = await createAuth(dataDir, ORIGIN);
+    try {
+      expect(await pinsOf(accounts, token!)).toEqual([
+        "agent:second",
+        "agent:first",
+      ]);
+    } finally {
+      accounts.close();
+    }
+  }
+});
+
 test("saves pins in order", async () => {
   const accounts = await createAuth(
     mkdtempSync(join(tmpdir(), "auth-")),
@@ -219,11 +243,11 @@ test("saves pins in order", async () => {
   try {
     const { token } = await signUp(accounts, "pins@example.com");
     const saved = await authRequest(accounts, token!, "update-user", {
-      pinnedConversations: ["group:g1", "agent:b1"],
+      pinnedConversations: ["agent:b2", "agent:b1"],
     });
 
     expect(saved.status).toBe(200);
-    expect(await pinsOf(accounts, token!)).toEqual(["group:g1", "agent:b1"]);
+    expect(await pinsOf(accounts, token!)).toEqual(["agent:b2", "agent:b1"]);
   } finally {
     accounts.close();
   }
@@ -246,6 +270,7 @@ test("rejects more than nine pins, duplicates, and malformed keys", async () => 
       tooMany,
       ["agent:a", "agent:a"],
       ["bot:a"],
+      ["group:obsolete"],
     ]) {
       const response = await authRequest(accounts, token!, "update-user", {
         pinnedConversations,

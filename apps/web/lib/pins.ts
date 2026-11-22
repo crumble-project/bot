@@ -9,14 +9,12 @@ type Conversation = { id: string };
 
 export const botPin = (id: string) => `agent:${id}`;
 
-export const groupPin = (id: string) => `group:${id}`;
-
 const savedPins = pinnedConversations.catch([]);
 
 export type Pins = {
   /** The pinned conversations that exist, first pin first. */
   pinned: string[];
-  /** False until the bots and groups load; until then every change is refused. */
+  /** False until the bots load; until then every change is refused. */
   ready: boolean;
   isPinned: (key: string) => boolean;
   canPin: (key: string) => boolean;
@@ -30,10 +28,7 @@ export type Pins = {
  * list, one write at a time; afterwards the session's list takes over again,
  * which also rolls back a failed write.
  */
-export function usePins(
-  bots: Conversation[] | undefined,
-  groups: Conversation[] | undefined,
-): Pins {
+export function usePins(bots: Conversation[] | undefined): Pins {
   const session = authClient.useSession();
   const [wanted, setWanted] = useState<string[] | null>(null);
 
@@ -48,14 +43,10 @@ export function usePins(
   // written before the session's list arrives. A server too old to keep pins never sends one.
   const ready =
     bots !== undefined &&
-    groups !== undefined &&
     pinnedConversations.safeParse(session.data?.user.pinnedConversations)
       .success;
 
-  const existing = new Set([
-    ...(bots ?? []).map(({ id }) => botPin(id)),
-    ...(groups ?? []).map(({ id }) => groupPin(id)),
-  ]);
+  const existing = new Set((bots ?? []).map(({ id }) => botPin(id)));
 
   const pinned = (
     wanted ?? savedPins.parse(session.data?.user.pinnedConversations)

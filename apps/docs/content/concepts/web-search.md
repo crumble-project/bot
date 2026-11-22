@@ -6,7 +6,7 @@ sidebar:
 ---
 
 A bot with the **Web search** capability can search the web and read pages, in
-bot chats and in group chats. New bots created in the web app have it on by
+bot chats. New bots created in the web app have it on by
 default. Existing bots keep their current settings.
 
 ## Providers

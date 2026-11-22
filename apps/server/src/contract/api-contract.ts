@@ -13,7 +13,6 @@ import {
   secretInput,
 } from "./secrets";
 import { reasoningPreviewInput, reasoningPreviewResponse } from "./reasoning";
-import { groupChatInput } from "./group-chats";
 import { scheduleInput } from "./schedules";
 import {
   schedulePreviewInput,
@@ -162,14 +161,6 @@ export const messageInput = messageFields
   .extend({
     timezone: z.string().min(1).max(100).optional(),
   })
-  .strict()
-  .refine((value) => value.content || value.files.length, {
-    message: "Write a message or attach a file",
-    path: ["content"],
-  });
-
-/** `replyTo` names a message in the same group; replying to a bot's message also wakes that bot. */
-export const groupMessageInput = messageFields
   .strict()
   .refine((value) => value.content || value.files.length, {
     message: "Write a message or attach a file",
@@ -885,34 +876,6 @@ export const routes = {
     request: { params: id.extend({ fileId: z.uuid() }) },
     responses: { 204: empty },
   }),
-  uploadGroupFile: define({
-    method: "post",
-    path: "/v1/group-chats/{id}/files",
-    operationId: "uploadGroupFile",
-    request: { params: id, headers: fileHeaders, body: rawFileBody },
-    responses: { 201: json(response.uploadFileResponse) },
-  }),
-  listGroupFiles: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/files",
-    operationId: "listGroupFiles",
-    request: { params: id, query: filePageInput },
-    responses: { 200: json(z.array(response.libraryFileResponse)) },
-  }),
-  getGroupFile: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/files/{fileId}",
-    operationId: "getGroupFile",
-    request: { params: id.extend({ fileId: z.uuid() }) },
-    responses: { 200: fileBytes },
-  }),
-  deleteGroupFile: define({
-    method: "delete",
-    path: "/v1/group-chats/{id}/files/{fileId}",
-    operationId: "deleteGroupFile",
-    request: { params: id.extend({ fileId: z.uuid() }) },
-    responses: { 204: empty },
-  }),
   attachment: define({
     method: "get",
     path: "/v1/agents/{id}/attachments/{entryId}/{index}",
@@ -990,88 +953,6 @@ export const routes = {
     },
     description:
       "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Current chat previews replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
-    responses: {
-      200: {
-        description: "SSE stream, not a JSON array",
-        content: { "text/event-stream": { schema: z.string() } },
-      },
-    },
-  }),
-  listGroupChats: define({
-    method: "get",
-    path: "/v1/group-chats",
-    operationId: "listGroupChats",
-    responses: { 200: json(z.array(response.groupChatResponse)) },
-  }),
-  createGroupChat: define({
-    method: "post",
-    path: "/v1/group-chats",
-    operationId: "createGroupChat",
-    request: { body: body(groupChatInput) },
-    responses: { 201: json(response.groupChatResponse) },
-  }),
-  getGroupChat: define({
-    method: "get",
-    path: "/v1/group-chats/{id}",
-    operationId: "getGroupChat",
-    request: { params: id },
-    responses: { 200: json(response.groupChatResponse) },
-  }),
-  updateGroupChat: define({
-    method: "patch",
-    path: "/v1/group-chats/{id}",
-    operationId: "updateGroupChat",
-    request: { params: id, body: body(patchInput(groupChatInput)) },
-    responses: { 200: json(response.groupChatResponse) },
-  }),
-  deleteGroupChat: define({
-    method: "delete",
-    path: "/v1/group-chats/{id}",
-    operationId: "deleteGroupChat",
-    request: { params: id },
-    responses: { 204: empty },
-  }),
-  groupChatSnapshot: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/chat",
-    operationId: "getGroupChatSnapshot",
-    request: { params: id, query: snapshotInput },
-    responses: { 200: json(response.groupChatSnapshotResponse) },
-  }),
-  groupChatHistory: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/history",
-    operationId: "getGroupChatHistory",
-    request: { params: id, query: historyInput },
-    responses: { 200: json(response.historyResponse) },
-  }),
-  sendGroupMessage: define({
-    method: "post",
-    path: "/v1/group-chats/{id}/messages",
-    operationId: "sendGroupMessage",
-    request: { params: id, body: body(groupMessageInput) },
-    responses: { 201: json(response.groupMessageReceiptResponse) },
-  }),
-  stopGroupChat: define({
-    method: "post",
-    path: "/v1/group-chats/{id}/stop",
-    operationId: "stopGroupChat",
-    description:
-      "Ends every running bot turn in the group and drops the queued ones. The group is not paused; the next message starts turns again.",
-    request: { params: id },
-    responses: { 204: empty },
-  }),
-  groupChatEvents: define({
-    method: "get",
-    path: "/v1/group-chats/{id}/events",
-    operationId: "streamGroupChatEvents",
-    "x-sse-events": {
-      snapshot: { $ref: "#/components/schemas/GroupChatSnapshot" },
-      heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
-    },
-    description:
-      "Server-sent events. Each snapshot event carries a GroupChatSnapshot JSON object in data, sent on connection and after every change. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. Reconnect by fetching the current snapshot; there is no Last-Event-ID replay.",
-    request: { params: id, query: snapshotInput },
     responses: {
       200: {
         description: "SSE stream, not a JSON array",

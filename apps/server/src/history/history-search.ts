@@ -1,11 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { z } from "zod";
-import {
-  ASSISTANT_ENTRY,
-  GROUP_MESSAGE_ENTRY,
-  type MessageOrigin,
-} from "../transcript/entries";
-import { isBotOrigin, isOwnerOrigin } from "../transcript/origins";
+import { ASSISTANT_ENTRY, type MessageOrigin } from "../transcript/entries";
 import {
   isConversational,
   isOwnerInput,
@@ -29,9 +24,9 @@ const RESULT_MATCHES = 20;
 const EXCERPT_POINTS = 500;
 const MAX_QUERY_POINTS = 500;
 
-export type HistoryContext = { agentId: string; groupId: string | null };
+export type HistoryContext = { agentId: string };
 
-export type HistoryChat = { id: string; kind: "bot" | "group"; name: string };
+export type HistoryChat = { id: string; kind: "bot"; name: string };
 
 export type HistorySource = {
   chats(context: HistoryContext): Promise<HistoryChat[]>;
@@ -89,7 +84,7 @@ export type HistoryReadResult = {
 const snapshotSchema = z.object({
   chat: z.object({
     id: z.string(),
-    kind: z.enum(["bot", "group"]),
+    kind: z.literal("bot"),
     name: z.string(),
   }),
   cutoff: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -110,7 +105,6 @@ const keySchema = z.object({
 
 const caller = {
   agentId: z.string(),
-  groupId: z.string().nullable(),
 };
 
 const tokenSchema = z.discriminatedUnion("type", [
@@ -201,20 +195,7 @@ function toolActivityOf(
   return message.kind === ASSISTANT_ENTRY && toolCalls(message).length > 0;
 }
 
-function groupBody(message: TranscriptMessage): string | null {
-  if (message.kind !== GROUP_MESSAGE_ENTRY) return null;
-
-  if (message.role !== "user" && message.role !== "assistant") return null;
-
-  if (!isOwnerOrigin(message.origin) && !isBotOrigin(message.origin))
-    return null;
-
-  return message.content;
-}
-
-function bodyOf(chat: HistoryChat, message: TranscriptMessage): string | null {
-  if (chat.kind === "group") return groupBody(message);
-
+function bodyOf(message: TranscriptMessage): string | null {
   // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
   if (isOwnerInput(message)) return message.content;
 
@@ -229,7 +210,7 @@ function rowOf(chat: HistoryChat, message: TranscriptMessage): Row {
     original: message,
     entry,
     index,
-    body: bodyOf(chat, message),
+    body: bodyOf(message),
     toolActivity: toolActivityOf(chat, message),
   };
 }
@@ -734,11 +715,7 @@ export class HistorySearch {
 
       const payload = tokenSchema.parse(JSON.parse(plaintext));
 
-      if (
-        payload.agentId !== context.agentId ||
-        payload.groupId !== context.groupId
-      )
-        throw new Error();
+      if (payload.agentId !== context.agentId) throw new Error();
 
       return payload;
     } catch {
@@ -755,9 +732,7 @@ export class HistorySearch {
         throw new Error("History source returned duplicate chats");
       seen.add(chat.id);
 
-      return context.groupId !== null
-        ? chat.kind === "group" && chat.id === context.groupId
-        : chat.kind === "group" || chat.id === context.agentId;
+      return chat.id === context.agentId;
     });
   }
 

@@ -9,7 +9,6 @@ import {
   MEMORY_TOOL_NAME,
   MEMORY_WRITE_ACTIONS,
 } from "../contract/tools";
-import { groupOf } from "../group-chats/group-conversation";
 import type { Agent } from "../contract/agents";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
 import type { ChangeContext } from "../learned-changes/change-source";
@@ -123,7 +122,7 @@ export function memoryExtension(
   const tool = defineTool({
     name: MEMORY_TOOL_NAME,
     description:
-      "Read and manage this bot’s persistent memory. When the bot uses shared memory, `list` also returns shared memories (marked `shared`), which other bots see too; create one with `shared: true` only for what every bot should know. In a group chat only your own memory can be changed.",
+      "Read and manage this bot’s persistent memory. When the bot uses shared memory, `list` also returns shared memories (marked `shared`), which other bots see too; create one with `shared: true` only for what every bot should know.",
     parameters: Type.Object({
       action: Type.Union([
         Type.Literal("list"),
@@ -140,13 +139,9 @@ export function memoryExtension(
     execute: async (args, api, callContext) => {
       const live = await api.snapshot(LiveDoc, api.conversationId, callContext);
 
-      const [groupId, review] = await Promise.all([
-        groupOf(api, api.conversationId, callContext),
-        reviewOf(api, api.conversationId, callContext),
-      ]);
+      const review = await reviewOf(api, api.conversationId, callContext);
 
       const context: MemoryContext = {
-        groupId: groupId ?? review?.groupId ?? null,
         submissionIds: (live?.run?.inputs ?? []).map(String),
         reviewOf: review?.executionId ?? null,
       };

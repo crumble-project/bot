@@ -152,9 +152,7 @@ export class Push extends Context.Service<
 
           const event = yield* decodeEvent(row.eventJson).pipe(Effect.orDie);
 
-          const chat = event.groupId
-            ? { kind: "group" as const, id: event.groupId }
-            : { kind: "bot" as const, id: event.agentId };
+          const chat = { kind: "bot" as const, id: event.agentId };
 
           const suppressed = yield* attention
             .isSuppressed(chat, event.eventId)
@@ -202,9 +200,7 @@ export class Push extends Context.Service<
       const enqueue = Effect.fn("Push.enqueue")(function* (
         activity: ReplyActivity,
       ) {
-        const chat = activity.groupId
-          ? { kind: "group" as const, id: activity.groupId }
-          : { kind: "bot" as const, id: activity.agentId };
+        const chat = { kind: "bot" as const, id: activity.agentId };
 
         if (!(yield* attention.exists(chat))) return;
 

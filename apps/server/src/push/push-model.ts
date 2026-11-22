@@ -11,10 +11,7 @@ export type PushDevice = PushDeviceInput & {
   updatedAt: string;
 };
 
-export const notificationTitle = (event: ReplyEvent) =>
-  event.groupName
-    ? `${event.agentName} in ${event.groupName}`
-    : event.agentName;
+export const notificationTitle = (event: ReplyEvent) => event.agentName;
 
 export function notificationPreview(value: string) {
   const cleaned = value

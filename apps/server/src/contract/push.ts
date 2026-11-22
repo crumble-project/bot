@@ -7,7 +7,7 @@ import {
 import { body, define, empty, json } from "./route";
 
 export const chatReference = z.object({
-  kind: z.enum(["bot", "group"]),
+  kind: z.literal("bot"),
   id: z.string().min(1),
 });
 

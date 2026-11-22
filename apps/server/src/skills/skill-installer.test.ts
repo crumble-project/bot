@@ -338,7 +338,7 @@ test("bots and reviews can't change a skill the owner pinned", () => {
   });
 
   const skills = standaloneSkills(store);
-  const context = { groupId: null, submissionIds: [], runKey: null };
+  const context = { submissionIds: [], reviewOf: null, runKey: null };
 
   for (const write of [
     skills.update(

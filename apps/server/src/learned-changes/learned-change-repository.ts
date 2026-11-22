@@ -15,7 +15,6 @@ import { learnedChanges, reviewResults } from "./schema";
 const changeSourceSchema = z.object({
   executionId: z.exactOptional(z.string().nullable()),
   conversationId: z.exactOptional(z.string().nullable()),
-  groupId: z.exactOptional(z.string().nullable()),
 });
 
 const memorySchema = z.object({

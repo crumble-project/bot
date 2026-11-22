@@ -45,20 +45,14 @@ const bot = {
 };
 
 const owner = {
-  id: "g:1:0",
-  entryId: "g:1",
+  id: "bot:1:0",
+  entryId: "bot:1",
   role: "user",
   content: "The original",
   replyReferences: [],
 };
 
-const page = { messages: [owner], hasMore: false, oldestEntryId: "g:1" };
-
-const groupSnapshot = {
-  ...page,
-  groupChat: { id: "g", name: "Group", memberIds: ["bot"] },
-  activity: { members: [], paused: false },
-};
+const page = { messages: [owner], hasMore: false, oldestEntryId: "bot:1" };
 
 const silentStream = (signal: AbortSignal | null | undefined) =>
   new Response(
@@ -202,35 +196,29 @@ async function render(
 const shows = (container: HTMLElement, text: string) => () =>
   container.textContent?.includes(text) === true;
 
-const loadGroup = async () => {
-  const { GroupChatView } = await import("@/features/group-chats/groups");
-
-  return () => <GroupChatView groupId="g" />;
-};
-
 const loadChat = async () => {
   const { Chat } = await import("@/features/bot-chat/chat");
 
   return () => <Chat botId="bot" />;
 };
 
-test("a group reply being sent shows what it answers", async () => {
+test("a bot reply being sent shows what it answers", async () => {
   await render(
-    "/groups/g",
+    "/bots/bot",
     new Map<string, Answer>([
       ["/v1/agents", Response.json([bot])],
-      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
+      ["/v1/agents/bot/chat", Response.json(chatSnapshot("idle"))],
     ]),
-    loadGroup,
+    loadChat,
     async (container) => {
       const { deliver, discard } = await import("./delivery");
 
       await waitFor(shows(container, "The original"));
       await act(async () => {
-        await deliver("group:g", "/v1/group-chats/g/messages", {
+        await deliver("bot:bot", "/v1/agents/bot/messages", {
           requestId: "request",
           content: "My answer",
-          replyTo: "g:1",
+          replyTo: "bot:1",
           uploads: [],
         });
       });
@@ -239,12 +227,12 @@ test("a group reply being sent shows what it answers", async () => {
       // Once as its own message and once quoted above the reply.
       expect(container.textContent?.split("The original")).toHaveLength(3);
 
-      await act(async () => discard("group:g", "request"));
+      await act(async () => discard("bot:bot", "request"));
     },
   );
 });
 
-async function sendInGroup(container: HTMLElement, text: string) {
+async function sendInChat(container: HTMLElement, text: string) {
   const field = container.querySelector("textarea")!;
 
   await act(async () => {
@@ -265,19 +253,19 @@ async function sendInGroup(container: HTMLElement, text: string) {
 
 test("a message the server refused goes back to the composer and leaves the transcript", async () => {
   await render(
-    "/groups/g",
+    "/bots/bot",
     new Map<string, Answer>([
       ["/v1/agents", Response.json([bot])],
-      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
+      ["/v1/agents/bot/chat", Response.json(chatSnapshot("idle"))],
       [
-        "/v1/group-chats/g/messages",
+        "/v1/agents/bot/messages",
         Response.json({ error: "Too long" }, { status: 400 }),
       ],
     ]),
-    loadGroup,
+    loadChat,
     async (container) => {
       await waitFor(shows(container, "The original"));
-      await sendInGroup(container, "Refused");
+      await sendInChat(container, "Refused");
 
       await waitFor(shows(container, "Too long"));
       expect(container.querySelector("textarea")!.value).toBe("Refused");
@@ -288,19 +276,19 @@ test("a message the server refused goes back to the composer and leaves the tran
 
 test("a message that may have arrived stays for Retry, and the composer stays empty", async () => {
   await render(
-    "/groups/g",
+    "/bots/bot",
     new Map<string, Answer>([
       ["/v1/agents", Response.json([bot])],
-      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
+      ["/v1/agents/bot/chat", Response.json(chatSnapshot("idle"))],
       [
-        "/v1/group-chats/g/messages",
+        "/v1/agents/bot/messages",
         Response.json({ error: "Bad gateway" }, { status: 502 }),
       ],
     ]),
-    loadGroup,
+    loadChat,
     async (container) => {
       await waitFor(shows(container, "The original"));
-      await sendInGroup(container, "Maybe arrived");
+      await sendInChat(container, "Maybe arrived");
 
       await waitFor(shows(container, "Maybe arrivedNot sent"));
       expect(container.querySelector("textarea")!.value).toBe("");
@@ -375,26 +363,6 @@ test("a bot left while it works stays followed until it finishes", async () => {
           chatSnapshot("idle") as ChatSnapshot,
         );
       });
-      await waitFor(() => signals[0]?.aborted === true, "the stream to stop");
-    },
-  );
-});
-
-test("a group chat stops following once left", async () => {
-  const signals: (AbortSignal | null | undefined)[] = [];
-
-  await render(
-    "/groups/g",
-    new Map<string, Answer>([
-      ["/v1/agents", Response.json([bot])],
-      ["/v1/group-chats/g/chat", Response.json(groupSnapshot)],
-      ["/v1/group-chats/g/events", recordingStream(signals)],
-    ]),
-    loadGroup,
-    async (_container, { leave }) => {
-      await waitFor(() => signals.length > 0, "the event stream");
-      expect(signals[0]?.aborted).toBe(false);
-      await leave();
       await waitFor(() => signals[0]?.aborted === true, "the stream to stop");
     },
   );

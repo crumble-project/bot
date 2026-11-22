@@ -1,5 +1,7 @@
 # Group chats milestone 2: turns
 
+> Superseded by [Remove group chats](../designs/remove-group-chats.md). This document records the original design.
+
 > Implement one task at a time. Review each deliverable before starting the next. Steps use `- [ ]`.
 
 **Goal:** Members answer in group chats: owner and bot messages start turns by the routing rules, bounded by the turn budget and a stop control.

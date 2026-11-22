@@ -26,7 +26,6 @@ import {
   type AppError,
 } from "../shared/errors";
 import { BOT_TOOL } from "../contract/tools";
-import { normalize } from "../group-chats/group-mentions";
 import { MAX_MESSAGE_CHARS, MAX_WAIT_SECONDS } from "../shared/limits";
 import { delegationStore } from "./delegation-store";
 
@@ -42,6 +41,8 @@ type DelegationResult = Receipt & { error: string | null; response: string[] };
 type JobQuestionAnswered = { agentId: string; agent: string; job: string };
 
 const JOB_POLL_MS = 500;
+
+const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
 
 const addressed = (recipient: string) => recipient.trim().replace(/^@/, "");
 

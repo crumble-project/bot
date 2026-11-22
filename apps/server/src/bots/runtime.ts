@@ -67,7 +67,6 @@ import {
 import { SkillReads, skillTool } from "../skills/skill-library";
 import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
-import type { LibraryRef } from "../files/library-repository";
 import { FileStore } from "../files/file-store";
 import { Library } from "../files/library";
 import { libraryExtension } from "../files/library-tool";
@@ -113,7 +112,6 @@ export type RuntimeCallbacks = MemoryStore & {
   resolveFiles: (
     agentId: string,
     ids: readonly string[],
-    library?: LibraryRef,
   ) => Effect.Effect<ResolvedFile[]>;
   existingFiles: (
     agentId: string,
@@ -395,8 +393,8 @@ export class AgentRuntime {
     return this.callbacks.validateFiles(agentId, ids);
   }
 
-  resolveFiles(agentId: string, ids: readonly string[], library?: LibraryRef) {
-    return this.callbacks.resolveFiles(agentId, ids, library);
+  resolveFiles(agentId: string, ids: readonly string[]) {
+    return this.callbacks.resolveFiles(agentId, ids);
   }
 
   private async currentFiles(agentId: string, messages: TranscriptMessage[]) {
@@ -478,17 +476,11 @@ export class AgentRuntime {
     return { next, installed };
   }
 
-  private libraryTools(agent: Agent, ownOnly = false) {
+  private libraryTools(agent: Agent) {
     return libraryExtension({
       agent,
       library: this.callbacks.library,
-      libraries: ({ groupId }) =>
-        groupId && !ownOnly
-          ? [
-              { kind: "group", groupId },
-              { kind: "bot", agentId: agent.id },
-            ]
-          : [{ kind: "bot", agentId: agent.id }],
+      libraries: () => [{ kind: "bot", agentId: agent.id }],
       workspace:
         agent.tools.includes(BOT_TOOL.coding) ||
         agent.tools.includes(BOT_TOOL.desktop),
@@ -537,7 +529,7 @@ export class AgentRuntime {
   ) {
     return defineExtension({
       name: JOB_KNOWLEDGE_EXTENSION,
-      tools: [skill, ...(this.libraryTools(choices.agent, true).tools ?? [])],
+      tools: [skill, ...(this.libraryTools(choices.agent).tools ?? [])],
       sections: [
         {
           key: "bot_knowledge",
@@ -1281,11 +1273,11 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
                 library,
                 validateFiles: (agentId, ids) =>
                   library.validate({ kind: "bot", agentId }, ids),
-                resolveFiles: (agentId, ids, ref) =>
+                resolveFiles: (agentId, ids) =>
                   resolveMessageFiles(
                     library,
                     fileStore,
-                    ref ?? { kind: "bot", agentId },
+                    { kind: "bot", agentId },
                     ids,
                   ),
                 existingFiles: (agentId, ids) =>

@@ -8,7 +8,6 @@ import {
   MAX_SKILL_DOCUMENT_PATH_CHARS,
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
-import { groupOf } from "../group-chats/group-conversation";
 import type { ChangeContext } from "../learned-changes/change-source";
 import { reviewOf } from "../learned-changes/review-conversation";
 import { SKILL_TOOL_NAME } from "../contract/tools";
@@ -28,14 +27,12 @@ export async function skillToolContext(
   api: ToolExecutionApi,
   callContext: Context,
 ): Promise<SkillToolContext> {
-  const [live, groupId, review] = await Promise.all([
+  const [live, review] = await Promise.all([
     api.snapshot(LiveDoc, api.conversationId, callContext),
-    groupOf(api, api.conversationId, callContext),
     reviewOf(api, api.conversationId, callContext),
   ]);
 
   return {
-    groupId,
     reviewOf: review?.executionId ?? null,
     submissionIds: (live?.run?.inputs ?? []).map(String),
     // The run's task changes with every tool round; its inputs stay the same for the whole turn.

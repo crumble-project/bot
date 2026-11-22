@@ -7,7 +7,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(agent|group):\\S+$"
+        "pattern": "^agent:\\S+$"
       }
     }
   },

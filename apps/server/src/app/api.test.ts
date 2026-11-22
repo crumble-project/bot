@@ -742,10 +742,10 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const response: Response = await req(app, "/v1/events");
     const reader = response.body!.getReader();
-    service.announce({ type: "pins", pinnedConversations: ["group:g1"] });
-    const text = await readUntil(reader, '"group:g1"');
+    service.announce({ type: "pins", pinnedConversations: ["agent:b1"] });
+    const text = await readUntil(reader, '"agent:b1"');
     expect(text).toContain(
-      'event: pins\ndata: {"pinnedConversations":["group:g1"]}',
+      'event: pins\ndata: {"pinnedConversations":["agent:b1"]}',
     );
     expect(text).not.toContain('event: activity\ndata: {"type":"pins"');
     await reader.cancel();
@@ -1449,8 +1449,8 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     store.createMemory({ agentId: agent.id, content: "older" });
     store.createMemory({
       agentId: agent.id,
-      content: "from a group",
-      source: { kind: "group", groupId: "group-1", name: "Trip" },
+      content: "from a bot",
+      source: { kind: "bot", agentId: agent.id, name: "Ada" },
     });
 
     const memories = memoryResponse
@@ -1467,7 +1467,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       expect.arrayContaining([
         { kind: "owner" },
         null,
-        { kind: "group", groupId: "group-1", name: "Trip" },
+        { kind: "bot", agentId: agent.id, name: "Ada" },
       ]),
     );
     store.close();

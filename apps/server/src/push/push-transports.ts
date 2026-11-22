@@ -268,10 +268,6 @@ const replyFields = (event: ReplyEvent) => ({
   origin: event.origin,
   preview: event.preview,
   createdAt: event.createdAt,
-  ...(event.groupId && {
-    groupId: event.groupId,
-    groupName: event.groupName,
-  }),
   ...(event.jobName && { jobName: event.jobName }),
   ...(event.waitingFor && { waitingFor: event.waitingFor }),
 });

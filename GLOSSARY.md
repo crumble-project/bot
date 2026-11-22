@@ -54,16 +54,12 @@ _Avoid_: Contact, recipient
 The credential a voice gateway connects with. It reaches only the account's lines, their bots' chats, and call requests; the owner issues and revokes it in settings.
 _Avoid_: API key, password, session
 
-**Group chat**:
-A conversation between the owner and several bots, with one shared transcript in which every message shows its sender. It is separate from each member's bot chat.
-_Avoid_: Room, channel, group session
-
 **Transcript**:
-The complete visible history of a bot chat or group chat, including messages, replies, tool activity, and compaction events.
+The complete visible history of a bot chat, including messages, replies, tool activity, and compaction events.
 _Avoid_: Model context
 
 **Library**:
-The files the owner sent in a bot chat or group chat, kept for the owner to browse and for the bot to read. Each bot and each group chat has its own.
+The files the owner sent in a bot chat, kept for the owner to browse and for the bot to read. Each bot has its own.
 _Avoid_: Drive, storage, attachments folder
 
 **File description**:
@@ -131,7 +127,7 @@ One webhook address on the event relay, named by the owner and usable by every b
 _Avoid_: Webhook, hook, trigger
 
 **Workspace**:
-A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its chat and group chats, and its jobs work there too. The machine running them starts and stops as needed.
+A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its bot chat, and its jobs work there too. The machine running them starts and stops as needed.
 _Avoid_: Sandbox, container, VM (in product language)
 
 **Workspace notes**:
