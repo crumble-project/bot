@@ -5,6 +5,8 @@
     "apps/server/drizzle.*.config.ts",
     "apps/server/test/fixtures/*.ts",
     "apps/server/tools/*.ts",
+    "tools/emulate-server.ts",
+    "tools/emulate-service.ts",
     "apps/docs/blume.config.ts",
     "apps/docs/theme.css",
     "apps/docs/content/**/*.{ts,mdx}",

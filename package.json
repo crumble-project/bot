@@ -8,18 +8,23 @@
     "apps/web"
   ],
   "devDependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
     "@oxlint/plugins": "1.88.0",
     "@types/bun": "latest",
     "@types/node": "^26.6.6",
+    "emulate": "0.14.0",
     "fallow": "3.38.0",
     "oxlint": "1.88.0",
     "oxlint-plugin-effect": "^0.32.1",
     "oxlint-tsgolint": "7.0.2005",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "zod": "4.6.7"
   },
   "scripts": {
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "dev": "bun --watch apps/server/src/app/server.ts --dev-workspaces",
+    "dev:emulate": "bun --no-env-file tools/dev-emulate.ts",
+    "check:emulate": "tsc -p tools && bun --no-env-file tools/check-emulate.ts",
     "start": "bun apps/server/src/app/server.ts",
     "test": "bun test --parallel",
     "typecheck": "tsc -p apps/server && tsc -p apps/web",

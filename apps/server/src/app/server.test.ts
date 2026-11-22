@@ -22,8 +22,11 @@ import {
   agentResponse,
   groupChatResponse,
   historyResponse,
+  modelResponse,
+  providerResponse,
   scriptRunResponse,
 } from "../contract/api-responses";
+import { EMULATE_MODEL_IDS } from "../providers/emulate-profile";
 import { startServer, voiceGatewayResponse } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 import {
@@ -856,6 +859,99 @@ test.serial(
       expect(readdirSync(join(dataDir, "users"))).not.toContain("nobody");
       await running.close();
     } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "Emulate signup and restored accounts keep an isolated, configured catalog",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-emulate-"));
+    const inherited = {
+      CRUMBLE_HOST: "0.0.0.0",
+      CRUMBLE_PUBLIC_URL: "https://inherited.example",
+      BETTER_AUTH_URL: "https://auth.example",
+      CRUMBLE_APNS_TEAM_ID: "incomplete-push-configuration",
+      CRUMBLE_FCM_SERVICE_ACCOUNT_PATH: join(dataDir, "missing-fcm.json"),
+      CRUMBLE_WORKSPACE_IMAGE: "must-not-load",
+    };
+    const original = Object.keys(inherited).map(
+      (name) => [name, process.env[name]] as const,
+    );
+    let running: Running | undefined;
+
+    try {
+      Object.assign(process.env, inherited);
+      running = await startServer({
+        dataDir,
+        port: 0,
+        emulate: { baseUrl: "http://127.0.0.1:1/v1" },
+      });
+      expect(running.server.url.hostname).toBe("127.0.0.1");
+      expect(
+        (await fetch(new URL("/v1/providers", running.server.url))).status,
+      ).toBe(401);
+      const suffix = crypto.randomUUID();
+      const headers = await signUp(running, suffix);
+      const catalog = async (current: Running) => {
+        const providers = await fetch(
+          new URL("/v1/providers", current.server.url),
+          {
+            headers: { ...headers, origin: current.server.url.origin },
+          },
+        );
+        expect(providers.status).toBe(200);
+        expect(
+          providerResponse
+            .array()
+            .parse(await providers.json())
+            .map(({ provider, configured, credentialType }) => ({
+              provider,
+              configured,
+              credentialType,
+            })),
+        ).toEqual([
+          { provider: "emulate", configured: true, credentialType: null },
+        ]);
+        const models = await fetch(new URL("/v1/models", current.server.url), {
+          headers,
+        });
+        expect(models.status).toBe(200);
+        expect(
+          modelResponse
+            .array()
+            .parse(await models.json())
+            .map(({ provider, id }) => ({ provider, id })),
+        ).toEqual(EMULATE_MODEL_IDS.map((id) => ({ provider: "emulate", id })));
+        const capabilities = await fetch(
+          new URL("/v1/capabilities", current.server.url),
+          { headers },
+        );
+        expect(capabilities.status).toBe(200);
+        expect(await capabilities.json()).toMatchObject({ coding: false });
+        expect(
+          (await fetch(new URL(CLIENT_DOCUMENT_PATH, current.server.url)))
+            .status,
+        ).toBe(404);
+      };
+
+      await catalog(running);
+      await running.close();
+      running = undefined;
+      running = await startServer({
+        dataDir,
+        port: 0,
+        emulate: { baseUrl: "http://127.0.0.1:2/v1" },
+      });
+      await catalog(running);
+      await signIn(running, `${suffix}@example.test`);
+    } finally {
+      await running?.close();
+      for (const [name, value] of original) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       rmSync(dataDir, { recursive: true, force: true });
     }
   },

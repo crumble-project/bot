@@ -1,5 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { type BunWebSocketData, websocket } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
 import { accountDir, accountsDir } from "./data-dir";
@@ -11,6 +18,11 @@ import {
   viewerPathOwner,
 } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
+import {
+  emulateDirectoriesOverlap,
+  type EmulateProfile,
+} from "../providers/emulate-profile";
+import { validateEmulateBaseUrl } from "../providers/emulate";
 import { webUIRoutes } from "./web-ui";
 import {
   CLIENT_DOCUMENT_PATH,
@@ -122,6 +134,7 @@ async function closeTenants(tenants: Iterable<Promise<Tenant>>) {
 }
 
 type ServerOptions = {
+  emulate?: EmulateProfile;
   dataDir?: string;
   hostname?: string;
   port?: number;
@@ -133,7 +146,37 @@ type ServerOptions = {
   ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
 };
 
+function canonicalPath(path: string): string {
+  return existsSync(path)
+    ? realpathSync(path)
+    : resolve(canonicalPath(dirname(path)), basename(path));
+}
+
 function listenSettings(options: ServerOptions) {
+  if (options.emulate) {
+    validateEmulateBaseUrl(options.emulate.baseUrl);
+    const root = resolve(import.meta.dir, "../../../..");
+
+    const dataDir = resolve(
+      options.dataDir ?? resolve(root, ".cache/emulate/data"),
+    );
+
+    const ordinary = canonicalPath(resolve(root, "data"));
+    const actual = canonicalPath(dataDir);
+
+    if (emulateDirectoriesOverlap(actual, ordinary))
+      throw new Error(
+        "Emulate cannot use or overlap the ordinary data directory",
+      );
+
+    return {
+      dataDir,
+      publicUrl: undefined,
+      hostname: "127.0.0.1",
+      port: options.port ?? 7338,
+    };
+  }
+
   return {
     dataDir: resolve(
       options.dataDir ?? process.env["CRUMBLE_DATA_DIR"] ?? "./data",
@@ -199,8 +242,11 @@ function tenantPool(pool: {
         tenantId: userId,
         skillsDir: options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"],
         oauthClient,
-        workspaceEnv: options.workspaceEnv ?? process.env,
-        workspaces: options.workspaces?.(userId),
+        workspaceEnv: options.emulate
+          ? {}
+          : (options.workspaceEnv ?? process.env),
+        workspaces: options.emulate ? undefined : options.workspaces?.(userId),
+        emulate: options.emulate,
         serverSettings,
       });
       tenants.set(userId, pending);
@@ -456,9 +502,11 @@ export async function startServer(options: ServerOptions = {}) {
   try {
     server = serve(requestHandler(state, pool, oauthClient), hostname, port);
 
-    const origin = new URL(
-      publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
-    ).origin;
+    const origin = options.emulate
+      ? server.url.origin
+      : new URL(
+          publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
+        ).origin;
 
     state.trustedOrigins = trustedOriginsFor(origin);
     state.ready = connectAccounts(state, pool, dataDir, origin);

@@ -3,6 +3,8 @@ import { Context, Effect, Layer } from "effect";
 import { ProviderCredentials } from "./provider-credentials";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ProviderContribution } from "../plugins/plugins";
+import type { EmulateProfile } from "./emulate-profile";
+import { emulateModels } from "./emulate";
 
 type CatalogOptions = NonNullable<Parameters<typeof builtinModels>[0]>;
 
@@ -24,13 +26,16 @@ const catalog = (
 export const accountModels = (
   credentials: CredentialStore | undefined,
   contributions: readonly ProviderContribution[],
+  emulate?: EmulateProfile,
 ) =>
-  catalog(credentials, contributions, {
-    authContext: {
-      env: async () => {},
-      fileExists: async () => false,
-    },
-  });
+  emulate
+    ? emulateModels(emulate.baseUrl)
+    : catalog(credentials, contributions, {
+        authContext: {
+          env: async () => {},
+          fileExists: async () => false,
+        },
+      });
 
 export const hostModels = (
   credentials: CredentialStore | undefined,
