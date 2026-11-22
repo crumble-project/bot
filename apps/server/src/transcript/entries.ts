@@ -1,13 +1,11 @@
 import type { EntryRecord } from "@earendil-works/pi-durable";
 import { z } from "zod";
 import { botCommunication } from "../contract/api-responses";
-import { webSource } from "../contract/web-search";
-import { ATTACHMENT_KINDS, attachmentInput } from "../shared/attachment-rules";
+import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
 
 export const MESSAGE_ENTRY = "crumble.message";
 
 export const BOT_MESSAGE_ENTRY = "crumble.bot-message";
-export const GROUP_MESSAGE_ENTRY = "crumble.group-message";
 
 export const JOB_QUESTION_ENTRY = "crumble.job-question";
 
@@ -103,21 +101,6 @@ export const messageFile = z.union([
   }),
   z.object({ id: z.string(), deleted: z.literal(true) }),
 ]);
-
-export const groupMessageData = z.object({
-  text: z.string(),
-  sender: messageOrigin,
-  requestId: z.string(),
-  timestamp: z.number(),
-  replyTo: z.string().exactOptional(),
-  replyPreview: z.string().exactOptional(),
-  reaction: z.string().exactOptional(),
-  attachments: z.array(attachmentInput).exactOptional(),
-  files: z.array(messageFile).catch([]).exactOptional(),
-  sources: z.array(webSource).exactOptional(),
-});
-
-export type GroupMessageData = z.infer<typeof groupMessageData>;
 
 export const inputMetadata = z.object({
   text: z.string().optional().catch(undefined),

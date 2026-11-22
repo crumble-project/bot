@@ -1,5 +1,7 @@
 # Group chats milestone 3: joining, notifications, and attachments
 
+> Superseded by [Remove group chats](../designs/remove-group-chats.md). This document records the original design.
+
 > Implement one task at a time. Review each deliverable before starting the next. Steps use `- [ ]`.
 
 **Goal:** A bot that joins a group gets a summary of the earlier conversation, the owner is notified for exactly the group events the specification names, and group messages carry attachments as bot chat messages do.

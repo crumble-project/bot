@@ -142,37 +142,4 @@ export function registerFileRoutes({
 
     return c.body(null, 204);
   });
-  register(
-    routes.uploadGroupFile,
-    function* (c) {
-      return c.json(
-        yield* upload({ kind: "group", groupId: c.req.param("id") }, c.req.raw),
-        201,
-      );
-    },
-    { parsesBody: true },
-  );
-  register(routes.listGroupFiles, function* (c) {
-    return c.json(
-      yield* list(
-        { kind: "group", groupId: c.req.param("id") },
-        c.req.valid("query"),
-      ),
-      200,
-    );
-  });
-  register(routes.getGroupFile, function* (c) {
-    return yield* download(
-      { kind: "group", groupId: c.req.param("id") },
-      c.req.param("fileId"),
-    );
-  });
-  register(routes.deleteGroupFile, function* (c) {
-    yield* remove(
-      { kind: "group", groupId: c.req.param("id") },
-      c.req.param("fileId"),
-    );
-
-    return c.body(null, 204);
-  });
 }

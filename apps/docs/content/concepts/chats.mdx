@@ -54,11 +54,10 @@ Removing it from the composer removes it from the draft, not the library.
 Uploading the same content again reuses the entry in that library.
 
 A bot's details list its five newest files; select one to download it. Select
-**See all** there, or **Library** in a group chat, to open the full library.
+**See all** there to open the full library.
 It lists files newest first as a list or a grid. Select a file to download it,
 or use its menu to delete it. Select **Upload**, or drop files onto the page,
-to add files to the library without sending a message. Each bot and each
-group chat has its own library. Files sent on Discord don't reach the bot or
+to add files to the library without sending a message. Each bot has its own library. Files sent on Discord don't reach the bot or
 its library.
 
 The bot receives small UTF-8 text files inline, up to 32 KB of text. Crumble
@@ -71,8 +70,7 @@ The bot's library tool can list files, search the whole library by name,
 description, and text, read a file's text in parts, and search within a file.
 Bots keep a short description of what each file is, such as "birth
 certificate", so they can find a scan or photo later from how you refer to it.
-The library page doesn't show these descriptions. In a group chat it reaches the group library and its own library, not
-another member's. Coding and desktop jobs reach their bot's library. A bot
+The library page doesn't show these descriptions. Coding and desktop jobs reach their bot's library. A bot
 with a workspace can copy a file there to inspect other formats.
 
 PNG, JPEG, GIF, and WebP images up to 5 MB reach the model as images; larger
@@ -95,7 +93,7 @@ place and answers anyway. The next turn tries the image again.
 Deleting a library file stops future downloads and changes its transcript
 entry to **File deleted**. A queued message still arrives, with a deleted-file
 note. What the bot already read stays in its working context until compaction.
-Deleting the bot or group chat also removes its library.
+Deleting the bot also removes its library.
 
 Files attached before the library update aren't migrated: their transcript
 entries show **File deleted**. Older native clients need an update before they
@@ -114,11 +112,4 @@ the domain renewal in March?"
 
 A bot searches only what it's allowed to see:
 
-| Where you ask | What the bot searches                              |
-| ------------- | -------------------------------------------------- |
-| Its bot chat  | That chat, and the group chats the bot belongs to. |
-| A group chat  | Only that group chat.                              |
-
-In a group chat, a bot can't search its bot chat with you, even if you ask it
-to. For how group chats work, see
-[Group Chats](/concepts/group-chats).
+A bot searches only its own bot chat.

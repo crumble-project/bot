@@ -8,8 +8,8 @@ export type Theme = (typeof THEMES)[number];
 /** Messages allows nine pins: three rows of three. */
 export const MAX_PINS = 9;
 
-/** A pinned conversation: `agent:<botId>` or `group:<groupId>`. */
-export const pinKey = z.string().regex(/^(agent|group):\S+$/);
+/** A pinned bot chat: `agent:<botId>`. */
+export const pinKey = z.string().regex(/^agent:\S+$/);
 
 /** The pinned conversations in order, first pin first. */
 export const pinnedConversations = z

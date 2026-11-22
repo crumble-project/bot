@@ -9,7 +9,6 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
-import { chatOnly } from "../shared/chat-only";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import type { DesktopShell } from "./computer-use";
 import {
@@ -161,10 +160,7 @@ export function desktopScreenshotExtension(
     },
   });
 
-  // A group's transcript can't show the image.
-  return chatOnly(
-    defineExtension({ name: "desktop-screenshot", tools: [screenshot] }),
-  );
+  return defineExtension({ name: "desktop-screenshot", tools: [screenshot] });
 }
 
 export const desktopScreenshotTools = Layer.effectDiscard(

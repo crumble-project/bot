@@ -279,19 +279,17 @@ describe("APNs requests", () => {
     });
   });
 
-  test("the alert shows the bot, the group, and the reply fields", () => {
+  test("the alert shows the bot and the reply fields", () => {
     const payload = apnsPayload(
       event({
         agentName: "Ada",
-        origin: "group",
+        origin: "owner",
         preview: "**Booked.**",
-        groupId: "group-1",
-        groupName: "Trip",
       }),
     );
 
     expect(payload.aps).toEqual({
-      alert: { title: "Ada in Trip", body: "Booked." },
+      alert: { title: "Ada", body: "Booked." },
       sound: "default",
     });
     expect(payload).toMatchObject({
@@ -301,11 +299,9 @@ describe("APNs requests", () => {
       agentId: "agent",
       agentName: "Ada",
       entryId: null,
-      origin: "group",
+      origin: "owner",
       preview: "**Booked.**",
       createdAt: "2026-01-01T00:00:00.000Z",
-      groupId: "group-1",
-      groupName: "Trip",
     });
     expect(payload).not.toHaveProperty("jobName");
   });
@@ -396,12 +392,8 @@ describe("FCM requests", () => {
     expect(data).not.toHaveProperty("jobName");
   });
 
-  test("data carries the group and job the answer came from", () => {
-    expect(
-      fcmData(event({ groupId: "group-1", jobName: "github-login" })),
-    ).toMatchObject({
-      groupId: "group-1",
-      groupName: "",
+  test("data carries the job the answer came from", () => {
+    expect(fcmData(event({ jobName: "github-login" }))).toMatchObject({
       jobName: "github-login",
     });
   });

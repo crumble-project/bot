@@ -9,7 +9,6 @@ import {
   CALL_GOAL_MAX,
   VOICE_CALL_GREETING_MAX,
 } from "../contract/voice-gateway";
-import { chatOnly } from "../shared/chat-only";
 import { errorText } from "../shared/errors";
 import { toolOutput } from "../shared/tool-output";
 import { CallRequests } from "./call-requests";
@@ -81,12 +80,10 @@ export const requestCallTools = Layer.effectDiscard(
         (await Effect.runPromise(gateway.currentCall(agent.id)))?.party !==
           "outside"
           ? [
-              chatOnly(
-                defineExtension({
-                  name: "call_requests",
-                  tools: [requestCallTool(agent.id, service)],
-                }),
-              ),
+              defineExtension({
+                name: "call_requests",
+                tools: [requestCallTool(agent.id, service)],
+              }),
             ]
           : [],
     );

@@ -88,10 +88,6 @@ function replaceCitations(
 }
 
 function present(message: TranscriptMessage, sources: Sources) {
-  const available = message.sources ? new Map<string, string>() : sources;
-
-  if (message.sources) addSources(available, message.sources);
-
   const chips = new Map<string, Citation>();
   let fenced = false;
 
@@ -109,9 +105,7 @@ function present(message: TranscriptMessage, sources: Sources) {
       return line
         .split(/(`[^`]*`)/)
         .map((part) =>
-          part.startsWith("`")
-            ? part
-            : replaceCitations(part, available, chips),
+          part.startsWith("`") ? part : replaceCitations(part, sources, chips),
         )
         .join("");
     })

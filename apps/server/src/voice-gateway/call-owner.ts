@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { CALL_OWNER_TOOL_NAME, HANG_UP_TOOL_NAME } from "../contract/tools";
 import { VOICE_CALL_GREETING_MAX } from "../contract/voice-gateway";
-import { callOnly, chatOnly } from "../shared/chat-only";
+import { callOnly } from "../shared/chat-only";
 import { CallConversation } from "./call-conversation";
 import { VoiceGateway, type VoiceCallResult } from "./voice-gateway";
 
@@ -75,7 +75,7 @@ export function callOwnerExtension(botId: string, calls: Calls) {
   });
 
   // A spoken reply reaches only the line's bot chat.
-  return chatOnly(defineExtension({ name: "voice-call", tools: [callOwner] }));
+  return defineExtension({ name: "voice-call", tools: [callOwner] });
 }
 
 const hangUpResult = (ending: boolean) => ({
@@ -102,7 +102,7 @@ export function hangUpExtension(botId: string, calls: HangUps) {
       hangUpResult(await Effect.runPromise(calls.hangUp(botId))),
   });
 
-  return chatOnly(defineExtension({ name: "voice-hang-up", tools: [hangUp] }));
+  return defineExtension({ name: "voice-hang-up", tools: [hangUp] });
 }
 
 /** `hang_up` for an outside call's conversation; `objected` withholds the call's transcript once the call ends. */

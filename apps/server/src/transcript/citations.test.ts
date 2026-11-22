@@ -35,15 +35,19 @@ describe("citation projection", () => {
       ],
     });
   });
-  test("resets sources at a user message and supports group sources", () => {
+  test("resets sources at a user message and uses only the new turn's sources", () => {
     const stale = message("assistant", "[source](https://example.com)");
-
-    const group = message("assistant", "([source](https://example.com))", {
-      sources: [{ url: "https://example.com", title: "Example" }],
-    });
-
+    const reply = message("assistant", "([source](https://example.com))");
     projectCitations(
-      [message("user", "next"), stale, group],
+      [
+        message("user", "next"),
+        stale,
+        message("toolResult", "", {
+          toolName: "web_search",
+          toolDetails: [{ url: "https://example.com", title: "New" }],
+        }),
+        reply,
+      ],
       [
         message("toolResult", "", {
           toolName: "web_search",
@@ -52,10 +56,10 @@ describe("citation projection", () => {
       ],
     );
     expect(stale.presentation).toEqual({ text: stale.content, citations: [] });
-    expect(group.presentation).toEqual({
+    expect(reply.presentation).toEqual({
       text: "",
       citations: [
-        { href: "https://example.com", title: "Example", site: "example.com" },
+        { href: "https://example.com", title: "New", site: "example.com" },
       ],
     });
   });

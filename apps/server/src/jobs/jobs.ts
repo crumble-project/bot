@@ -1,4 +1,3 @@
-import { chatOnly } from "../shared/chat-only";
 import { JOB_QUESTION_ENTRY, MESSAGE_ENTRY } from "../transcript/entries";
 import { sleep } from "../shared/time";
 import { jobDeliveryRequest, jobReportRequest } from "../shared/request-ids";
@@ -1388,7 +1387,7 @@ const jobExtensions = (
   });
 
   return {
-    chat: [chatOnly(chat)],
+    chat: [chat],
     job: [input.job],
   };
 };

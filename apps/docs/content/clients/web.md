@@ -12,20 +12,19 @@ Sign in with the account you created when you
 
 ## Sidebar
 
-| Section         | What's there                                                                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pinned**      | Up to nine bot chats and group chats. Pin or unpin one from its **More** menu, and drag pins to reorder them. Your other apps show the same pins. |
-| **Bots**        | Each bot's chat, with its jobs and desktop.                                                                                                       |
-| **Group chats** | Chats with several bots.                                                                                                                          |
-| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                          |
-| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                                   |
-| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                                     |
-| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                                    |
-| **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out.         |
+| Section         | What's there                                                                                                                              |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pinned**      | Up to nine bot chats. Pin or unpin one from its **More** menu, and drag pins to reorder them. Your other apps show the same pins.         |
+| **Bots**        | Each bot's chat, with its jobs and desktop.                                                                                               |
+| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                  |
+| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                           |
+| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                             |
+| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                            |
+| **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out. |
 
 Press `⌘K`, or `Ctrl+K`, or select **Search** in the sidebar to open the
-command palette. It jumps to a bot, group chat, workspace page, or settings
-section, creates a bot or group chat, and switches the theme. To search inside
+command palette. It jumps to a bot, workspace page, or settings
+section, creates a bot, and switches the theme. To search inside
 conversations, ask a bot. It
 [searches its transcripts](/concepts/chats#searching-the-transcript) for you.
 
@@ -84,12 +83,12 @@ job actions waiting for your approval. Each kind has its own sound:
 Turn the sounds off with **Sound** in the same section.
 
 The tab title counts replies you haven't seen yet, such as `(3) Atlas | Crumble`,
-until you open their chats. It also names the bot or group chat you have open.
+until you open their chats. It also names the bot chat you have open.
 
 ### Push notifications on other devices
 
 Server push notifications are separate from browser notifications and the tab
-counter. A visible, focused web tab displaying a bot or group chat suppresses
+counter. A visible, focused web tab displaying a bot chat suppresses
 pushes for that chat on every device of your account.
 
 The web app also acknowledges each reply after its text or matching request

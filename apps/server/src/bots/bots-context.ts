@@ -21,16 +21,12 @@ import { BotRuntime } from "./runtime";
 import { Library } from "../files/library";
 import { ChatAttention } from "../push/chat-attention";
 
-export const isGroupTurn = (execution: Execution) =>
-  parseRequestId(execution.requestId).kind === "group-turn";
-
 /** A turn in an outside call's conversation: what the callee said. */
 export const isCallTurn = (execution: Pick<Execution, "requestId">) =>
   parseRequestId(execution.requestId).kind === "outside-call";
 
-/** A bot chat turn, whose previews and replies reach the owner's activity; group and call turns are not. */
-export const isChatTurn = (execution: Execution) =>
-  !isGroupTurn(execution) && !isCallTurn(execution);
+/** A bot chat turn, whose previews and replies reach the owner's activity; call turns are not. */
+export const isChatTurn = (execution: Execution) => !isCallTurn(execution);
 
 export type BotsContext = {
   readonly attention: ChatAttention["Service"];

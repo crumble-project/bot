@@ -22,7 +22,6 @@ import { Shell } from "./shell";
 import { HttpError, queryClient } from "@/lib/api";
 import { botsQuery } from "@/features/bots/api";
 import { chatQuery } from "@/features/chat/api";
-import { groupChatQuery, groupsQuery } from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
@@ -35,7 +34,6 @@ import { GitHubAppCallback } from "@/features/github-apps/github-apps";
 import { UsersPage } from "@/features/settings/admin-settings";
 import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
-import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
 import {
   IntegrationsPage,
   OAuthCallback,
@@ -100,7 +98,6 @@ const newBotRoute = createRoute({
 });
 
 const botParams = z.object({ botId: z.string() });
-const groupParams = z.object({ groupId: z.string() });
 const gatewayParams = z.object({ gatewayId: z.string() });
 
 const botRoute = createRoute({
@@ -149,57 +146,7 @@ const botLibraryRoute = createRoute({
   component: function BotLibraryPage() {
     const { botId } = botParams.parse(botLibraryRoute.useParams());
 
-    return <Library kind="bot" id={botId} />;
-  },
-});
-
-const groupLibraryRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/groups/$groupId/library",
-  component: function GroupLibraryPage() {
-    const { groupId } = groupParams.parse(groupLibraryRoute.useParams());
-
-    return <Library kind="group" id={groupId} />;
-  },
-});
-
-const newGroupRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/groups/new",
-  component: () => <GroupForm />,
-});
-
-const groupRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/groups/$groupId",
-  loader: ({ params }) =>
-    queryClient.query({
-      ...groupChatQuery(params.groupId),
-      staleTime: "static",
-    }),
-  component: function GroupPage() {
-    const { groupId } = groupParams.parse(groupRoute.useParams());
-
-    return <GroupChatView key={groupId} groupId={groupId} />;
-  },
-});
-
-const editGroupRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/groups/$groupId/edit",
-  loader: () => queryClient.query({ ...groupsQuery, staleTime: "static" }),
-  component: function EditGroupPage() {
-    const { groupId } = groupParams.parse(editGroupRoute.useParams());
-
-    const group = useQuery(groupsQuery).data?.find(
-      (each) => each.id === groupId,
-    );
-
-    return group ? (
-      <GroupForm key={group.id} group={group} />
-    ) : (
-      <p className="m-auto text-muted-foreground">Group chat not found.</p>
-    );
+    return <Library id={botId} />;
   },
 });
 
@@ -392,10 +339,6 @@ export const router = createRouter({
       editBotRoute,
       desktopRoute,
       botLibraryRoute,
-      groupLibraryRoute,
-      newGroupRoute,
-      groupRoute,
-      editGroupRoute,
       memoryRoute,
       automationsRoute,
       activityRoute,
@@ -426,6 +369,18 @@ export const router = createRouter({
       ]),
     ]),
   ]),
+  defaultNotFoundComponent: () => (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Not found</EmptyTitle>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button render={<Link to="/" />} nativeButton={false} variant="outline">
+          Go home
+        </Button>
+      </EmptyContent>
+    </Empty>
+  ),
   defaultPreload: "intent",
   defaultViewTransition: true,
   // Query owns caching; the router only triggers loads.

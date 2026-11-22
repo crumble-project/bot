@@ -1,6 +1,5 @@
 import { Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
-import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { attachmentKind } from "../shared/attachment-rules";
 import { InvalidInput, NotFound } from "../shared/errors";
 import { FileStore, type FileTooLarge } from "./file-store";
@@ -98,13 +97,9 @@ export class Library extends Context.Service<
         const files = yield* FileStore;
         const repository = yield* LibraryRepository;
         const agents = yield* AgentRepository;
-        const groups = yield* GroupChatRepository;
 
         const exists = Effect.fnUntraced(function* (library: LibraryRef) {
-          const owner =
-            library.kind === "bot"
-              ? yield* agents.get(library.agentId)
-              : yield* groups.get(library.groupId);
+          const owner = yield* agents.get(library.agentId);
 
           if (!owner)
             return yield* new NotFound({ message: "Library not found" });

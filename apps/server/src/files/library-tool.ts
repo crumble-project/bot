@@ -5,7 +5,6 @@ import type { Context, JsonValue } from "@earendil-works/chord";
 import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Effect } from "effect";
 import type { Agent } from "../contract/agents";
-import { groupOf } from "../group-chats/group-conversation";
 import { toolOutput } from "../shared/tool-output";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import type { Library } from "./library";
@@ -473,7 +472,7 @@ export async function libraryAction(
 export function libraryExtension(options: {
   agent: Agent;
   library: Library["Service"];
-  libraries: (context: { groupId: string | null }) => LibraryRef[];
+  libraries: () => LibraryRef[];
   workspace: boolean;
 }) {
   const actions = options.workspace
@@ -498,7 +497,6 @@ export function libraryExtension(options: {
     }),
     replay: "unsafe",
     execute: async (args, api, context) => {
-      const groupId = await groupOf(api, api.conversationId, context);
       let environment: Environment | undefined;
 
       if (api.env) environment = { env: api.env, context };
@@ -507,7 +505,7 @@ export function libraryExtension(options: {
         await libraryAction(
           {
             library: options.library,
-            libraries: options.libraries({ groupId: groupId ?? null }),
+            libraries: options.libraries(),
             workspace: options.workspace,
           },
           args,

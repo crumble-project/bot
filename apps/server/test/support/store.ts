@@ -58,21 +58,6 @@ export class Store {
   createExecution = this.bots.createExecution;
   updateExecution = this.bots.updateExecution;
 
-  listGroupChats = this.bots.listGroupChats;
-  getGroupChat = this.bots.getGroupChat;
-  createGroupChat = this.bots.createGroupChat;
-  updateGroupChat = this.bots.updateGroupChat;
-  deleteGroupChat = this.bots.deleteGroupChat;
-  groupMember = this.bots.groupMember;
-  setGroupMember = this.bots.setGroupMember;
-  groupActivity = this.bots.groupActivity;
-  setGroupActivity = this.bots.setGroupActivity;
-  createGroupTurn = this.bots.createGroupTurn;
-  getGroupTurn = this.bots.getGroupTurn;
-  updateGroupTurn = this.bots.updateGroupTurn;
-  activeGroupTurn = this.bots.activeGroupTurn;
-  listGroupTurns = this.bots.listGroupTurns;
-
   getMemory = this.learning.getMemory;
   createMemory = this.learning.createMemory;
 

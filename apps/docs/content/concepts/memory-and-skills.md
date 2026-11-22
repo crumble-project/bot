@@ -15,7 +15,7 @@ a project's details. A bot needs the **Memory** capability to save them.
 
 A memory is either the bot's own, or **shared** with every one of your bots
 that has memory turned on. Every memory records where it came from: a bot
-chat, you, a scheduled task, another bot, or a group chat.
+chat, you, a scheduled task, or another bot.
 
 Review and edit memories on the **Memory** page.
 
@@ -110,10 +110,7 @@ revert it.
 
 After a turn with a lot of tool use, a background review looks at what the
 bot did and may update its skills or memories. These are learned changes.
-Every turn counts: chat turns, scheduled runs, event automations, and group chat
-turns, plus each coding job's work once the job reports back. A review of a
-group chat turn, like the turn itself, changes only the bot's own memory, never
-shared memory. The review never saves instructions it finds in outside data,
+Every turn counts: chat turns, scheduled runs, event automations, and each coding job's work once the job reports back. The review never saves instructions it finds in outside data,
 such as an event's payload or a web page.
 
 **Every change to a skill or memory is recorded with its before and after

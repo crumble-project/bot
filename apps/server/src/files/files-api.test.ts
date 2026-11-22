@@ -47,7 +47,6 @@ function setup() {
     delegates: [],
   });
 
-  const group = store.createGroupChat({ name: "G", memberIds: [agent.id] });
   const scope = Scope.makeUnsafe();
   const core = store.runtime.runSync(Effect.context());
 
@@ -67,13 +66,11 @@ function setup() {
     () => Effect.runSync(Scope.close(scope, Exit.void)),
   );
 
-  const describe = (kind: "bot" | "group", id: string) =>
+  const describe = (_kind: "bot", id: string) =>
     Effect.runPromise(
       Library.use((library) =>
         library.describe(
-          kind === "bot"
-            ? { kind: "bot", agentId: agent.id }
-            : { kind: "group", groupId: group.id },
+          { kind: "bot", agentId: agent.id },
           id,
           "Bot-only description",
         ),
@@ -85,11 +82,10 @@ function setup() {
     bot: `/v1/agents/${agent.id}/files`,
     describe,
     other: `/v1/agents/${other.id}/files`,
-    group: `/v1/group-chats/${group.id}/files`,
   };
 }
 
-for (const kind of ["bot", "group"] as const) {
+for (const kind of ["bot"] as const) {
   test(`${kind} file routes stream, deduplicate, isolate and delete`, async () => {
     const env = setup();
     const path = env[kind];

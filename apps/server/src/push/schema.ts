@@ -28,14 +28,14 @@ export const pushDevices = sqliteTable("push_devices", {
 
 export const chatViews = sqliteTable("chat_views", {
   viewId: text("view_id").primaryKey(),
-  chatKind: text("chat_kind", { enum: ["bot", "group"] }).notNull(),
+  chatKind: text("chat_kind", { enum: ["bot"] }).notNull(),
   chatId: text("chat_id").notNull(),
   refreshedAt: integer("refreshed_at").notNull(),
 });
 
 export const replyAssociations = sqliteTable("reply_associations", {
   eventId: text("event_id").primaryKey(),
-  chatKind: text("chat_kind", { enum: ["bot", "group"] }).notNull(),
+  chatKind: text("chat_kind", { enum: ["bot"] }).notNull(),
   chatId: text("chat_id").notNull(),
   messageId: text("message_id").notNull(),
   entryId: text("entry_id").notNull(),

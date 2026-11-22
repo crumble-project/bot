@@ -68,7 +68,7 @@ export function discard(chat: string, requestId: string) {
  */
 export async function deliver(
   chat: string,
-  path: RoutePath<"sendMessage" | "sendGroupMessage">,
+  path: RoutePath<"sendMessage">,
   message: Omit<Outgoing, "state">,
   extra: { timezone?: string } = {},
 ) {
@@ -78,7 +78,7 @@ export async function deliver(
   ]);
 
   try {
-    await send<"sendMessage" | "sendGroupMessage">(path, "POST", {
+    await send<"sendMessage">(path, "POST", {
       content: message.content,
       requestId: message.requestId,
       ...(message.replyTo && { replyTo: message.replyTo }),

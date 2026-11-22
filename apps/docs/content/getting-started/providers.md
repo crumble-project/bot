@@ -100,7 +100,7 @@ that read images.
 
 | Vision model | A bot whose model can't read images                                                                                                                               |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Off**      | Refuses images in its bot chat, and gets only each image's name in group chats.                                                                                   |
+| **Off**      | Refuses images in its bot chat.                                                                                                                                   |
 | **Set**      | Gets the vision model's description of each image, including any visible text, and can ask it follow-up questions about an image. The transcript keeps the image. |
 
 The vision model describes each image once per conversation, and its tokens and

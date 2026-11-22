@@ -1,4 +1,3 @@
-import { GROUP_MESSAGE_ENTRY } from "../transcript/entries";
 import { expect, test } from "bun:test";
 import {
   type TranscriptMessage,
@@ -11,7 +10,7 @@ import {
   type HistorySource,
 } from "./history-search";
 
-const context: HistoryContext = { agentId: "bot-a", groupId: null };
+const context: HistoryContext = { agentId: "bot-a" };
 
 type FakeChat = HistoryChat & { messages: TranscriptMessage[] };
 
@@ -135,57 +134,6 @@ test("search orders dated matches, then undated matches, then by durable identit
     truncated: false,
   });
   expect(result.cursor).toBeNull();
-});
-
-test("search reads owner and bot messages in a group and skips other kinds", async () => {
-  const engine = new HistorySearch(
-    sourceOf([
-      {
-        id: "group-x",
-        kind: "group",
-        name: "Team",
-        messages: [
-          message("group-x", 1, 0, {
-            kind: GROUP_MESSAGE_ENTRY,
-            role: "user",
-            content: "needle owner",
-            origin: { kind: "owner" },
-            timestamp: 10,
-          }),
-          message("group-x", 2, 0, {
-            kind: GROUP_MESSAGE_ENTRY,
-            role: "assistant",
-            content: "needle bot",
-            origin: { kind: "bot", name: "Bea", agentId: "bot-b" },
-            timestamp: 20,
-          }),
-          message("group-x", 3, 0, {
-            kind: "crumble.reaction",
-            role: "user",
-            content: "needle hidden",
-            timestamp: 30,
-          }),
-        ],
-      },
-    ]),
-  );
-
-  const result = await engine.search(
-    { agentId: "bot-a", groupId: "group-x" },
-    { query: "needle" },
-  );
-
-  expect(result.matches.map((match) => match.excerpt)).toEqual([
-    "needle bot",
-    "needle owner",
-  ]);
-  expect(result.matches[0]!.sender).toEqual({
-    role: "assistant",
-    name: "Bea",
-    agentId: "bot-b",
-    origin: { kind: "bot", name: "Bea", agentId: "bot-b" },
-  });
-  expect(result.matches[1]!.sender.name).toBe("Owner");
 });
 
 test("search continues with a cursor and pages through a long transcript", async () => {
@@ -377,17 +325,14 @@ test("read rejects malformed or mismatched requests", async () => {
   await expect(engine.read(context, { match: "hs1.nope" })).rejects.toThrow(
     "Invalid or expired history token; start a new search",
   );
-  await expect(
-    engine.read({ agentId: "bot-b", groupId: null }, { match }),
-  ).rejects.toThrow("Invalid or expired history token; start a new search");
+  await expect(engine.read({ agentId: "bot-b" }, { match })).rejects.toThrow(
+    "Invalid or expired history token; start a new search",
+  );
   await expect(engine.search(context, { cursor: match })).rejects.toThrow(
     "Expected a history search cursor",
   );
   await expect(
-    engine.search(
-      { agentId: "bot-b", groupId: null },
-      { cursor: found.cursor ?? match },
-    ),
+    engine.search({ agentId: "bot-b" }, { cursor: found.cursor ?? match }),
   ).rejects.toThrow("Invalid or expired history token; start a new search");
 });
 
@@ -557,19 +502,19 @@ test("search rejects invalid identifiers and unavailable chats on read", async (
     "History message is no longer available; start a new search",
   );
 
-  const groupOnly = new HistorySearch(
+  const foreignOnly = new HistorySearch(
     sourceOf([
       {
-        id: "group-x",
-        kind: "group",
-        name: "Team",
-        messages: [ownerMessage("group-x", 1, "needle", 10)],
+        id: "bot-x",
+        kind: "bot",
+        name: "Other bot",
+        messages: [ownerMessage("bot-x", 1, "needle", 10)],
       },
     ]),
   );
 
   await expect(
-    groupOnly.search(context, { query: "needle" }),
+    foreignOnly.search(context, { query: "needle" }),
   ).resolves.toMatchObject({
     matches: [],
   });

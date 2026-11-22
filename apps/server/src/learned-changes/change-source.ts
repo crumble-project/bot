@@ -2,9 +2,8 @@ import { Effect } from "effect";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import type { ChangeBy, ChangeSource } from "../shared/domain";
 
-/** What a tool call knows of its turn: its group, its inputs, and the execution its review digests. */
+/** What a tool call knows of its turn: its inputs and the execution its review digests. */
 export type ChangeContext = {
-  groupId: string | null;
   submissionIds: string[];
   reviewOf: string | null;
 };
@@ -24,14 +23,13 @@ export const newestExecution = Effect.fnUntraced(function* (
 
 export const changeSourceOf = Effect.fnUntraced(function* (
   agentId: string,
-  context: { groupId: string | null; submissionIds: string[] },
+  context: { submissionIds: string[] },
 ) {
   const execution = yield* newestExecution(agentId, context.submissionIds);
 
   return {
     executionId: execution?.id ?? null,
     conversationId: execution?.conversationId ?? null,
-    groupId: context.groupId,
   } satisfies ChangeSource;
 });
 

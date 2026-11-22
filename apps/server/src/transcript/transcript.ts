@@ -28,8 +28,6 @@ import {
   CALL_ENTRY,
   callEventData,
   contentText,
-  GROUP_MESSAGE_ENTRY,
-  groupMessageData,
   HELD_ACTION_ENTRY,
   heldActionData,
   inputMetadata,
@@ -39,11 +37,10 @@ import {
   messageOrigin,
   USER_ENTRY,
   type CallEventData,
-  type GroupMessageData,
   type MessageOrigin,
   type ModelContent,
 } from "./entries";
-import { isBotOrigin, isOwnerOrigin } from "./origins";
+import { isBotOrigin } from "./origins";
 import {
   isToolResult,
   jobCardName,
@@ -52,7 +49,6 @@ import {
 } from "./tool-results";
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
-  REACTION_TOOL_NAME,
   REQUEST_CALL_TOOL_NAME,
   REQUEST_CREDENTIAL_TOOL_NAME,
   REQUEST_LOGIN_TOOL_NAME,
@@ -62,7 +58,6 @@ import {
   transcriptBlock,
   type BotCommunication,
 } from "../contract/api-responses";
-import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import { JOB_FAILURE_EVENT } from "../contract/tools";
 
@@ -120,7 +115,6 @@ export type TranscriptMessage = {
   toolName?: string | undefined;
   isError?: boolean | undefined;
   toolDetails?: unknown;
-  sources?: WebSource[];
   presentation?: {
     text: string;
     citations: { href: string; title: string; site: string }[];
@@ -468,62 +462,6 @@ function normalizeCallEvent(
   ];
 }
 
-function normalizeGroupMessage(
-  entryId: string,
-  entry: EntryRecord,
-): TranscriptMessage[] {
-  const parsed = groupMessageData.safeParse(entry.data);
-
-  if (!parsed.success) return [];
-
-  const { text, sender, requestId, timestamp, replyTo, replyPreview } =
-    parsed.data;
-
-  const message: TranscriptMessage =
-    parsed.data.reaction === undefined
-      ? {
-          id: formatMessageId(entryId, 0),
-          entryId,
-          requestId,
-          role: isOwnerOrigin(sender) ? "user" : "assistant",
-          content: text,
-          timestamp,
-          kind: entry.kind,
-          origin: sender,
-        }
-      : {
-          id: formatMessageId(entryId, 0),
-          entryId,
-          requestId,
-          role: "toolResult",
-          content: `Reacted ${parsed.data.reaction}`,
-          timestamp,
-          kind: entry.kind,
-          origin: sender,
-          toolName: REACTION_TOOL_NAME,
-          toolDetails: { emoji: parsed.data.reaction },
-        };
-
-  if (replyTo !== undefined) message.replyTo = replyTo;
-
-  if (replyPreview !== undefined) message.replyPreview = replyPreview;
-
-  addGroupExtras(message, parsed.data);
-
-  return [message];
-}
-
-function addGroupExtras(message: TranscriptMessage, data: GroupMessageData) {
-  if (data.files?.length) message.files = data.files;
-  else if (data.attachments?.length)
-    message.files = data.attachments.map((_, index) => ({
-      id: `legacy:${message.entryId}:${index}`,
-      deleted: true,
-    }));
-
-  if (data.sources?.length) message.sources = data.sources;
-}
-
 export type ModelMessage = NonNullable<EntryRecord["model"]>[number];
 
 type ToolMetadata = ReturnType<typeof toolMetadata.parse>;
@@ -668,9 +606,6 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   if (entry.kind === BOT_MESSAGE_ENTRY)
     return normalizeBotMessage(entryId, entry);
 
-  if (entry.kind === GROUP_MESSAGE_ENTRY)
-    return normalizeGroupMessage(entryId, entry);
-
   if (entry.kind === HELD_ACTION_ENTRY)
     return normalizeHeldAction(entryId, entry);
 
@@ -727,7 +662,7 @@ async function earlierCitationContext(
 
   const needsContext = messages
     .slice(0, firstUser < 0 ? undefined : firstUser)
-    .some((message) => message.role === "assistant" && !message.sources);
+    .some((message) => message.role === "assistant");
 
   while (
     conversation &&

@@ -1,5 +1,7 @@
 # Group chats, milestone 1: group store and owner API — Implementation Plan
 
+> Superseded by [Remove group chats](../designs/remove-group-chats.md). This document records the original design.
+
 > Implement one task at a time. Review each deliverable before starting the next. Steps use `- [ ]`.
 
 **Goal:** The owner can create, rename, change, and delete group chats and post messages into a shared group transcript over the HTTP API, with live updates. Bots do not answer yet.

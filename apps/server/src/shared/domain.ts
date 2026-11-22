@@ -1,12 +1,6 @@
 import { z } from "zod";
 
-export const MEMORY_SOURCE_KINDS = [
-  "chat",
-  "owner",
-  "task",
-  "bot",
-  "group",
-] as const;
+export const MEMORY_SOURCE_KINDS = ["chat", "owner", "task", "bot"] as const;
 
 const memorySourceKind = z.enum(MEMORY_SOURCE_KINDS);
 
@@ -21,11 +15,6 @@ export const memorySource = z.discriminatedUnion("kind", [
   z.object({
     kind: memorySourceKind.extract(["bot"]),
     agentId: z.string(),
-    name: z.string(),
-  }),
-  z.object({
-    kind: memorySourceKind.extract(["group"]),
-    groupId: z.string(),
     name: z.string(),
   }),
 ]);
@@ -97,7 +86,6 @@ export type ChangeActor = (typeof CHANGE_ACTORS)[number];
 export type ChangeSource = {
   executionId?: string | null;
   conversationId?: string | null;
-  groupId?: string | null;
 };
 
 export type ChangeBy = { actor: ChangeActor; source?: ChangeSource | null };

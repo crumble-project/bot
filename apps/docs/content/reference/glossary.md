@@ -79,15 +79,9 @@ The credential a voice gateway connects with. It reaches only the account's line
 
 Avoid: API key, password, session.
 
-### Group chat
-
-A conversation between the owner and several bots, with one shared transcript in which every message shows its sender. It is separate from each member's bot chat.
-
-Avoid: Room, channel, group session.
-
 ### Transcript
 
-The complete visible history of a bot chat or group chat, including messages, replies, tool activity, and compaction events.
+The complete visible history of a bot chat, including messages, replies, tool activity, and compaction events.
 
 Avoid: Model context.
 
@@ -177,7 +171,7 @@ Avoid: Webhook, hook, trigger.
 
 ### Workspace
 
-A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its chat and group chats, and its jobs work there too. The machine running them starts and stops as needed.
+A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its bot chat, and its jobs work there too. The machine running them starts and stops as needed.
 
 Avoid: Sandbox, container, VM (in product language).
 

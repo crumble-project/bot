@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { openGroupConversation } from "../group-chats/group-turns";
 import { openReviewConversation } from "./review-kind";
 import type { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -343,7 +342,7 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   expect(store.listPendingReviews()).toEqual([]);
 });
 
-test("a review of a group turn cannot change shared memory, while a review of a chat turn can", async () => {
+test("a review of a chat turn can change shared memory", async () => {
   const turn = (answer: string, shared: string): FauxResponseStep[] => [
     fauxAssistantMessage([fauxToolCall("memory", { action: "list" })], {
       stopReason: "toolUse",
@@ -362,9 +361,8 @@ test("a review of a group turn cannot change shared memory, while a review of a 
     fauxAssistantMessage("Done."),
   ];
 
-  const { store, runtime, service, faux } = open([
+  const { store, service, faux } = open([
     ...turn("For the owner.", "from the chat"),
-    ...turn("For the group.", "from the group"),
   ]);
 
   const agent = store.createAgent({
@@ -381,14 +379,6 @@ test("a review of a group turn cannot change shared memory, while a review of a 
 
   const chatTurn = await service.sendChat(agent.id, "hello", uuid(1));
   expect(await settle(service, chatTurn.id)).toBe("done");
-  await until(() => faux.getPendingResponseCount() === 4);
-  await until(() => store.listPendingReviews().length === 0);
-  expect(await shared()).toEqual(["from the chat"]);
-
-  const group = await openGroupConversation(runtime, agent, "group-1");
-  store.createConversation({ agentId: agent.id, title: "Group" }, group);
-  const groupTurn = await service.send(group, "hello", "group-turn:1");
-  expect(await settle(service, groupTurn.id)).toBe("done");
   await until(() => faux.getPendingResponseCount() === 0);
   await until(() => store.listPendingReviews().length === 0);
   expect(await shared()).toEqual(["from the chat"]);

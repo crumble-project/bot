@@ -39,10 +39,6 @@ export const MAX_CREDENTIAL_HOST_CHARS = 253;
 export const MAX_CREDENTIAL_HOSTS = 20;
 export const MAX_SECRET_CHARS = 16000;
 
-export const MIN_GROUP_MEMBERS = 2;
-export const MAX_GROUP_MEMBERS = 6;
-export const MAX_GROUP_NAME_CHARS = 80;
-
 export const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 

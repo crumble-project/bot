@@ -6,7 +6,6 @@ import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
-import { groupConversations } from "../group-chats/group-turns";
 import { reviewConversations } from "../learning/review-kind";
 import { BotExtensions } from "../bot-ports/bot-extensions";
 import { reactionTools } from "../bots/reaction";
@@ -22,9 +21,6 @@ import { Automations } from "../automations/automations";
 import { AutomationDispatch } from "../automations/automation-dispatch";
 import { ScriptRuns, scriptRunRetention } from "../automations/script-runs";
 import { createAPI, type ApiServices } from "./api";
-import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
-import { groupLookupTools } from "../group-chats/group-lookup";
-import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
 import { BotSkills } from "../skills/skills";
 import { LearningReview, learningReviews } from "../learning/learning-review";
@@ -100,6 +96,7 @@ import { eventPayloadTools } from "../automations/event-tools";
 import { usesDesktop } from "../contract/tools";
 import type { ServerSettings } from "./server-settings";
 import type { EmulateProfile } from "../providers/emulate-profile";
+import { removeLegacyGroupChats } from "./group-chat-upgrade";
 
 export type TenantOptions = {
   emulate?: EmulateProfile | undefined;
@@ -235,11 +232,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
       return BotRuntime.layer(join(dataDir, "agents"), {
         jobExtensions: (agent) => jobExtensions(jobKinds, agent).job,
-        conversationKinds: () => [
-          groupConversations(),
-          reviewConversations(),
-          callConversations(),
-        ],
+        conversationKinds: () => [reviewConversations(), callConversations()],
         env: (agent, target, context) =>
           conversationEnv(jobKinds, agent, target, context),
       });
@@ -271,14 +264,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   const automations = Automations.layer.pipe(Layer.provide(dispatch));
 
   const scheduler = Scheduler.layer.pipe(Layer.provide(automations));
-
-  const groups = GroupChats.layer.pipe(
-    Layer.provide(
-      GroupTranscriptStore.layer(
-        () => new GroupTranscripts(join(dataDir, "groups")),
-      ),
-    ),
-  );
 
   const schedules = BotSchedules.layer;
   const botRequests = BotRequests.layer;
@@ -315,7 +300,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     scheduleTools,
     eventPayloadTools,
     botRequestTools,
-    groupLookupTools,
     historyTools,
     desktopKeepAwake,
     desktopScreenshotTools,
@@ -336,7 +320,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     botSecretUseRetention,
   );
 
-  const conversations = Layer.mergeAll(scheduler, groups, activity);
+  const conversations = Layer.mergeAll(scheduler, activity);
 
   /** Tools whose sandboxes must close after the bot runtime that uses them. */
   const sandboxedTools = Layer.mergeAll(
@@ -401,7 +385,6 @@ const removeAccountWorkspaces = Effect.fnUntraced(function* (
 const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
   yield* (yield* Bots).recover;
   yield* (yield* ScriptRuns).recover;
-  yield* (yield* GroupChats).recover;
   yield* (yield* MessageGateway).start;
   yield* (yield* EventRelay).start;
   yield* (yield* EventDispatcher).start;
@@ -416,6 +399,8 @@ export async function createTenant(
   const dataDir = resolve(options.dataDir);
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
+
+  await removeLegacyGroupChats(dataDir);
 
   const account = ManagedRuntime.make(accountLayer(options, dataDir));
 

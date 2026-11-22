@@ -8,7 +8,6 @@ import type {
 } from "../contract/push";
 import { replySurface } from "../contract/push";
 import { replyEvent } from "../contract/reply-event";
-import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { Conflict, NotFound } from "../shared/errors";
 import { PushDatabase } from "./push-database";
 import { chatViews, pushOutbox, replyAssociations } from "./schema";
@@ -51,14 +50,11 @@ export class ChatAttention extends Context.Service<
     Effect.gen(function* () {
       const db = yield* PushDatabase;
       const agents = yield* AgentRepository;
-      const groups = yield* GroupChatRepository;
 
       const exists = Effect.fn("ChatAttention.exists")(function* (
         chat: ChatReference,
       ) {
-        return !!(yield* chat.kind === "bot"
-          ? agents.get(chat.id)
-          : groups.get(chat.id));
+        return !!(yield* agents.get(chat.id));
       });
 
       const requireChat = Effect.fnUntraced(function* (chat: ChatReference) {
@@ -269,11 +265,7 @@ export class ChatAttention extends Context.Service<
               for (const row of rows) {
                 const event = replyEvent.parse(JSON.parse(row.eventJson));
 
-                if (
-                  event.groupId
-                    ? chat.kind === "group" && event.groupId === chat.id
-                    : chat.kind === "bot" && event.agentId === chat.id
-                )
+                if (event.agentId === chat.id)
                   yield* tx.delete(pushOutbox).where(eq(pushOutbox.id, row.id));
               }
             }),
@@ -307,9 +299,7 @@ export class ChatAttention extends Context.Service<
         for (const row of outbox) {
           const event = replyEvent.parse(JSON.parse(row.eventJson));
 
-          const chat: ChatReference = event.groupId
-            ? { kind: "group", id: event.groupId }
-            : { kind: "bot", id: event.agentId };
+          const chat: ChatReference = { kind: "bot", id: event.agentId };
 
           chats.set(`${chat.kind}:${chat.id}`, chat);
         }

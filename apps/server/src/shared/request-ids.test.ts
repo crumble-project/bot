@@ -4,9 +4,6 @@ import {
   delegationRequest,
   eventRequest,
   gatewayRequest,
-  groupPostRequest,
-  groupTurnRequest,
-  groupTurnScope,
   jobDeliveryRequest,
   jobQuestionRequest,
   jobReportRequest,
@@ -38,25 +35,10 @@ describe("request IDs", () => {
     [voiceCallRequest("c1", "started"), "voice-call:c1:started"],
     [voiceCallRequest("c1", "ended"), "voice-call:c1:ended"],
     [reviewRequest("x1"), "review:x1"],
-    [groupTurnRequest("g1", "a1", 7), "group-turn:g1:a1:7"],
-    [groupPostRequest("x1"), "group-turn:x1"],
     [jobDeliveryRequest("coding", 42), "coding:42"],
     [jobReportRequest("desktop", 42), "desktop-report:42"],
   ])("%s keeps its format", (built, stored) => {
     expect(built).toBe(stored);
-  });
-
-  test("group turn scope accepts only canonical member turn IDs", () => {
-    expect(groupTurnScope(groupTurnRequest("g1", "a1", 7), "a1")).toEqual({
-      kind: "group",
-      groupId: "g1",
-    });
-    expect(
-      groupTurnScope(groupTurnRequest("g1", "a1", 7), "a2"),
-    ).toBeUndefined();
-    expect(groupTurnScope(groupPostRequest("x1"), "a1")).toBeUndefined();
-    expect(groupTurnScope("group-turn:g1:a1:7:extra", "a1")).toBeUndefined();
-    expect(groupTurnScope("group-turn:g1:a1:-1", "a1")).toBeUndefined();
   });
 
   test.each([
@@ -93,8 +75,6 @@ describe("request IDs", () => {
     [voiceRequest("c1", "u1"), { kind: "voice", callId: "c1", id: "u1" }],
     [voiceCallRequest("c1", "ended"), { kind: "voice-call", callId: "c1" }],
     [reviewRequest("x1"), { kind: "review", executionId: "x1" }],
-    [groupTurnRequest("g1", "a1", 7), { kind: "group-turn" }],
-    [groupPostRequest("x1"), { kind: "group-turn" }],
     [jobDeliveryRequest("coding", 42), { kind: "other" }],
     [jobReportRequest("desktop", 42), { kind: "other" }],
     ["0b0e1f2a-5b1c-4a9e-8f00-000000000000", { kind: "other" }],

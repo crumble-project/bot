@@ -38,8 +38,7 @@ choice. Live avatars respect your system's reduced-motion setting.
 An avatar shows what its bot is doing. While the bot thinks, its body turns
 into three hopping dots. While it writes, searches, remembers, or uses tools, it
 bends over the work. When it retries, it shows an exclamation mark. When a reply
-finishes, it celebrates for a few seconds. In a group chat, a bot that answers
-next waits its turn.
+finishes, it celebrates for a few seconds.
 
 Bots without a saved definition get a fresh gallery avatar with default colors.
 The bot ID selects the shape; previous avatar shapes and colors don't affect it.
@@ -60,4 +59,4 @@ Tell it something about yourself and ask it to remember. This one needs the
 **Memory** capability. Without it, the fact stays in the
 [transcript](/concepts/chats), but the bot can't save it to memory.
 
-Add a second bot and start a [group chat](/concepts/group-chats) with both.
+Add more bots for different responsibilities, each with its own bot chat.

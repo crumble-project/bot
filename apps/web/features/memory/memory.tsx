@@ -67,7 +67,6 @@ const SOURCE_LABELS: Record<
   owner: () => "Added by you",
   task: (name) => `From the automation ${name ?? ""}`.trim(),
   bot: (name) => `From a request by ${name ?? "a bot"}`,
-  group: (name) => `From the group chat ${name ?? ""}`.trim(),
 };
 
 export function sourceLabel(memory: Memory) {
@@ -81,7 +80,6 @@ const SOURCE_ICONS = {
   owner: IconUser,
   task: IconCalendarRepeat,
   bot: IconRobot,
-  group: IconUsersGroup,
 } satisfies Record<NonNullable<Memory["source"]>["kind"], TablerIcon>;
 
 function Highlighted({ text, needle }: { text: string; needle: string }) {

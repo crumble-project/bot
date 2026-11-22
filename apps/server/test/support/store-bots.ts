@@ -8,23 +8,11 @@ import {
   ExecutionRepository,
   type NewExecution,
 } from "../../src/bot-store/execution-repository";
-import {
-  GroupChatRepository,
-  type GroupProgress,
-  type GroupMemberChange,
-} from "../../src/group-chats/group-chat-repository";
 import { ScheduleRepository } from "../../src/automations/schedule-repository";
 import type { Agent, AgentInput } from "../../src/contract/agents";
 import type { Execution } from "../../src/shared/domain";
 import type { Schedule, ScheduleInput } from "../../src/contract/schedules";
 import type { Conversation } from "../../src/bot-store/conversation-repository";
-import type {
-  GroupChat,
-  GroupChatInput,
-  GroupMember,
-  GroupTurn,
-  GroupTurnStatus,
-} from "../../src/group-chats/group-chat-repository";
 import type { StoreRun } from "./store";
 
 const agentStore = (run: StoreRun) => ({
@@ -125,64 +113,9 @@ const executionStore = (run: StoreRun) => ({
   },
 });
 
-const groupChatStore = (run: StoreRun) => ({
-  listGroupChats: (): GroupChat[] => {
-    return run(GroupChatRepository.use((r) => r.list));
-  },
-  getGroupChat: (groupId: string) => {
-    return run(GroupChatRepository.use((r) => r.get(groupId)));
-  },
-  createGroupChat: (input: GroupChatInput, groupId?: string): GroupChat => {
-    return run(GroupChatRepository.use((r) => r.create(input, groupId)));
-  },
-  updateGroupChat: (groupId: string, input: GroupChatInput) => {
-    return run(GroupChatRepository.use((r) => r.update(groupId, input)));
-  },
-  deleteGroupChat: (groupId: string) => {
-    return run(GroupChatRepository.use((r) => r.delete(groupId)));
-  },
-  groupMember: (groupId: string, agentId: string): GroupMember | undefined => {
-    return run(GroupChatRepository.use((r) => r.member(groupId, agentId)));
-  },
-  setGroupMember: (
-    groupId: string,
-    agentId: string,
-    change: GroupMemberChange,
-  ) => {
-    run(GroupChatRepository.use((r) => r.setMember(groupId, agentId, change)));
-  },
-  groupActivity: (groupId: string): GroupProgress => {
-    return run(GroupChatRepository.use((r) => r.activity(groupId)));
-  },
-  setGroupActivity: (groupId: string, change: Partial<GroupProgress>) => {
-    run(GroupChatRepository.use((r) => r.setActivity(groupId, change)));
-  },
-  createGroupTurn: (turn: Omit<GroupTurn, "createdAt">): GroupTurn => {
-    return run(GroupChatRepository.use((r) => r.createTurn(turn)));
-  },
-  getGroupTurn: (executionId: string) => {
-    return run(GroupChatRepository.use((r) => r.getTurn(executionId)));
-  },
-  updateGroupTurn: (
-    executionId: string,
-    change: { status: GroupTurnStatus },
-  ) => {
-    run(GroupChatRepository.use((r) => r.updateTurn(executionId, change)));
-  },
-  activeGroupTurn: (groupId: string, agentId: string) => {
-    return run(GroupChatRepository.use((r) => r.activeTurn(groupId, agentId)));
-  },
-  listGroupTurns: (
-    filter: { groupId?: string; status?: GroupTurnStatus[] } = {},
-  ): GroupTurn[] => {
-    return run(GroupChatRepository.use((r) => r.listTurns(filter)));
-  },
-});
-
 export const botStore = (run: StoreRun) => ({
   ...agentStore(run),
   ...conversationStore(run),
   ...scheduleStore(run),
   ...executionStore(run),
-  ...groupChatStore(run),
 });

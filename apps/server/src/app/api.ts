@@ -21,8 +21,6 @@ import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
 import { registerVisionModelRoutes } from "../vision/vision-api";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
 import type { BotRequests } from "../bot-requests/bot-requests";
-import { registerGroupChatRoutes } from "../group-chats/group-chats-api";
-import { GroupChats, groupChatsAccess } from "../group-chats/group-chats";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpServers } from "../integrations/mcp-servers";
 import { registerMemoryRoutes } from "../memory/memory-api";
@@ -72,7 +70,6 @@ export type ApiServices =
   | BotWorkspaces
   | OwnerSkills
   | EventSources
-  | GroupChats
   | McpServers
   | MessageGateway
   | Plugins
@@ -114,7 +111,6 @@ function apiContext(
     workspaces: Context.get(services, BotWorkspaces),
     plugins,
     jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
-    groupChats: groupChatsAccess(Context.get(services, GroupChats)),
     externalAuth: new Map(
       pluginProviders(plugins).flatMap(({ provider, externalAuth }) =>
         externalAuth ? [[provider.id, externalAuth] as const] : [],
@@ -161,7 +157,6 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerAgentRoutes,
   registerChatRoutes,
   registerBotActivityRoutes,
-  registerGroupChatRoutes,
   registerFileRoutes,
   registerCredentialRoutes,
   registerGitHubAppRoutes,

@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { IconPlus, IconUsersGroup } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
 import { defaultFilter } from "cmdk";
 import {
   Command,
@@ -15,13 +15,11 @@ import {
 } from "@/components/ui/command";
 import { useSidebar } from "@/components/ui/sidebar";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import { type GroupChat, groupsQuery } from "@/features/group-chats/api";
 import { setTheme, useTheme } from "@/lib/theme";
 import { BotAvatar } from "@/components/bot-avatar";
 import { settingsSections } from "@/features/settings/sections";
 import { useIsAdmin } from "@/lib/auth-client";
 import { THEME_OPTIONS, PAGES } from "./navigation";
-import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
 
 // Chat items keep their id as the value so equal names stay distinct; match them by name only.
 const filter = (value: string, search: string, keywords?: string[]) =>
@@ -79,42 +77,6 @@ function BotCommands({ bots, run }: { bots: Bot[] | undefined; run: Run }) {
           <BotAvatar bot={bot} size={20} />
           <span className="truncate">{bot.name}</span>
           {!bot.enabled && <CommandShortcut>Paused</CommandShortcut>}
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
-function GroupCommands({
-  groups,
-  run,
-}: {
-  groups: GroupChat[] | undefined;
-  run: Run;
-}) {
-  const navigate = useNavigate();
-
-  if (!groups?.length) return null;
-
-  return (
-    <CommandGroup heading="Group chats">
-      {groups.map((group) => (
-        <CommandItem
-          key={group.id}
-          value={`group ${group.id}`}
-          keywords={[group.name]}
-          onSelect={() =>
-            run(
-              () =>
-                void navigate({
-                  to: "/groups/$groupId",
-                  params: { groupId: group.id },
-                }),
-            )
-          }
-        >
-          <IconUsersGroup />
-          <span className="truncate">{group.name}</span>
         </CommandItem>
       ))}
     </CommandGroup>
@@ -181,7 +143,6 @@ export function CommandPalette({
 }) {
   const navigate = useNavigate();
   const bots = useQuery(botsQuery);
-  const groups = useQuery(groupsQuery);
   const admin = useIsAdmin();
   const theme = useTheme();
   const { setOpenMobile } = useSidebar();
@@ -208,18 +169,11 @@ export function CommandPalette({
         <CommandList>
           <CommandEmpty>No results</CommandEmpty>
           <BotCommands bots={bots.data} run={run} />
-          <GroupCommands groups={groups.data} run={run} />
           <CommandGroup heading="Create">
             <CommandItem onSelect={() => go({ to: "/bots/new" })}>
               <IconPlus />
               New bot
             </CommandItem>
-            {(bots.data?.length ?? 0) >= MIN_GROUP_MEMBERS && (
-              <CommandItem onSelect={() => go({ to: "/groups/new" })}>
-                <IconPlus />
-                New group chat
-              </CommandItem>
-            )}
           </CommandGroup>
           <PageCommands admin={admin} go={go} />
           <ThemeCommands theme={theme} run={run} />

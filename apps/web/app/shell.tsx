@@ -45,13 +45,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CrumbleMark } from "@/components/crumble-mark";
-import { cn, numberWord, plainMarkdown } from "@/lib/utils";
+import { cn, plainMarkdown } from "@/lib/utils";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import {
-  type GroupChat,
-  groupsQuery,
-  membersOf,
-} from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import {
   setTheme,
@@ -60,15 +55,14 @@ import {
   useTheme,
 } from "@/lib/theme";
 import { resetSession, signedOut } from "@/lib/session";
-import { botPin, groupPin, type Pins, usePins } from "@/lib/pins";
+import { botPin, type Pins, usePins } from "@/lib/pins";
 import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
 import { followActivity, useConnectionStatus } from "./activity-stream";
 import { markSeen, useUnreadCount } from "@/lib/notifications";
-import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
+import { botColor, botStyle } from "@/components/bot-avatar";
 import { LiveBotAvatar } from "@/features/bot-chat/avatar";
 import { CommandPalette, PALETTE_SHORTCUT } from "./command-palette";
 import { THEME_OPTIONS, PAGES } from "./navigation";
-import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
 import type { ReplyChat } from "@/lib/notifications";
 
 function useResetOnUserChange(userId: string | undefined) {
@@ -91,10 +85,8 @@ function useResetOnUserChange(userId: string | undefined) {
   }, [navigate, userId]);
 }
 
-const chatLocation = ({ kind, id }: ReplyChat) =>
-  kind === "group"
-    ? ({ to: "/groups/$groupId", params: { groupId: id } } as const)
-    : ({ to: "/bots/$botId", params: { botId: id } } as const);
+const chatLocation = ({ id }: ReplyChat) =>
+  ({ to: "/bots/$botId", params: { botId: id } }) as const;
 
 function useFollowActivity(userId: string | undefined) {
   const navigate = useNavigate();
@@ -120,24 +112,14 @@ function useFollowActivity(userId: string | undefined) {
   }, [navigate, router, userId]);
 }
 
-function useDocumentTitle(
-  bots: Bot[] | undefined,
-  groups: GroupChat[] | undefined,
-) {
+function useDocumentTitle(bots: Bot[] | undefined) {
   const matchRoute = useMatchRoute();
   const unread = useUnreadCount();
   const bot = matchRoute({ to: "/bots/$botId" });
-  const group = matchRoute({ to: "/groups/$groupId" });
-
-  const groupName = group
-    ? groups?.find(({ id }) => id === group.groupId)?.name
-    : undefined;
-
-  const chat = bot ? bots?.find(({ id }) => id === bot.botId)?.name : groupName;
+  const chat = bot ? bots?.find(({ id }) => id === bot.botId)?.name : undefined;
 
   useEffect(() => {
     const title = chat ? `${chat} | Crumble` : "Crumble";
-
     document.title = unread ? `(${unread}) ${title}` : title;
   }, [chat, unread]);
 }
@@ -168,13 +150,12 @@ function SidebarThemeColor() {
 export function Shell() {
   const session = authClient.useSession();
   const bots = useQuery(botsQuery);
-  const groups = useQuery(groupsQuery);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const pins = usePins(bots.data, groups.data);
+  const pins = usePins(bots.data);
   const userId = session.data?.user.id;
   useResetOnUserChange(userId);
   useFollowActivity(userId);
-  useDocumentTitle(bots.data, groups.data);
+  useDocumentTitle(bots.data);
   useAccountTheme();
 
   return (
@@ -189,9 +170,8 @@ export function Shell() {
             <SearchButton onOpen={() => setPaletteOpen(true)} />
           </SidebarHeader>
           <SidebarContent>
-            <PinnedSection pins={pins} bots={bots.data} groups={groups.data} />
+            <PinnedSection pins={pins} bots={bots.data} />
             <BotsSection bots={bots} pins={pins} />
-            <GroupsSection bots={bots.data} groups={groups.data} pins={pins} />
             <WorkspaceSection />
           </SidebarContent>
           <SettingsFooter />
@@ -217,23 +197,16 @@ type DragProps = Pick<
 function PinnedSection({
   pins,
   bots,
-  groups,
 }: {
   pins: Pins;
   bots: Bot[] | undefined;
-  groups: GroupChat[] | undefined;
 }) {
   const matchRoute = useMatchRoute();
   const dragged = useRef<string | null>(null);
 
   if (pins.pinned.length === 0) return null;
 
-  const botsById = new Map(bots?.map((bot) => [bot.id, bot]));
   const botsByPin = new Map(bots?.map((bot) => [botPin(bot.id), bot]));
-
-  const groupsByPin = new Map(
-    groups?.map((group) => [groupPin(group.id), group]),
-  );
 
   const drag = (key: string): DragProps => ({
     draggable: true,
@@ -266,7 +239,6 @@ function PinnedSection({
         <SidebarMenu>
           {pins.pinned.map((key) => {
             const bot = botsByPin.get(key);
-            const group = groupsByPin.get(key);
 
             if (bot)
               return (
@@ -285,17 +257,7 @@ function PinnedSection({
                 />
               );
 
-            return (
-              group && (
-                <GroupRow
-                  key={key}
-                  group={group}
-                  members={membersOf(group.memberIds, botsById)}
-                  pins={pins}
-                  drag={drag(key)}
-                />
-              )
-            );
+            return null;
           })}
         </SidebarMenu>
       </SidebarGroupContent>
@@ -385,98 +347,6 @@ function BotsSection({
         )}
       </SidebarGroupContent>
     </SidebarGroup>
-  );
-}
-
-function GroupsSection({
-  bots,
-  groups,
-  pins,
-}: {
-  bots: Bot[] | undefined;
-  groups: GroupChat[] | undefined;
-  pins: Pins;
-}) {
-  const byId = new Map(bots?.map((bot) => [bot.id, bot]));
-  const canGroup = (bots?.length ?? 0) >= MIN_GROUP_MEMBERS;
-
-  return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Group chats</SidebarGroupLabel>
-      {canGroup && (
-        <SidebarGroupAction
-          title="New group chat"
-          render={<Link to="/groups/new" />}
-        >
-          <IconPlus />
-          <span className="sr-only">New group chat</span>
-        </SidebarGroupAction>
-      )}
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {groups
-            ?.filter((group) => !pins.isPinned(groupPin(group.id)))
-            .map((group) => (
-              <GroupRow
-                key={group.id}
-                group={group}
-                members={membersOf(group.memberIds, byId)}
-                pins={pins}
-              />
-            ))}
-          {groups?.length === 0 && (
-            <p className="px-2 text-xs text-muted-foreground">
-              {canGroup
-                ? "No group chats yet"
-                : `Create ${numberWord(MIN_GROUP_MEMBERS)} bots to start a group chat`}
-            </p>
-          )}
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
-
-function GroupRow({
-  group,
-  members,
-  pins,
-  drag,
-}: {
-  group: GroupChat;
-  members: Bot[];
-  pins: Pins;
-  drag?: DragProps;
-}) {
-  const matchRoute = useMatchRoute();
-
-  return (
-    <SidebarMenuItem {...drag}>
-      <SidebarMenuButton
-        size="lg"
-        isActive={Boolean(
-          matchRoute({
-            to: "/groups/$groupId",
-            params: { groupId: group.id },
-            fuzzy: true,
-          }),
-        )}
-        render={<Link to="/groups/$groupId" params={{ groupId: group.id }} />}
-      >
-        <span className="flex shrink-0 -space-x-3">
-          {members.slice(0, 2).map((member) => (
-            <BotAvatar key={member.id} bot={member} size={26} />
-          ))}
-        </span>
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate">{group.name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {members.map((member) => member.name).join(", ")}
-          </span>
-        </span>
-      </SidebarMenuButton>
-      <PinAction conversation={groupPin(group.id)} pins={pins} />
-    </SidebarMenuItem>
   );
 }
 

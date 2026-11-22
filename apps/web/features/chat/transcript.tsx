@@ -60,7 +60,7 @@ export const hasContent = (message: Message) =>
 
 export type Reaction = { emoji: string; from?: string | undefined };
 
-/** The entry a reaction answers: bots react to the owner's last message, unless the group's records its target. */
+/** The entry a reaction answers: the owner's last message. */
 export type ReactionTarget = (
   message: Message,
   lastOwner: string | undefined,

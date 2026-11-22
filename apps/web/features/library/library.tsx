@@ -22,7 +22,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { ErrorAlert, Page } from "@/components/page";
 import { apiRaw, bodyOf, queryClient } from "@/lib/api";
 import { agentPath, botsQuery } from "@/features/bots/api";
-import { groupPath, groupsQuery } from "@/features/group-chats/api";
 import { MAX_FILE_BYTES } from "@crumble/server/contract/limits";
 import { uploadFile, useFileDownload, type LibraryFile } from "./api";
 import { type FileActions, FileGrid, FileTable } from "./files-view";
@@ -111,13 +110,10 @@ function ViewSwitch({
   );
 }
 
-function useLibraryTitle(kind: "bot" | "group", id: string) {
-  const bots = useQuery({ ...botsQuery, enabled: kind === "bot" });
-  const groups = useQuery({ ...groupsQuery, enabled: kind === "group" });
+function useLibraryTitle(id: string) {
+  const bots = useQuery(botsQuery);
 
-  const name = (kind === "bot" ? bots.data : groups.data)?.find(
-    (owner) => owner.id === id,
-  )?.name;
+  const name = bots.data?.find((owner) => owner.id === id)?.name;
 
   return name ? `${name}'s library` : "Library";
 }
@@ -243,8 +239,8 @@ function useDropZone(onDrop: (files: File[]) => void) {
   };
 }
 
-function useLibraryFiles(kind: "bot" | "group", id: string, path: string) {
-  const key = ["library", kind, id];
+function useLibraryFiles(id: string, path: string) {
+  const key = ["library", "bot", id];
   const download = useFileDownload();
 
   const files = useInfiniteQuery({
@@ -273,7 +269,7 @@ function useLibraryFiles(kind: "bot" | "group", id: string, path: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: key }),
         queryClient.invalidateQueries({
-          queryKey: [kind === "bot" ? "chat" : "group-chat", id],
+          queryKey: ["chat", id],
         }),
       ]);
     },
@@ -304,19 +300,13 @@ function useLibraryFiles(kind: "bot" | "group", id: string, path: string) {
   };
 }
 
-function BackToChat({ kind, id }: { kind: "bot" | "group"; id: string }) {
+function BackToChat({ id }: { id: string }) {
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       title="Back to chat"
-      render={
-        kind === "bot" ? (
-          <Link to="/bots/$botId" params={{ botId: id }} />
-        ) : (
-          <Link to="/groups/$groupId" params={{ groupId: id }} />
-        )
-      }
+      render={<Link to="/bots/$botId" params={{ botId: id }} />}
       nativeButton={false}
     >
       <IconArrowLeft />
@@ -335,19 +325,15 @@ function DropOverlay() {
   );
 }
 
-export function Library({ kind, id }: { kind: "bot" | "group"; id: string }) {
-  const path = `${kind === "bot" ? agentPath(id) : groupPath(id)}/files`;
-  const title = useLibraryTitle(kind, id);
+export function Library({ id }: { id: string }) {
+  const path = `${agentPath(id)}/files`;
+  const title = useLibraryTitle(id);
   const [view, setView] = useView();
   const uploads = useUploads(path);
   const drop = useDropZone(uploads.upload);
   const picker = useRef<HTMLInputElement>(null);
 
-  const { files, entries, actions, downloadError } = useLibraryFiles(
-    kind,
-    id,
-    path,
-  );
+  const { files, entries, actions, downloadError } = useLibraryFiles(id, path);
 
   const openPicker = () => picker.current?.click();
 
@@ -355,7 +341,7 @@ export function Library({ kind, id }: { kind: "bot" | "group"; id: string }) {
     <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
       <Page
         title={title}
-        back={<BackToChat kind={kind} id={id} />}
+        back={<BackToChat id={id} />}
         refreshing={files.isFetching}
         onRefresh={() => void files.refetch()}
       >

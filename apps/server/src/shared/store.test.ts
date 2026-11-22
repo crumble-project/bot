@@ -62,7 +62,7 @@ describe("Store", () => {
       ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
       ALTER TABLE skills DROP COLUMN copied_from_skill_id;
-      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 8)`,
+      DELETE FROM __drizzle_migrations WHERE name >= '20261102093803_skill_copy_provenance'`,
     );
     db.close();
     const reopened = new Store(dir);
@@ -220,7 +220,7 @@ describe("Store", () => {
       ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
       ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
-      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 5)`);
+      DELETE FROM __drizzle_migrations WHERE name >= '20261105191327_drop_unused_agent_columns'`);
     db.query("INSERT INTO settings (key, value) VALUES (?, ?)").run(
       `chat:${agent.id}`,
       JSON.stringify(chat.id),
@@ -490,7 +490,7 @@ describe("Store memory sources", () => {
     const sourced = first.createMemory({
       agentId: agent.id,
       content: "Leaves Friday",
-      source: { kind: "group", groupId: "group-1", name: "Trip" },
+      source: { kind: "bot", agentId: agent.id, name: "Ada" },
     });
 
     first.close();
@@ -498,172 +498,10 @@ describe("Store memory sources", () => {
     const reopened = new Store(dir);
     expect(reopened.getMemory(older.id)?.source).toBeNull();
     expect(reopened.getMemory(sourced.id)?.source).toEqual({
-      kind: "group",
-      groupId: "group-1",
-      name: "Trip",
+      kind: "bot",
+      agentId: agent.id,
+      name: "Ada",
     });
     reopened.close();
   });
-});
-
-describe("Store group chats", () => {
-  test("keeps members in join order, replaces them, and survives reopen", () => {
-    const dir = make();
-    const first = new Store(dir);
-    const a = first.createAgent({ ...input, name: "A" });
-    const b = first.createAgent({ ...input, name: "B" });
-    const c = first.createAgent({ ...input, name: "C" });
-
-    const group = first.createGroupChat({
-      name: "Trip",
-      memberIds: [b.id, a.id],
-    });
-
-    expect(group).toMatchObject({ name: "Trip", memberIds: [b.id, a.id] });
-
-    const updated = first.updateGroupChat(group.id, {
-      name: "Holiday",
-      memberIds: [a.id, c.id],
-    });
-
-    expect(updated).toMatchObject({
-      id: group.id,
-      name: "Holiday",
-      memberIds: [a.id, c.id],
-    });
-    expect(first.updateGroupChat(crypto.randomUUID(), group)).toBeNull();
-    first.close();
-
-    const second = new Store(dir);
-    expect(second.listGroupChats()).toEqual([updated!]);
-    second.close();
-  });
-
-  test("drops a deleted bot from its groups and deletes members with the group", () => {
-    const dir = make();
-    const store = new Store(dir);
-    const a = store.createAgent({ ...input, name: "A" });
-    const b = store.createAgent({ ...input, name: "B" });
-    const c = store.createAgent({ ...input, name: "C" });
-
-    const group = store.createGroupChat({
-      name: "Trip",
-      memberIds: [a.id, b.id, c.id],
-    });
-
-    store.deleteAgent(b.id);
-    expect(store.getGroupChat(group.id)?.memberIds).toEqual([a.id, c.id]);
-    expect(store.deleteGroupChat(group.id)).toBe(true);
-    expect(store.getGroupChat(group.id)).toBeNull();
-    expect(store.listGroupChats()).toEqual([]);
-    store.close();
-
-    const db = new Database(join(dir, "store.sqlite"));
-
-    expect(db.query("SELECT COUNT(*) AS n FROM group_members").get()).toEqual({
-      n: 0,
-    });
-    db.close();
-  });
-
-  test("keeps member progress, group activity, and turns across reopen", () => {
-    const dir = make();
-    const first = new Store(dir);
-    const a = first.createAgent({ ...input, name: "A" });
-    const b = first.createAgent({ ...input, name: "B" });
-
-    const group = first.createGroupChat({
-      name: "Trip",
-      memberIds: [a.id, b.id],
-    });
-
-    const conversation = first.createConversation(
-      { agentId: a.id, title: "Trip" },
-      `${a.id}:2`,
-    );
-
-    const execution = first.createExecution({
-      agentId: a.id,
-      conversationId: conversation.id,
-      scheduleId: null,
-      requestId: "group-turn:1",
-      prompt: "",
-      submissionId: null,
-      status: "pending",
-      error: null,
-    });
-
-    first.setGroupMember(group.id, a.id, {
-      conversationId: conversation.id,
-      cursor: 3,
-      pending: true,
-      pendingBotStarted: true,
-      summary: "Earlier: packing list.",
-    });
-    first.setGroupActivity(group.id, {
-      botTurns: 5,
-      paused: true,
-      awaitingAnswers: { "2": [a.id] },
-    });
-    first.createGroupTurn({
-      executionId: execution.id,
-      groupId: group.id,
-      agentId: a.id,
-      through: 3,
-      botStarted: true,
-      status: "running",
-    });
-    first.close();
-
-    const second = new Store(dir);
-    expect(second.groupMember(group.id, a.id)).toMatchObject({
-      conversationId: conversation.id,
-      cursor: 3,
-      pending: true,
-      pendingBotStarted: true,
-      summary: "Earlier: packing list.",
-    });
-    expect(second.groupActivity(group.id)).toEqual({
-      botTurns: 5,
-      paused: true,
-      awaitingAnswers: { "2": [a.id] },
-    });
-    expect(second.activeGroupTurn(group.id, a.id)).toMatchObject({
-      executionId: execution.id,
-      through: 3,
-      botStarted: true,
-      status: "running",
-    });
-    second.updateGroupTurn(execution.id, { status: "settled" });
-    expect(second.activeGroupTurn(group.id, a.id)).toBeUndefined();
-    expect(
-      second.listGroupTurns({ groupId: group.id, status: ["settled"] }),
-    ).toHaveLength(1);
-    second.deleteGroupChat(group.id);
-    expect(second.listGroupTurns()).toEqual([]);
-    second.close();
-  });
-});
-
-test("an agent keeps its desktop job model across reopen", () => {
-  const dir = make();
-  const first = new Store(dir);
-
-  const agent = first.createAgent({
-    ...input,
-    desktopModel: { provider: "opencode-go", model: "gpt-6-luna" },
-  });
-
-  first.close();
-
-  const second = new Store(dir);
-
-  expect(second.getAgent(agent.id)?.desktopModel).toEqual({
-    provider: "opencode-go",
-    model: "gpt-6-luna",
-  });
-  expect(
-    second.updateAgent(agent.id, { desktopModel: undefined })?.desktopModel,
-  ).toBeUndefined();
-  second.close();
 });

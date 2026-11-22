@@ -37,13 +37,14 @@ function firstNotice(key: string) {
   return true;
 }
 
-export type ReplyChat = { kind: "bot" | "group"; id: string };
+export type ReplyChat = { kind: "bot"; id: string };
 
-const chatOf = ({ groupId, agentId }: ReplyEvent): ReplyChat =>
-  groupId ? { kind: "group", id: groupId } : { kind: "bot", id: agentId };
+const chatOf = ({ agentId }: ReplyEvent): ReplyChat => ({
+  kind: "bot",
+  id: agentId,
+});
 
-const chatTag = ({ kind, id }: ReplyChat) =>
-  kind === "group" ? `reply-group-${id}` : `reply-${id}`;
+const chatTag = ({ id }: ReplyChat) => `reply-${id}`;
 
 function canNotify() {
   return (
@@ -91,9 +92,6 @@ export function markSeen() {
 document.addEventListener("visibilitychange", markSeen);
 
 function noticeTitle(event: ReplyEvent) {
-  if (event.groupId)
-    return `${event.agentName} in ${event.groupName ?? "a group"}`;
-
   const job = isJobKind(event.origin)
     ? ` · ${event.origin} job ${event.jobName ?? ""}`.trimEnd()
     : "";

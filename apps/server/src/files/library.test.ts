@@ -32,7 +32,7 @@ test("deleted names survive reopening and remain scoped to the library", async (
   });
 
   const library: LibraryRef = { kind: "bot", agentId: bot.id };
-  const group = store.createGroupChat({ name: "Group", memberIds: [bot.id] });
+  const otherBot = store.duplicateAgent(bot.id, "Grace")!;
 
   const uploaded = await store.runtime.runPromise(
     Library.use((service) =>
@@ -61,7 +61,7 @@ test("deleted names survive reopening and remain scoped to the library", async (
 
   const foreign = await reopened.runtime.runPromise(
     Library.use((service) =>
-      service.validate({ kind: "group", groupId: group.id }, [
+      service.validate({ kind: "bot", agentId: otherBot.id }, [
         uploaded.file.id,
       ]),
     ).pipe(Effect.flip),
@@ -90,12 +90,12 @@ for (const sameLibrary of [true, false]) {
       delegates: [],
     });
 
-    const group = store.createGroupChat({ name: "Group", memberIds: [bot.id] });
+    const otherBot = store.duplicateAgent(bot.id, "Grace")!;
     const library: LibraryRef = { kind: "bot", agentId: bot.id };
 
     const other: LibraryRef = sameLibrary
       ? library
-      : { kind: "group", groupId: group.id };
+      : { kind: "bot", agentId: otherBot.id };
 
     const bytes = await Bun.file(
       new URL("../../test/fixtures/text.pdf", import.meta.url),

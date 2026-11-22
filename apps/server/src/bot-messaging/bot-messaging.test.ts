@@ -132,11 +132,11 @@ test("rejects disabled and ambiguous name recipients", async () => {
   store.close();
 });
 
-test("send resolves IDs, exact names, and @mentions and deduplicates task requests", async () => {
+test("send resolves IDs, normalized names, and @mentions and deduplicates task requests", async () => {
   const { messaging, store } = setup();
 
   const first = await messaging.send(ids.source, {
-    recipient: "@Bot2",
+    recipient: "@Ｂｏｔ２",
     message: "How do you feel?",
     requestId: "ask-1",
   });

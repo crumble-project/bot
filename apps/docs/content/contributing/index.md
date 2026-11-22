@@ -129,8 +129,7 @@ bun run openapi:generate
 
 Chat attention belongs to the authenticated account, independently of push
 registration or notification permission. A chat reference has a `kind` of
-`bot` or `group` and an `id`, such as `{ "kind": "bot", "id": "CHAT_ID" }`.
-Bot chats and group chats are separate namespaces.
+`bot` and an `id`, such as `{ "kind": "bot", "id": "CHAT_ID" }`.
 
 - Send `PUT /v1/chat-attention/views/{viewId}` with `{ "chat": CHAT }` when a
   view becomes active. Send `{ "chat": null }` when it loses attention.
@@ -143,7 +142,7 @@ Bot chats and group chats are separate namespaces.
   only after displaying the referenced content. Batch 1-100 distinct event IDs;
   retry failed batches only while the same account remains signed in.
 
-Replace `CHAT_ID` with the bot or group chat ID and `CHAT` with that chat
+Replace `CHAT_ID` with the bot ID and `CHAT` with that chat
 reference. Replace `EVENT_ID` with the reply event ID. Both routes return `204` on success. Unknown or inaccessible chats
 and mismatched events return `404`. Seen batches are atomic and idempotent.
 
@@ -181,7 +180,7 @@ Native clients must implement:
    and serialized presence reports that cannot follow a clear with stale state.
 
 On macOS, a window losing activity must clear its own view. Verify web-to-native
-and native-to-native suppression locally after adoption, including group chats.
+and native-to-native suppression locally after adoption.
 No simulator, emulator, or native UI checks run in CI.
 
 ## Releasing

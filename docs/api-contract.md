@@ -13,7 +13,6 @@ bun run openapi:check
 | --- | --- |
 | `openapi/openapi.json` | Shared route registry (OpenAPI 3.1) |
 | `openapi/chat-snapshot.schema.json` | `chatSnapshotResponse` |
-| `openapi/group-chat-snapshot.schema.json` | `groupChatSnapshotResponse` |
 | `openapi/activity-event.schema.json` | `activityEvent` (`reply` and `chat_preview` union) |
 | `openapi/learned-event.schema.json` | `learnedEvent` |
 | `openapi/desktop-control.schema.json` | `desktopControlResponse` |
@@ -83,8 +82,6 @@ All `/v1` streams require a Better Auth account session (a session bearer token 
 | --- | --- | --- |
 | `/v1/agents/{id}/events` | `snapshot` | `chat-snapshot.schema.json` |
 | `/v1/agents/{id}/events` | `heartbeat` | `heartbeat.schema.json` |
-| `/v1/group-chats/{id}/events` | `snapshot` | `group-chat-snapshot.schema.json` |
-| `/v1/group-chats/{id}/events` | `heartbeat` | `heartbeat.schema.json` |
 | `/v1/agents/{id}/desktop/events` | `control` | `desktop-control.schema.json` |
 | `/v1/agents/{id}/desktop/events` | `heartbeat` | `heartbeat.schema.json` |
 | `/v1/events` | `activity` | `activity-event.schema.json` |

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { openGroupConversation } from "../group-chats/group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -73,7 +72,6 @@ describe("a memory's source", () => {
         await store.runtime.runPromise(
           BotMemory.use((memory) =>
             memory.create(agent.id, "fact", false, {
-              groupId: null,
               submissionIds: [],
               reviewOf: null,
               ...context,
@@ -84,21 +82,6 @@ describe("a memory's source", () => {
 
     return { store, agent, other, execution, sourceOf };
   }
-
-  test("names the group of a group turn", async () => {
-    const { store, agent, other, sourceOf } = setup();
-
-    const group = store.createGroupChat({
-      name: "Trip",
-      memberIds: [agent.id, other.id],
-    });
-
-    expect(await sourceOf({ groupId: group.id })).toEqual({
-      kind: "group",
-      groupId: group.id,
-      name: "Trip",
-    });
-  });
 
   test("takes the newest input of a chat run", async () => {
     const { store, agent, other, execution, sourceOf } = setup();
@@ -192,11 +175,10 @@ test("the memory tool reports where it runs", async () => {
 
   cleanups.push(() => runtime.close());
   const chat = await runtime.openChat(agent);
-  const group = await openGroupConversation(runtime, agent, "group-1");
 
   const submissions: string[] = [];
 
-  for (const conversation of [chat, group]) {
+  for (const conversation of [chat]) {
     const submission = await runtime.submit(agent, conversation, "remember");
 
     submissions.push(submission);
@@ -204,7 +186,6 @@ test("the memory tool reports where it runs", async () => {
   }
 
   expect(contexts).toEqual([
-    { groupId: null, submissionIds: [submissions[0]!], reviewOf: null },
-    { groupId: "group-1", submissionIds: [submissions[1]!], reviewOf: null },
+    { submissionIds: [submissions[0]!], reviewOf: null },
   ]);
 });

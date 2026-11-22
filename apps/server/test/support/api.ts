@@ -10,7 +10,6 @@ import type { BotsAccess } from "../../src/bots/bots";
 import type { AgentRuntime } from "../../src/bots/runtime";
 import { EventSources } from "../../src/event-sources/event-sources";
 import { Library } from "../../src/files/library";
-import { GroupChats } from "../../src/group-chats/group-chats";
 import { McpIntegrations } from "../../src/integrations/integrations";
 import { mcpServersOver } from "../../src/integrations/integrations-test-support";
 import { McpServers } from "../../src/integrations/mcp-servers";
@@ -40,7 +39,6 @@ import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 export type TestServices = {
   library?: Library["Service"];
   scheduler?: { service: Scheduler["Service"] };
-  groupChats?: { service: GroupChats["Service"] };
   push?: Runner<Push>;
   scriptRuns?: ScriptRuns["Service"];
   defaultSkills?: DefaultSkill[];
@@ -111,10 +109,6 @@ function testServices(
     Context.add(BotWorkspaces, services.workspaces),
     Context.add(DefaultSkills, services.defaultSkills ?? []),
     Context.add(Plugins, plugins),
-    Context.add(
-      GroupChats,
-      services.groupChats?.service ?? notReached<GroupChats["Service"]>(),
-    ),
     Context.add(Push, testPush(services.push)),
     Context.add(
       ProviderSignIns,

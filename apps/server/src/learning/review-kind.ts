@@ -1,4 +1,3 @@
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
   defineExtension,
   GenerationTask,
@@ -8,8 +7,6 @@ import type { AgentRuntime } from "../bots/runtime";
 import type { ConversationKind } from "../bot-ports/conversation-kind";
 import { defineAnchorTask } from "../shared/anchor-task";
 import type { Agent } from "../contract/agents";
-import { localConversationId } from "../shared/entry-ids";
-import { groupOf } from "../group-chats/group-conversation";
 import {
   ReviewConversation,
   reviewOf,
@@ -18,7 +15,7 @@ import { reviewInstructions, type ReviewScope } from "./review-instructions";
 
 export const REVIEW_EXTENSION = "learning-review";
 
-// Owns a review conversation, so it stays out of the bot chat transcript, like a group conversation's anchor.
+// Owns a review conversation, so it stays out of the bot chat transcript, separate from the reviewed turn.
 export const ReviewAnchor = defineAnchorTask("crumble.review-anchor");
 
 export class ReviewBudgetExceeded extends Error {
@@ -110,16 +107,9 @@ export async function openReviewConversation(
   scope: ReviewScope,
   budgetChars: number,
 ) {
-  const reviewedGroup = await groupOf(
-    await runtime.documents(agent),
-    localConversationId(agent.id, reviewed.conversationId),
-    BACKGROUND_CONTEXT,
-  );
-
   return runtime.openAnchored(agent, ReviewAnchor, async (tx, id) => {
     const doc = await tx.doc(ReviewConversation, id);
     doc.executionId = reviewed.id;
-    doc.groupId = reviewedGroup;
     doc.skills = scope.skills;
     doc.memory = scope.memory;
     doc.budgetChars = budgetChars;

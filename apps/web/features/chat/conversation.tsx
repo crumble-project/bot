@@ -358,7 +358,7 @@ export function ConversationMessages({
     const kind = chatKey.slice(0, separator);
     const id = chatKey.slice(separator + 1);
 
-    if ((kind !== "bot" && kind !== "group") || !id) return;
+    if (kind !== "bot" || !id) return;
     const controller = getChatAttention();
     const release = selectAttentionChat(chatKey);
 

@@ -12,8 +12,6 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
-import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
-import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
 import { AgentRuntime } from "../bots/runtime";
@@ -67,11 +65,6 @@ test("history search keeps committed assistant messages visible across turn comp
 
   const service = standaloneBots(store, runtime);
 
-  const groups = standaloneGroupChats(
-    service,
-    new GroupTranscripts(join(dir, "groups")),
-  );
-
   try {
     const agent = store.createAgent({
       name: "Ada",
@@ -90,11 +83,10 @@ test("history search keeps committed assistant messages visible across turn comp
       historySource(
         runtime,
         store.runtime.runSync(AgentRepository.use(Effect.succeed)),
-        groups.service,
       ),
     );
 
-    const context = { agentId: agent.id, groupId: null };
+    const context = { agentId: agent.id };
     const chat = await runtime.openChat(agent);
     const submission = await runtime.submit(agent, chat, "Run the probe.");
     await waiting.promise;
@@ -121,7 +113,6 @@ test("history search keeps committed assistant messages visible across turn comp
     expect(after.omittedToolActivity).toBe(true);
   } finally {
     finish.resolve();
-    await groups.close();
     await service.close();
     rmSync(dir, { recursive: true, force: true });
   }

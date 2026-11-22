@@ -15,9 +15,9 @@ flowchart TD
   Browser["Web app (/ui) and API clients"] --> Auth["Better Auth session<br/>auth.sqlite"]
   Auth --> Tenant["Private user runtime<br/>app/tenant.ts"]
   Tenant --> API["Hono HTTP and SSE API<br/>/v1"]
-  API --> Services["Effect services<br/>Bots, BotRuntime, GroupChats, BotSkills, Scheduler"]
-  Services --> Product["Product SQLite<br/>store.sqlite via Drizzle<br/>agents, groups, skills, memories,<br/>schedules, credentials, changes"]
-  Services --> Pi["Pi Durable SQLite stores<br/>per-bot and per-group transcripts,<br/>coding and desktop jobs, reviews"]
+  API --> Services["Effect services<br/>Bots, BotRuntime, BotSkills, Scheduler"]
+  Services --> Product["Product SQLite<br/>store.sqlite via Drizzle<br/>agents, skills, memories,<br/>schedules, credentials, changes"]
+  Services --> Pi["Pi Durable SQLite stores<br/>per-bot transcripts,<br/>coding and desktop jobs, reviews"]
   Pi --> Workspaces["MachineWorkspaces<br/>Microsandbox microVM or Railway sandbox,<br/>credential proxy and Xvnc"]
 ```
 
@@ -36,15 +36,13 @@ CRUMBLE_DATA_DIR/
         ├── push.sqlite      push store
         ├── agents/
         │   └── BOT_ID.sqlite    one Pi Durable store per bot
-        ├── groups/
-        │   └── GROUP_ID.sqlite  one per group chat
         └── claude/          Claude Code config for this account
 ```
 
 ## Boundaries
 
 Server code lives in feature folders under `apps/server/src/`, such as
-`bots/`, `group-chats/`, `jobs/`, `workspaces/`, and `credentials/`.
+`bots/`, `jobs/`, `workspaces/`, and `credentials/`.
 
 ### Accounts
 
@@ -59,7 +57,7 @@ anyone signed in.
 
 `app/tenant.ts`. Each account is one Effect `Layer` graph: Drizzle repositories
 over `ProductDatabase`, then feature services (`Bots`, `BotRuntime`,
-`GroupChats`, `BotSkills`, `Scheduler`, `BotWorkspaces`, `Plugins`). Features
+`BotSkills`, `Scheduler`, `BotWorkspaces`, `Plugins`). Features
 register their bot tools in `BotExtensions`. Tagged errors (`shared/errors.ts`)
 map to HTTP status codes at the Hono boundary.
 
@@ -68,11 +66,10 @@ map to HTTP status codes at the Hono boundary.
 The two stores split along one line: the product store holds what you
 configure, and Pi Durable holds what happens.
 
-| Store                 | File                       | Holds                                                                                                                              |
-| --------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Product SQLite        | `store.sqlite`             | Agent profiles, group definitions, memories, skill packages, `learned_changes`, schedules, MCP servers, and encrypted credentials. |
-| Pi Durable, per bot   | `agents/<bot id>.sqlite`   | Conversation entries, working context, tool calls, compaction, coding and desktop job conversations, and post-turn reviews.        |
-| Pi Durable, per group | `groups/<group id>.sqlite` | The group chat's shared transcript.                                                                                                |
+| Store               | File                     | Holds                                                                                                                       |
+| ------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Product SQLite      | `store.sqlite`           | Agent profiles, memories, skill packages, `learned_changes`, schedules, MCP servers, and encrypted credentials.             |
+| Pi Durable, per bot | `agents/<bot id>.sqlite` | Conversation entries, working context, tool calls, compaction, coding and desktop job conversations, and post-turn reviews. |
 
 ### Plugins and Claude Code
 

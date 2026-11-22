@@ -171,7 +171,7 @@ const origin = z
   .object({
     kind: z.string().openapi({
       description:
-        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, group, call (a voice gateway call ended, which starts a bot turn), call_request (the owner declined a call request), or callee (what the callee of an outside call said, in that call's conversation only). Clients may receive other values later.",
+        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, call (a voice gateway call ended, which starts a bot turn), call_request (the owner declined a call request), or callee (what the callee of an outside call said, in that call's conversation only). Clients may receive other values later.",
     }),
     name: z.string().optional(),
     agentId: z.string().optional(),
@@ -316,13 +316,6 @@ const message = z
         "Provider-specific tool details, including nested code-mode calls. A successful `desktop_screenshot` result has `{ mimeType, size }`; read its image from `GET /v1/agents/{id}/attachments/{entryId}/0`.",
     }),
     presentation: messagePresentation.optional(),
-    sources: z
-      .array(z.object({ url: z.string(), title: z.string() }))
-      .optional()
-      .openapi({
-        description:
-          "In a group chat, the pages the sending bot searched or read in the turn that wrote the message.",
-      }),
   })
   .openapi("TranscriptMessage");
 
@@ -481,53 +474,6 @@ export const chatSnapshotResponse = historyResponse
   })
   .openapi("ChatSnapshot");
 
-export const groupChatResponse = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    memberIds: strings.openapi({
-      description: "Member bots in the order they joined.",
-    }),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .openapi("GroupChat");
-
-export const groupActivityResponse = z
-  .object({
-    paused: z.boolean().openapi({
-      description:
-        "Bot-started turns used up the turn budget; the owner's next message resumes the group.",
-    }),
-    botTurns: z.number().openapi({
-      description: "Bot-started turns since the owner's last message.",
-    }),
-    members: z.array(
-      z
-        .object({
-          agentId: z.string(),
-          status: z.enum(["idle", "queued", "running", "disabled"]),
-          error: z.string().nullable().openapi({
-            description: "Why the member's latest turn failed.",
-          }),
-        })
-        .openapi("GroupMemberActivity"),
-    ),
-  })
-  .openapi("GroupActivity");
-
-export const groupChatSnapshotResponse = historyResponse
-  .extend({
-    groupChat: groupChatResponse,
-    activity: groupActivityResponse,
-    updatedAt: z.number(),
-  })
-  .openapi("GroupChatSnapshot");
-
-export const groupMessageReceiptResponse = z
-  .object({ requestId: z.string(), entryId: z.string() })
-  .openapi("GroupMessageReceipt");
-
 export const executionResponse = z
   .object({
     id: z.string(),
@@ -586,16 +532,14 @@ const memorySourceResponse = z
   .object({
     kind: z.enum(MEMORY_SOURCE_KINDS),
     name: z.string().optional().openapi({
-      description:
-        "The task, bot, or group chat, as named when the memory was saved.",
+      description: "The task or bot, as named when the memory was saved.",
     }),
     scheduleId: z.string().optional().openapi({ description: "For `task`." }),
     agentId: z.string().optional().openapi({ description: "For `bot`." }),
-    groupId: z.string().optional().openapi({ description: "For `group`." }),
   })
   .openapi("MemorySource", {
     description:
-      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat.",
+      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, or another bot's request.",
   });
 
 export const credentialResponse = z
@@ -756,7 +700,7 @@ export const visionModelResponse = z
       .nullable()
       .openapi({
         description:
-          "The model that describes images for bots whose model can't read them. Null when off: such bots refuse images in their chat and get only an image's name in group chats.",
+          "The model that describes images for bots whose model can't read them. Null when off: such bots refuse images in their chat.",
       }),
     choices: z.array(visionChoice).openapi({
       description:
@@ -901,7 +845,6 @@ const changeSourceResponse = z
   .object({
     executionId: z.string().nullable().optional(),
     conversationId: z.string().nullable().optional(),
-    groupId: z.string().nullable().optional(),
   })
   .openapi("ChangeSource");
 
@@ -1290,10 +1233,6 @@ export const eventSchemas: {
     artifact: "pins-event.schema.json",
   },
   { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
-  {
-    schema: groupChatSnapshotResponse,
-    artifact: "group-chat-snapshot.schema.json",
-  },
   { schema: desktopControlResponse, artifact: "desktop-control.schema.json" },
   {
     schema: voiceGatewayConfigEvent,

@@ -1,5 +1,7 @@
 # Group chats milestone 4: memory sources and group lookup
 
+> Superseded by [Remove group chats](../designs/remove-group-chats.md). This document records the original design.
+
 > Implement one task at a time. Review each deliverable before starting the next. Steps use `- [ ]`.
 
 **Goal:** Every memory records where it came from, group turns write only to the bot's own memory, and a bot can look up its group chats from its bot chat.

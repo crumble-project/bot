@@ -18,7 +18,7 @@ import {
   type ReplyActivity,
   type ReplyEvent,
 } from "../contract/reply-event";
-import { notificationTitle, type PushDeviceInput } from "./push-model";
+import type { PushDeviceInput } from "./push-model";
 import { PushRepository } from "./push-repository";
 import {
   PermanentRejection,
@@ -51,8 +51,6 @@ import {
 } from "../credentials/credentials";
 import { loginExtension, loginsAccess } from "../logins/logins";
 import { parseEntryId } from "../shared/entry-ids";
-import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
-import { GroupTranscripts } from "../group-chats/group-transcripts";
 
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -317,80 +315,6 @@ describe("push registration and durable delivery", () => {
       }),
     );
     await second.dispose();
-  });
-
-  test("delivers a group answer even while its bot's chat is visible", async () => {
-    const dir = tempDir("crumble-push-");
-    const now = 1_000_000;
-    const installationId = id();
-    const agentId = id();
-    const sent: ReplyEvent[] = [];
-
-    const push = await pushRuntime(
-      dir,
-      fcmOnly({
-        send: (_device, event) =>
-          Effect.sync(() => {
-            sent.push(event);
-
-            return "delivered" as const;
-          }),
-      }),
-      now,
-    );
-
-    const groupStore = new Store(push);
-    createBot(groupStore, agentId);
-    groupStore.createGroupChat(
-      { name: "Trip", memberIds: [agentId] },
-      "group-1",
-    );
-    const answer = reply(agentId, now);
-
-    const serverId = await push.runPromise(
-      Effect.gen(function* () {
-        const store = yield* PushRepository;
-        yield* store.upsertDevice(installationId, android("token"));
-        yield* (yield* ChatAttention).view(installationId, {
-          kind: "bot",
-          id: agentId,
-        });
-
-        const service = yield* Push;
-
-        yield* service.enqueue({
-          ...answer,
-          agentName: "Ada",
-          entryId: "group-1:4",
-          origin: "group",
-          preview: "Booked.",
-          groupId: "group-1",
-          groupName: "Trip",
-        });
-        yield* TestClock.adjust(3000);
-        yield* service.drain;
-
-        return service.serverId;
-      }),
-    );
-
-    expect(sent).toEqual([
-      {
-        type: "reply",
-        eventId: answer.executionId,
-        serverId,
-        agentId,
-        agentName: "Ada",
-        entryId: "group-1:4",
-        origin: "group",
-        preview: "Booked.",
-        createdAt: "1970-01-01T00:16:40.000Z",
-        groupId: "group-1",
-        groupName: "Trip",
-      },
-    ]);
-    expect(notificationTitle(sent[0]!)).toBe("Ada in Trip");
-    await push.dispose();
   });
 
   test("suppresses visible-agent replies and sends once across concurrent drains", async () => {
@@ -873,20 +797,18 @@ test("suppresses matching chats across views and destination devices", async () 
     mcpServers: [],
     delegates: [],
   });
-  const group = store.createGroupChat({ name: "Group", memberIds: [agent.id] });
+  const otherBot = store.duplicateAgent(agent.id, "Other")!;
   const botChat = { kind: "bot" as const, id: agent.id };
-  const groupChat = { kind: "group" as const, id: group.id };
+  const otherChat = { kind: "bot" as const, id: otherBot.id };
   const botHidden = reply(agent.id, 0);
   const waiting = { ...reply(agent.id, 0), waitingFor: "approval" as const };
-  const groupHidden = {
+  const otherHidden = {
     ...reply(agent.id, 0),
-    origin: "group",
-    groupId: group.id,
+    agentId: otherBot.id,
   };
-  const groupVisible = {
+  const otherVisible = {
     ...reply(agent.id, 0),
-    origin: "group",
-    groupId: group.id,
+    agentId: otherBot.id,
   };
   const botVisible = reply(agent.id, 0);
   const afterClear = reply(agent.id, 0);
@@ -901,16 +823,16 @@ test("suppresses matching chats across views and destination devices", async () 
       yield* push.device(id(), android("two"));
       yield* push.enqueue(botHidden);
       yield* push.enqueue(waiting);
-      yield* push.enqueue(groupVisible);
+      yield* push.enqueue(otherVisible);
       yield* TestClock.adjust(3000);
       yield* push.drain;
       expect(sent.map((s) => s.eventId)).toEqual([
-        groupVisible.executionId,
-        groupVisible.executionId,
+        otherVisible.executionId,
+        otherVisible.executionId,
       ]);
-      yield* attention.view("group", groupChat);
+      yield* attention.view("other", otherChat);
       yield* attention.view("web", null);
-      yield* push.enqueue(groupHidden);
+      yield* push.enqueue(otherHidden);
       yield* push.enqueue(reply(agent.id, 3000));
       yield* TestClock.adjust(3000);
       yield* push.drain;
@@ -925,11 +847,10 @@ test("suppresses matching chats across views and destination devices", async () 
           .map((s) => s.token)
           .sort(),
       ).toEqual(["one", "two"]);
-      yield* attention.view("group", null);
+      yield* attention.view("other", null);
       yield* push.enqueue({
         ...afterClear,
-        origin: "group",
-        groupId: group.id,
+        agentId: otherBot.id,
       });
       yield* TestClock.adjust(3000);
       yield* push.drain;
@@ -1269,7 +1190,6 @@ test("acknowledges exact reply surfaces before enqueue and after restart", async
       fauxAssistantMessage(`Please provide ${name}.`),
     ]),
     fauxAssistantMessage("another answer"),
-    fauxAssistantMessage("A group answer."),
   ]);
   const models = createModels();
   models.setProvider(faux.provider);
@@ -1414,56 +1334,14 @@ test("acknowledges exact reply surfaces before enqueue and after restart", async
   );
   await push.runPromise(Push.use((p) => p.enqueue(held)));
   suppressed.push(held);
-  const groups = standaloneGroupChats(
-    service,
-    new GroupTranscripts(join(dir, "groups")),
-  );
-  const group = groups.create({ name: "Trip", memberIds: [agent.id] });
-  const groupChat = { kind: "group" as const, id: group.id };
-  await groups.post(group.id, "Plan the trip", id());
-  await until(() =>
-    activities.some((activity) => activity.groupId === group.id),
-  );
-  const groupActivity = activities.find(
-    (activity) => activity.groupId === group.id,
-  )!;
-  const groupMessages = (await groups.history(group.id, { limit: 200 }))
-    .messages;
-  const groupMessage = groupMessages.find(
-    (message) => message.content === "A group answer.",
-  )!;
-  expect(groupActivity.entryId).toBe(groupMessage.entryId);
-  expect(groupMessage.replyReferences).toEqual([
-    { eventId: groupActivity.executionId, surface: { kind: "text" } },
-  ]);
-  expect(
-    (await groups.snapshot(group.id, { limit: 200 })).messages.find(
-      (message) => message.id === groupMessage.id,
-    )?.replyReferences,
-  ).toEqual(groupMessage.replyReferences);
-  expect(
-    (await service.history(agent.id, { limit: 200 })).messages
-      .flatMap((message) => message.replyReferences)
-      .some((reference) => reference.eventId === groupActivity.executionId),
-  ).toBe(false);
   await push.runPromise(
     ChatAttention.use((attention) =>
-      attention.seen(groupChat, [groupActivity.executionId]),
+      attention.seen(
+        chat,
+        suppressed.map((activity) => activity.executionId),
+      ),
     ),
   );
-  await push.runPromise(Push.use((p) => p.enqueue(groupActivity)));
-  await push.runPromise(
-    ChatAttention.use((attention) =>
-      Effect.gen(function* () {
-        yield* attention.seen(
-          chat,
-          suppressed.map((activity) => activity.executionId),
-        );
-        yield* attention.seen(groupChat, [groupActivity.executionId]);
-      }),
-    ),
-  );
-  await groups.close();
   await service.close();
   await push.dispose();
   const reopened = openPush();
@@ -1471,7 +1349,6 @@ test("acknowledges exact reply surfaces before enqueue and after restart", async
     Effect.gen(function* () {
       const p = yield* Push;
       for (const activity of suppressed) yield* p.enqueue(activity);
-      yield* p.enqueue(groupActivity);
       yield* p.enqueue(secondActivity);
       yield* TestClock.adjust(3000);
       yield* p.drain;
