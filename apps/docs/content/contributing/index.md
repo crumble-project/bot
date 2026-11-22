@@ -34,6 +34,51 @@ Server code uses [Effect](https://effect.website). Read `AGENTS.md`
 before changing it. [Architecture](/contributing/architecture) shows how the
 pieces fit.
 
+## Run credential-free local development
+
+Use Bun 1.4.4 and Node.js 24 or later. From the `bot` root:
+
+1. Start Crumble and Emulate:
+
+   ```bash
+   bun run dev:emulate
+   ```
+
+2. Open `http://127.0.0.1:7338`.
+3. Sign up through the normal local account flow, or sign in to an existing account in this profile.
+4. Create a bot with the preconfigured **Emulate (local)** provider and one of the scenario models.
+5. Send the bot a message.
+
+Emulate returns scripted responses through Pi's real HTTP transport, without provider keys or model inference.
+The model picker offers only these local scenarios:
+
+| Model          | Behavior                                                                                |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `local-reply`  | Returns a fixed reply.                                                                  |
+| `local-stream` | Streams a fixed reply incrementally.                                                    |
+| `local-tool`   | Calls the actual `history_search` tool, receives its result, and returns a final reply. |
+| `local-error`  | Returns a provider error with HTTP status `400`.                                        |
+| `local-stall`  | Stalls the stream for 30 seconds. As the owner, select **Stop** to cancel it.           |
+
+Account and chat data persist in `.cache/emulate/data` between runs. This directory is not automatically reset.
+The profile never opens the ordinary `data` directory or imports its saved provider credentials.
+Emulator state resets on restart. Press `Ctrl+C` to close Crumble and the emulator services owned by the command.
+
+If Emulate is unavailable or a request does not match a scenario, the operation fails visibly.
+Fallback to a live model provider is forbidden.
+
+This profile does not provide workspaces or emulate GitHub, Google Workspace, push notifications, payments, or other services.
+It is not a full network sandbox: integrations you enable manually can make external requests.
+
+Run emulator-backed verification separately:
+
+```bash
+bun run check:emulate
+```
+
+This command is local-only. It does not run in CI, default tests, or `bun run check`.
+Existing `fauxProvider` tests are retained. Normal `bun run dev` and `bun run start` behavior is unchanged.
+
 ## Running the Checks
 
 From the `bot` root:
@@ -48,11 +93,11 @@ bun run ui:add COMPONENT  # add a shadcn/ui component to apps/web
 hooks require the Bun version in `.bun-version`, which CI also uses. Skip them once with
 `--no-verify`:
 
-| Hook           | Runs                                                                                                                                                                                                                                                                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commit         | Generates and stages OpenAPI artifacts from staged sources, then runs the steering-file path check, lint, format check, and typecheck on the whole tree, and `fallow audit` on the changes since the last commit.                                                                       |
-| Commit message | Rejects a commit subject that isn't a Conventional Commit, such as `feat(web): add bot avatars`. Pull request titles get the same check in CI.                                                                                                                                          |
-| Push           | Runs the PR checks against the pushed commit and a freshly fetched `origin/main` (`bun install --frozen-lockfile`, `bun run check`, contract validation and compatibility, `fallow audit`, and `apps/docs` / `apps/site` when changed). Refuses dirty trees or un-checked-out branches. |
+| Hook           | Runs                                                                                                                                                                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commit         | Generates and stages OpenAPI artifacts from staged sources, then runs the steering-file path check, lint, format check, and typecheck on the whole tree.                                                                                                                |
+| Commit message | Rejects a commit subject that isn't a Conventional Commit, such as `feat(web): add bot avatars`. Pull request titles get the same check in CI.                                                                                                                          |
+| Push           | Runs the PR checks against the pushed commit and a freshly fetched `origin/main` (`bun install --frozen-lockfile`, `bun run check`, contract validation and compatibility, and `apps/docs` / `apps/site` when changed). Refuses dirty trees or un-checked-out branches. |
 
 Unit test jobs in CI must finish in two minutes or less.
 

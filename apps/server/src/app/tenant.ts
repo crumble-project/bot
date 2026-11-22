@@ -99,8 +99,10 @@ import { requestCallTools } from "../voice-gateway/request-call";
 import { eventPayloadTools } from "../automations/event-tools";
 import { usesDesktop } from "../contract/tools";
 import type { ServerSettings } from "./server-settings";
+import type { EmulateProfile } from "../providers/emulate-profile";
 
 export type TenantOptions = {
+  emulate?: EmulateProfile | undefined;
   dataDir: string;
   skillsDir?: string | undefined;
   oauthClient?: ClientDocument | undefined;
@@ -159,6 +161,9 @@ function accountLayer(options: TenantOptions, dataDir: string) {
         ...credentialInterception(run),
       };
 
+      if (options.emulate)
+        return BotWorkspaces.layer(Effect.succeed(undefined));
+
       return BotWorkspaces.layer(
         options.workspaces ??
           acquireWorkspaces(() =>
@@ -180,7 +185,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
       const installed = builtinPlugins({
         dataDir,
         secret: secretText(yield* Secrets),
-        env: process.env,
+        env: options.emulate ? {} : process.env,
         workspaces: yield* BotWorkspaces,
         questionGraceMs: () =>
           options.serverSettings().questionGraceMinutes * 60_000,
@@ -209,7 +214,11 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   const models = Layer.unwrap(
     Plugins.use((installed) =>
       Effect.succeed(
-        ProviderModels.layer(accountModels, pluginProviders(installed)),
+        ProviderModels.layer(
+          (credentials, contributions) =>
+            accountModels(credentials, contributions, options.emulate),
+          pluginProviders(installed),
+        ),
       ),
     ),
   );
@@ -286,7 +295,11 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const push = Layer.mergeAll(PushDelivery, attentionCleanup).pipe(
     Layer.provideMerge(Push.layerNoDeps),
-    Layer.provideMerge(PushTransports.layer),
+    Layer.provideMerge(
+      options.emulate
+        ? Layer.succeed(PushTransports, { apns: undefined, fcm: undefined })
+        : PushTransports.layer,
+    ),
     Layer.provideMerge(PushRepository.layerNoDeps),
   );
 
