@@ -24,6 +24,7 @@ import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
 import { replyEvent } from "./reply-event";
 import { replyReference } from "./push";
+import { pinnedConversations } from "./user-preferences";
 import {
   voiceCallCancelEvent,
   voiceCallEvent,
@@ -1024,6 +1025,26 @@ export const providerResponse = z
   })
   .openapi("Provider");
 
+const usageTotals = {
+  tokens: z.number(),
+  cost: z.number().openapi({
+    description:
+      "US dollars. Zero for providers that bill by subscription, such as Claude Code.",
+  }),
+};
+
+export const usageResponse = z
+  .object({
+    models: z.array(
+      z.object({ provider: z.string(), model: z.string(), ...usageTotals }),
+    ),
+    tools: z.array(z.object({ name: z.string(), ...usageTotals })).openapi({
+      description:
+        "Tools that call a model of their own, such as vision questions and intent checks.",
+    }),
+  })
+  .openapi("Usage");
+
 /** One object rather than a union, so generated clients keep the nullable prompt. */
 export const loginPrompt = z.object({
   id: z.string(),
@@ -1100,6 +1121,10 @@ export const modelResponse = z
     thinkingLevels: z.array(thinkingLevel).openapi({
       description:
         "The thinking levels this model takes, from lowest to highest. A bot's level outside them runs at the nearest one.",
+    }),
+    images: z.boolean().openapi({
+      description:
+        "Whether this model reads images. True when the provider's catalog lists no input types.",
     }),
   })
   .openapi("Model");
@@ -1228,6 +1253,13 @@ export const activityEvent = z
   .discriminatedUnion("type", [replyEvent, chatPreviewEvent])
   .openapi("ActivityEvent");
 
+export const pinsEvent = z
+  .object({ pinnedConversations })
+  .openapi("PinsEvent", {
+    description:
+      "The account's pinned conversations changed, sent as the `pins` event on /v1/events with the whole list, first pin first. Not replayed: read the session on connect.",
+  });
+
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
 
 export const eventSchemas: {
@@ -1251,6 +1283,11 @@ export const eventSchemas: {
     schema: learnedEvent,
     component: "LearnedEvent",
     artifact: "learned-event.schema.json",
+  },
+  {
+    schema: pinsEvent,
+    component: "PinsEvent",
+    artifact: "pins-event.schema.json",
   },
   { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
   {

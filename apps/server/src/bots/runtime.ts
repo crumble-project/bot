@@ -318,6 +318,9 @@ async function ensureModel(
 
 type ModelBlocks = ReturnType<typeof modelBlocks>;
 
+export const unreadableImages = (agent: Pick<Agent, "name" | "model">) =>
+  `${agent.name}'s model (${agent.model}) can't read images. Choose a model that accepts images in ${agent.name}'s profile, or set a vision model in Settings to describe images for it.`;
+
 // Catalogs that list no modalities are trusted; the provider reports anything it refuses. With a vision model set,
 // the vision extension describes images for a model that can't read them.
 function assertImageSupport(
@@ -331,9 +334,7 @@ function assertImageSupport(
     !readsImages(model) &&
     !vision
   )
-    throw new InvalidInput({
-      message: `${agent.model} can't read images. Choose a model that accepts images in the bot's profile, or set a vision model in Settings to describe images for it.`,
-    });
+    throw new InvalidInput({ message: unreadableImages(agent) });
 }
 
 function inputContent(text: string, blocks: ModelBlocks) {
@@ -433,6 +434,11 @@ export class AgentRuntime {
 
   async documents(agent: Agent) {
     return (await this.open(agent)).harness;
+  }
+
+  /** Every conversation's `pi.usage` in the bot's harness, summed: its chat, jobs, and any other conversation. */
+  async usage(agent: Agent) {
+    return (await this.open(agent)).harness.usage(BACKGROUND_CONTEXT);
   }
 
   private skillTools(agent: Agent) {

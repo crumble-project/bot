@@ -133,29 +133,29 @@ function InviteRow({ invite }: { invite: Invite }) {
 }
 
 /** Shows a new invite link once: the server keeps only its hash. */
-function NewInviteSheet({ onClose }: { onClose: () => void }) {
-  const create = useQuery({
-    // Outside ["admin"]: `invalidateAdmin` would POST again and mint an invite nobody sees.
-    queryKey: ["new-invite"],
-    queryFn: () => call<"createInvite">("/v1/admin/invites", "POST"),
-    staleTime: Infinity,
-    gcTime: 0,
-  });
-
+function NewInviteSheet({
+  url,
+  error,
+  onClose,
+}: {
+  url: string | undefined;
+  error: string | undefined;
+  onClose: () => void;
+}) {
   return (
     <EditorSheet
       title="Invite link"
       description="Anyone with this link can create one account. It's shown only now."
-      error={create.error?.message}
+      error={error}
       submitLabel="Done"
       submitDisabled={false}
       onSubmit={onClose}
       onClose={onClose}
     >
-      {create.data ? (
+      {url ? (
         <div className="flex items-center gap-2">
-          <Input readOnly value={create.data.url} className="font-mono" />
-          <CopyButton text={create.data.url} />
+          <Input readOnly value={url} className="font-mono" />
+          <CopyButton text={url} />
         </div>
       ) : (
         <Skeleton className="h-9 w-full" />
@@ -170,11 +170,23 @@ function Users() {
   const session = useSession();
   const [inviting, setInviting] = useState(false);
 
+  const createInvite = useMutation({
+    mutationFn: () => call<"createInvite">("/v1/admin/invites", "POST"),
+    onSuccess: invalidateAdmin,
+  });
+
   return (
     <Section
       title="Users"
       action={
-        <Button variant="outline" size="sm" onClick={() => setInviting(true)}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setInviting(true);
+            createInvite.mutate();
+          }}
+        >
           <IconUserPlus data-icon="inline-start" />
           Invite
         </Button>
@@ -196,9 +208,11 @@ function Users() {
       )}
       {inviting && (
         <NewInviteSheet
+          url={createInvite.data?.url}
+          error={createInvite.error?.message}
           onClose={() => {
             setInviting(false);
-            void invalidateAdmin();
+            createInvite.reset();
           }}
         />
       )}

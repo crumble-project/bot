@@ -104,7 +104,17 @@ that read images.
 | **Set**      | Gets the vision model's description of each image, including any visible text, and can ask it follow-up questions about an image. The transcript keeps the image. |
 
 The vision model describes each image once per conversation, and its tokens and
-cost count toward the conversation's usage. Bots whose model reads images never
-use it.
+cost count toward [usage](#usage). Bots whose model reads images never use it.
+
+## Usage
+
+To see what your bots have spent, open **Settings** > **Providers** and select
+**Usage**. It lists tokens and cost for each model, grouped by provider, with a
+total for each provider and for your account. **Tools** lists tools that call a
+model of their own, such as questions to the vision model and intent checks.
+
+Usage covers every bot's chat and jobs since each started. Deleting a bot
+removes its usage. Providers that bill by subscription, such as Claude Code,
+report no cost, so only their tokens show. Over the API, use `GET /v1/usage`.
 
 With a provider connected, [create your first bot](/getting-started/first-bot).

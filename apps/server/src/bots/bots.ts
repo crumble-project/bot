@@ -25,6 +25,7 @@ import type {
 } from "../transcript/transcript";
 import type { ReplyReference } from "../contract/push";
 import type { CallEventData } from "../transcript/entries";
+import type { usageSummary } from "./usage-summary";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -47,7 +48,17 @@ export type LearnedActivity = {
   createdAt: string;
 };
 
-export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
+/** The account's pinned conversations changed; the whole list, first pin first. */
+export type PinsActivity = {
+  type: "pins";
+  pinnedConversations: string[];
+};
+
+export type Activity =
+  | ReplyActivity
+  | ChatPreviewActivity
+  | LearnedActivity
+  | PinsActivity;
 
 type ReferencedMessage = TranscriptMessage & {
   replyReferences: ReplyReference[];
@@ -90,6 +101,8 @@ export class Bots extends Context.Service<
     readonly agentPreviews: Effect.Effect<
       { agent: Agent; lastMessage: string }[]
     >;
+    /** Tokens and cost of every model and tool across all of the account's bots, since each bot's first conversation. */
+    readonly usage: Effect.Effect<ReturnType<typeof usageSummary>, AppError>;
     /**
      * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
      * Job reports reach the chat without an execution, so a finished execution never announces them.
@@ -98,7 +111,7 @@ export class Bots extends Context.Service<
       answer: JobAnswer,
     ) => Effect.Effect<void, AppError>;
     readonly announce: (
-      event: ReplyActivity | LearnedActivity,
+      event: ReplyActivity | LearnedActivity | PinsActivity,
     ) => Effect.Effect<void>;
     readonly snapshot: (
       conversationId: string,

@@ -10,7 +10,7 @@ export type StreamSetup = {
 };
 
 /** Browsers show a response only once a body chunk arrives. */
-export const sendHeartbeat = (stream: SSEStreamingApi) =>
+const sendHeartbeat = (stream: SSEStreamingApi) =>
   stream.writeSSE({ event: "heartbeat", data: "{}" });
 
 export const snapshotSender =
@@ -28,13 +28,26 @@ export const streamEvents = (
   setup: (options: StreamSetup) => Promise<void>,
 ) =>
   streamSSE(c, async (stream) => {
+    let closed = false;
+    let wrote = false;
     let finish!: () => void;
 
     const finished = new Promise<void>((resolve) => {
-      finish = resolve;
+      finish = () => {
+        closed = true;
+        resolve();
+      };
     });
 
     stream.onAbort(finish);
+
+    const writeSSE = stream.writeSSE.bind(stream);
+
+    stream.writeSSE = (message) => {
+      wrote = true;
+
+      return writeSSE(message);
+    };
 
     const cleanups: StreamCleanup[] = [];
 
@@ -44,6 +57,8 @@ export const streamEvents = (
 
     try {
       await setup({ stream, close: finish, onClose: (c) => cleanups.push(c) });
+
+      if (!wrote && !closed && !stream.aborted) await sendHeartbeat(stream);
     } catch (error) {
       await clean();
       throw error;

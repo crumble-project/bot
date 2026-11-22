@@ -337,11 +337,7 @@ function AutomationName({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <BotAvatar
-        bot={bot}
-        size={28}
-        state={schedule.enabled ? "idle" : "sleeping"}
-      />
+      <BotAvatar bot={bot} size={28} />
       <div className="flex min-w-0 flex-col">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-medium">{schedule.name}</span>

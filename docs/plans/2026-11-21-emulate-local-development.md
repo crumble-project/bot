@@ -135,7 +135,8 @@ Faux replacement, CI policy changes, other service emulators, real model inferen
 
 ## Verification results
 
-- Root `bun run check`: passed; 1,302 tests passed, 118 skipped, no failures (test phase 15.41 seconds locally).
+- Initial root `bun run check`: passed; 1,302 tests passed, 118 skipped, no failures (test phase 15.41 seconds locally).
+- After integrating current `main`: root `bun run check` passed with 1,332 tests passed, 118 skipped, and no failures (15.86 seconds locally). The local Emulate smoke command and docs checks also passed again.
 - `bun run check:emulate`: passed; real Pi transport, eight partial snapshots, actual local tool execution, provider error, stream abort confirmed as `client_aborted`, strict rejection, no fallback, restored transcript on a new emulator endpoint, and occupied-listener preservation.
 - `apps/docs` `bun run check`: passed; no doctor or link-validation problems.
 - Tool formatting and Git whitespace checks: passed.

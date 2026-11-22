@@ -120,6 +120,8 @@ export type TenantRuntime = {
   workspaces: Workspaces | undefined;
   /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
   removeWorkspaces: () => Promise<void>;
+  /** Tells the account's open /v1/events streams that its pinned conversations changed. */
+  announcePins: (pins: string[]) => void;
   close: () => Promise<void>;
 };
 
@@ -444,6 +446,8 @@ export async function createTenant(
           workspaces,
           removeWorkspaces: () =>
             account.runPromise(removeAccountWorkspaces(workspaces)),
+          announcePins: (pins) =>
+            service.announce({ type: "pins", pinnedConversations: pins }),
           close: () => account.dispose(),
         };
       }),

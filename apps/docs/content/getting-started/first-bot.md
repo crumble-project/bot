@@ -31,9 +31,15 @@ JSON response into **Import**. The copied prompt includes your description.
 Crumble doesn't call a model from the avatar editor. A bot can also suggest its
 own definition in chat for you to import.
 
-The `/avatars` page previews idle, working, and sleeping states. Select a bot
-and click **Save avatar to bot** to apply your choice. Sleeping avatars use a
-dimmed still image. Live avatars respect your system's reduced-motion setting.
+The `/avatars` page previews the idle, thinking, working, waiting, blocked,
+and done states. Select a bot and click **Save avatar to bot** to apply your
+choice. Live avatars respect your system's reduced-motion setting.
+
+An avatar shows what its bot is doing. While the bot thinks, its body turns
+into three hopping dots. While it writes, searches, remembers, or uses tools, it
+bends over the work. When it retries, it shows an exclamation mark. When a reply
+finishes, it celebrates for a few seconds. In a group chat, a bot that answers
+next waits its turn.
 
 Bots without a saved definition get a fresh gallery avatar with default colors.
 The bot ID selects the shape; previous avatar shapes and colors don't affect it.

@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { activityEvent } from "@crumble/server/contract/api-responses";
+import {
+  activityEvent,
+  pinsEvent,
+} from "@crumble/server/contract/api-responses";
+import { authClient } from "@/lib/auth-client";
 import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
 import { groupChatQuery, invalidateGroups } from "@/features/group-chats/api";
 import { chatQuery } from "@/features/chat/api";
@@ -64,13 +68,22 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
     {
       onStatus: report,
       onOpen: () => {
-        // Bots and groups may have changed while the stream was down.
+        // Bots, groups, and pins may have changed while the stream was down.
         if (connections++ > 0) {
           void invalidateBots();
           void invalidateGroups();
+          authClient.$store.notify("$sessionSignal");
         }
       },
       onEvent: (name, data) => {
+        if (name === "pins") {
+          // Checked against the contract, but the session is what the sidebar reads.
+          pinsEvent.parse(JSON.parse(data));
+          authClient.$store.notify("$sessionSignal");
+
+          return;
+        }
+
         if (name !== "activity") return;
 
         const event = activityEvent.parse(JSON.parse(data));

@@ -985,10 +985,11 @@ export const routes = {
     "x-sse-events": {
       activity: { $ref: "#/components/schemas/ActivityEvent" },
       learned: { $ref: "#/components/schemas/LearnedEvent" },
+      pins: { $ref: "#/components/schemas/PinsEvent" },
       heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
     },
     description:
-      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Current chat previews replay on connection; finished replies and learned events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Current chat previews replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
     responses: {
       200: {
         description: "SSE stream, not a JSON array",
@@ -1578,6 +1579,14 @@ export const routes = {
     path: "/v1/providers",
     operationId: "listProviders",
     responses: { 200: json(z.array(response.providerResponse)) },
+  }),
+  usage: define({
+    method: "get",
+    path: "/v1/usage",
+    operationId: "getUsage",
+    description:
+      "Tokens and cost of each model and tool across all of the account's bots: their chats, jobs, and other conversations, since each started. Most tokens first. A deleted bot's usage is gone with it.",
+    responses: { 200: json(response.usageResponse) },
   }),
   previewReasoning: define({
     method: "post",

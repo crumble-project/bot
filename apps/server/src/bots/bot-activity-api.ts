@@ -1,24 +1,35 @@
 import type { SSEStreamingApi } from "hono/streaming";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { sendHeartbeat, streamEvents } from "../shared/event-stream";
+import { streamEvents } from "../shared/event-stream";
 import { canonicalReplyEvent } from "../contract/reply-event";
 import type { Activity, BotsAccess } from "./bots";
+
+/** The SSE event an activity is sent as, and its data. Learned and pins events are their own event names. */
+function activityFrame(data: Activity, serverId: string) {
+  switch (data.type) {
+    case "reply":
+      return { event: "activity", data: canonicalReplyEvent(data, serverId) };
+    case "learned":
+      return { event: "learned", data };
+    case "pins":
+      return {
+        event: "pins",
+        data: { pinnedConversations: data.pinnedConversations },
+      };
+    case "chat-preview":
+      return { event: "activity", data };
+  }
+}
 
 /** Writes one activity as the event the clients expect, canonicalized so replies match the push payload. */
 const activitySender =
   (serverId: string, stream: SSEStreamingApi, close: () => void) =>
-  (data: Activity) => {
-    const canonical =
-      data.type === "reply" ? canonicalReplyEvent(data, serverId) : data;
+  (activity: Activity) => {
+    const { event, data } = activityFrame(activity, serverId);
 
     if (!stream.aborted)
-      stream
-        .writeSSE({
-          event: data.type === "learned" ? "learned" : "activity",
-          data: JSON.stringify(canonical),
-        })
-        .catch(close);
+      stream.writeSSE({ event, data: JSON.stringify(data) }).catch(close);
   };
 
 export function registerBotActivityRoutes(options: {
@@ -34,9 +45,6 @@ export function registerBotActivityRoutes(options: {
       const send = activitySender(serverId, stream, close);
 
       onClose(service.onActivity(send));
-
-      // Without bots to preview, the first activity could take 15 seconds to arrive.
-      await sendHeartbeat(stream);
 
       // Replay current previews on every connection so a sidebar can recover missed events.
       for (const { agent, lastMessage } of await service.agentPreviews())

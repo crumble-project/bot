@@ -19,7 +19,7 @@ import { useChatJobs } from "@/features/jobs/chat-jobs";
 import { send } from "@/lib/api";
 import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
 import { LiveBotAvatar } from "./avatar";
-import { workingLabel, useWorking } from "./working";
+import { isBusy, workingAvatar, workingLabel, useWorking } from "./working";
 import {
   type Conversation,
   ConversationEmpty,
@@ -32,6 +32,7 @@ import {
 } from "@/features/chat/conversation";
 import type { ConversationTarget } from "@/features/chat/conversation-target";
 import { DetailsPanel, DetailsSheet } from "./details";
+import { ImageWarning } from "./image-warning";
 import { JobPanel } from "@/features/jobs/jobs";
 import { CallPanel } from "@/features/call-requests/call-panel";
 import { CallNotice } from "@/features/call-requests/call-request-card";
@@ -279,7 +280,12 @@ function WorkingStatus({ bot }: { bot: Bot }) {
 
   return (
     <div className="flex items-center gap-2.5">
-      <BotAvatar bot={bot} size={32} live state="working" />
+      <BotAvatar
+        bot={bot}
+        size={32}
+        live
+        state={isBusy(activity) ? workingAvatar(activity) : "working"}
+      />
       <span className="animate-pulse text-sm text-muted-foreground">
         {workingLabel[activity]}…
       </span>
@@ -322,6 +328,7 @@ function ChatComposer({
         onCancelReply={() => setReplyTo(null)}
         mentionable={mentionableBots(bot, bots)}
         actions={<BotReasoning bot={bot} />}
+        notice={(uploads) => <ImageWarning bot={bot} uploads={uploads} />}
         onSend={(content, uploads) => sendMessage(content, uploads)}
         onStop={onStop}
       />
