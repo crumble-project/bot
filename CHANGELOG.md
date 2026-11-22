@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove Fallow from development dependencies, Git hooks, and CI. Lint, formatting, type checks, tests, and documentation checks remain in place.
 - Add `bun run dev:emulate` for credential-free local bot chat with scripted replies, streaming, tool calls, errors, and cancellation. Run emulator-backed verification separately with the local-only `bun run check:emulate` command.
 - Bot avatars show what their bot is doing, using `open-bot-avatar` 0.3.0: three hopping dots while it thinks, bent over the work while it writes, searches, remembers, or uses tools, an exclamation mark while it retries, a short celebration when a reply finishes, and waiting in a group chat while it answers next. Live avatars ease from one state to the next instead of restarting. The `/avatars` page previews every state. Paused bots and disabled automations no longer show a dimmed, still avatar.
 - **Settings** > **Providers** has a **Usage** tab: tokens and cost for each model across all of the account's bots, grouped by provider, and for tools that call a model of their own, with totals. `GET /v1/usage` returns the same figures. Job panes now include tool costs, such as intent checks, in their cost.

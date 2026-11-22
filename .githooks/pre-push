@@ -33,8 +33,6 @@ base=$(git rev-parse origin/main)
 
 bun run check
 
-bunx fallow audit --base "$base"
-
 changed=$(git diff --name-only "$base" HEAD)
 if printf '%s\n' "$changed" | grep -q '^apps/docs/'; then
   (cd apps/docs && bun install --frozen-lockfile && bun --bun run check && bun --bun run build)

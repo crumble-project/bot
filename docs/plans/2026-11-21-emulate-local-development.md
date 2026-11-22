@@ -131,7 +131,7 @@ Faux replacement, CI policy changes, other service emulators, real model inferen
 - Task 3 · verified signup, provider selection, streaming, tool reply, provider error, Stop, fixed reply, and persistence across watcher reload in an isolated headless Helium profile. UI interactions and same-origin API submissions used only the generated local account. A screenshot is kept under ignored `.cache/emulate/`.
 - Task 4 · failed executions produce an idle chat snapshot with `error`, not a snapshot whose status is `failed`. The smoke command correlates execution status by request ID and separately checks the transcript/error. It also confirms the stalled HTTP stream records `client_aborted`.
 - Task 4 · additional temporary local lifecycle checks verified preserved occupied listeners, failed-start cleanup, idempotent close, closed listeners, and an actionable missing-Node error.
-- Shipping checks · registered the two subprocess entry points in `.fallowrc.json`, since they are launched by path rather than imported. No analysis rule was disabled.
+- Follow-up · removed Fallow's repository integration at the owner's request. The canceled metric-only refactors were not retained; other checks remain unchanged.
 
 ## Verification results
 
@@ -140,7 +140,6 @@ Faux replacement, CI policy changes, other service emulators, real model inferen
 - `bun run check:emulate`: passed; real Pi transport, eight partial snapshots, actual local tool execution, provider error, stream abort confirmed as `client_aborted`, strict rejection, no fallback, restored transcript on a new emulator endpoint, and occupied-listener preservation.
 - `apps/docs` `bun run check`: passed; no doctor or link-validation problems.
 - Tool formatting and Git whitespace checks: passed.
-- Fallow audit: passed after registering subprocess entries; warnings remain for development-tool dependency classification and complexity.
 - Isolated browser walkthrough: passed; no live provider credentials used. Watcher reload retained the account and transcript. SIGINT exited the development supervisor with code zero and both listeners were confirmed closed.
 - Fresh-context review: the single data-directory containment defect was fixed and verified in a follow-up review. No remaining concrete findings were reported. CI itself was not run or changed.
 

@@ -93,11 +93,11 @@ bun run ui:add COMPONENT  # add a shadcn/ui component to apps/web
 hooks require the Bun version in `.bun-version`, which CI also uses. Skip them once with
 `--no-verify`:
 
-| Hook           | Runs                                                                                                                                                                                                                                                                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commit         | Generates and stages OpenAPI artifacts from staged sources, then runs the steering-file path check, lint, format check, and typecheck on the whole tree, and `fallow audit` on the changes since the last commit.                                                                       |
-| Commit message | Rejects a commit subject that isn't a Conventional Commit, such as `feat(web): add bot avatars`. Pull request titles get the same check in CI.                                                                                                                                          |
-| Push           | Runs the PR checks against the pushed commit and a freshly fetched `origin/main` (`bun install --frozen-lockfile`, `bun run check`, contract validation and compatibility, `fallow audit`, and `apps/docs` / `apps/site` when changed). Refuses dirty trees or un-checked-out branches. |
+| Hook           | Runs                                                                                                                                                                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commit         | Generates and stages OpenAPI artifacts from staged sources, then runs the steering-file path check, lint, format check, and typecheck on the whole tree.                                                                                                                |
+| Commit message | Rejects a commit subject that isn't a Conventional Commit, such as `feat(web): add bot avatars`. Pull request titles get the same check in CI.                                                                                                                          |
+| Push           | Runs the PR checks against the pushed commit and a freshly fetched `origin/main` (`bun install --frozen-lockfile`, `bun run check`, contract validation and compatibility, and `apps/docs` / `apps/site` when changed). Refuses dirty trees or un-checked-out branches. |
 
 Unit test jobs in CI must finish in two minutes or less.
 

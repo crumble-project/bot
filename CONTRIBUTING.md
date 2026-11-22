@@ -163,9 +163,9 @@ The `commit-msg` hook checks each commit, and the PR title workflow checks pull 
 
 `bun install` configures Git to use [`.githooks/`](.githooks). Skip a hook once with `--no-verify`.
 
-- **`pre-commit`:** checks the Bun version, runs `agents:check`, `lint`, `format:check`, and `typecheck` on the whole tree, and runs `fallow audit` on changes since `HEAD`.
+- **`pre-commit`:** checks the Bun version, runs `agents:check`, `lint`, `format:check`, and `typecheck` on the whole tree.
 - **`commit-msg`:** rejects a commit whose subject isn't a Conventional Commit. Merge, revert, `fixup!`, `squash!`, and `amend!` commits that Git writes are allowed.
-- **`pre-push`:** refuses the push if the working tree has uncommitted or untracked files, or if the pushed branch isn't checked out. It then runs the full PR suite against `origin/main`: `bun install --frozen-lockfile`, `bun run check`, `fallow audit`, and `apps/docs` / `apps/site` builds when those directories changed.
+- **`pre-push`:** refuses the push if the working tree has uncommitted or untracked files, or if the pushed branch isn't checked out. It then runs the full PR suite against `origin/main`: `bun install --frozen-lockfile`, `bun run check`, and `apps/docs` / `apps/site` builds when those directories changed.
 
 ## Database migrations
 
