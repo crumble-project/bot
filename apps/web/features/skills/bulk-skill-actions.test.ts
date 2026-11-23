@@ -14,6 +14,7 @@ const bot = (id: string, name = id): Bot => ({
   provider: "openai",
   model: "test",
   enabled: true,
+  status: "idle",
   tools: [],
   skills: [],
   mcpServers: [],

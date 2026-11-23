@@ -39,6 +39,7 @@ export type JobKindContribution = {
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
   onQuestion?: (listener: (asked: JobAsked) => Promise<void>) => () => void;
   onFinished?: (listener: (finished: JobFinished) => void) => () => void;
+  onChange?: (listener: (agentId: string) => void) => () => void;
 };
 
 export type WorkspaceBackend = (

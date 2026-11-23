@@ -42,7 +42,22 @@ export function registerBotActivityRoutes(options: {
     streamEvents(c, async ({ stream, close, onClose }) => {
       const send = activitySender(serverId, stream, close);
 
+      const sentStatuses = new Map<string, string>();
+
+      const sendStatus = (event: { agentId: string; status: string }) => {
+        if (
+          sentStatuses.get(event.agentId) !== event.status &&
+          !stream.aborted
+        ) {
+          sentStatuses.set(event.agentId, event.status);
+          stream
+            .writeSSE({ event: "bot-status", data: JSON.stringify(event) })
+            .catch(close);
+        }
+      };
+
       onClose(service.onActivity(send));
+      onClose(service.onBotStatus(sendStatus));
 
       for (const { agent, lastMessage } of await service.agentPreviews()) {
         send({
@@ -52,6 +67,8 @@ export function registerBotActivityRoutes(options: {
           lastMessage,
         });
       }
+
+      await service.requestStatuses();
     }),
   );
 }

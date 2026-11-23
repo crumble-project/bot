@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { Bots } from "./bots";
 import { botsAdmission } from "./bots-admission";
 import { botsAnnouncements } from "./bots-announcements";
@@ -8,12 +9,14 @@ import { botsLookup } from "./bots-lookup";
 import { botsNotifications } from "./bots-notifications";
 import { botsMonitor } from "./bots-outcomes";
 import { botsReads } from "./bots-reads";
+import { botsStatus } from "./bots-status";
 import { botsSubmissions } from "./bots-submissions";
 
 export const botsService = (context: BotsContext): Bots["Service"] => {
   const lookup = botsLookup(context);
-  const notifications = botsNotifications(context);
   const reads = botsReads(context, lookup);
+  const status = botsStatus(context, { snapshot: reads.snapshot });
+  const notifications = botsNotifications(context, status);
 
   const announcements = botsAnnouncements(context, {
     notifications,
@@ -57,7 +60,19 @@ export const botsService = (context: BotsContext): Bots["Service"] => {
     onActivity: notifications.onActivity,
     changed: notifications.changed,
     onSettled: notifications.onSettled,
-    agentPreviews: reads.agentPreviews,
+    onBotStatus: status.onBotStatus,
+    requestStatuses: status.requestStatuses,
+    agentPreviews: Effect.gen(function* () {
+      return yield* Effect.forEach(
+        yield* reads.agentPreviews,
+        (preview) =>
+          Effect.map(status.statusOf(preview.agent.id), (current) => ({
+            ...preview,
+            status: current,
+          })),
+        { concurrency: "unbounded" },
+      );
+    }),
     usage: reads.usage,
     announceJobAnswer: notifications.announceJobAnswer,
     announce: notifications.emit,

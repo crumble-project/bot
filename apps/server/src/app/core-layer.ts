@@ -4,6 +4,7 @@ import { PushDatabase } from "../push/push-database";
 import { DesktopControl } from "../bot-desktop/desktop-control";
 import { HeldActions } from "../bot-desktop/held-actions";
 import { BotDeletion } from "../bot-ports/bot-deletion";
+import { BotNeeds } from "../bot-ports/bot-needs";
 import { BotNotices } from "../bot-ports/bot-notices";
 import { CallNotes } from "../bot-ports/call-notes";
 import { CredentialAuthorities } from "../credentials/credential-authority";
@@ -53,7 +54,12 @@ export const coreLayer = (dataDir: string) =>
       Layer.mergeAll(BotSecretRequests.layer, BotSecretUses.layer),
     ),
     Layer.provideMerge(
-      Layer.mergeAll(BotNotices.layer, BotDeletion.layer, CallNotes.layer),
+      Layer.mergeAll(
+        BotNotices.layer,
+        BotDeletion.layer,
+        CallNotes.layer,
+        BotNeeds.layer,
+      ),
     ),
     Layer.provideMerge(secretsLayer(passwordManagers)),
     Layer.provideMerge(PushDatabase.layer(dataDir)),

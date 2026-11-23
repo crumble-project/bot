@@ -1,3 +1,4 @@
+import { BOT_STATUSES } from "./bot-status";
 import { z } from "@hono/zod-openapi";
 import {
   PASSWORD_MANAGER_IDS,
@@ -152,8 +153,13 @@ export const agentResponse = z
   })
   .openapi("Agent");
 
+const botStatus = z.enum(BOT_STATUSES).openapi({
+  description:
+    "What the bot is doing, or what it needs from the owner. blocked: a bot, call, credential, or login request or a held action waits for the owner. question: a job question or a chat question waits for the owner's answer. failed: the latest turn failed. The first that applies, in this order: blocked, question, failed, thinking, working, idle. Clients may receive other values later.",
+});
+
 export const agentPreviewResponse = agentResponse
-  .extend({ lastMessage: z.string().optional() })
+  .extend({ lastMessage: z.string().optional(), status: botStatus })
   .openapi("AgentPreview");
 
 const conversation = z
@@ -1157,6 +1163,13 @@ export const chatPreviewEvent = z
   })
   .openapi("ChatPreviewEvent");
 
+export const botStatusEvent = z
+  .object({ agentId: z.string(), status: botStatus })
+  .openapi("BotStatusEvent", {
+    description:
+      "A bot's status changed, sent as the `bot-status` event on /v1/events. Every bot's status is sent on connect.",
+  });
+
 export const learnedEvent = z
   .object({
     type: z.literal("learned"),
@@ -1217,6 +1230,11 @@ export const eventSchemas: Array<{
     schema: pinsEvent,
     component: "PinsEvent",
     artifact: "pins-event.schema.json",
+  },
+  {
+    schema: botStatusEvent,
+    component: "BotStatusEvent",
+    artifact: "bot-status-event.schema.json",
   },
   { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
   { schema: desktopControlResponse, artifact: "desktop-control.schema.json" },

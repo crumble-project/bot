@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { Context, Deferred, Effect, Layer } from "effect";
 import { z } from "zod";
 import type { OwnerMessage } from "../jobs/owner-request";
+import { BotNeeds, needWhen } from "../bot-ports/bot-needs";
 import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { HELD_ACTION_STATUSES, OWNER_MESSAGE_SOURCES } from "../shared/domain";
@@ -109,6 +110,7 @@ export class HeldActions extends Context.Service<
     HeldActions,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
+      const needs = yield* BotNeeds;
       const listeners = keyedListeners<HoldDecision>();
 
       const heldListeners = new Set<
@@ -131,6 +133,25 @@ export class HeldActions extends Context.Service<
         return found;
       });
 
+      yield* needs.provide(
+        needWhen("blocked", (agentId) =>
+          db
+            .select({ id: heldActions.id })
+            .from(heldActions)
+            .where(
+              and(
+                eq(heldActions.agentId, agentId),
+                eq(heldActions.status, "pending"),
+              ),
+            )
+            .limit(1)
+            .pipe(
+              Effect.orDie,
+              Effect.map((rows) => rows.length > 0),
+            ),
+        ),
+      );
+
       const hold = Effect.fn("HeldActions.hold")(function* (input: HoldInput) {
         const values = {
           ...input,
@@ -143,6 +164,7 @@ export class HeldActions extends Context.Service<
         };
 
         yield* db.insert(heldActions).values(values).pipe(Effect.orDie);
+        yield* needs.changed(input.agentId);
 
         return heldOf(values);
       });
@@ -186,6 +208,7 @@ export class HeldActions extends Context.Service<
 
         if (decided) {
           listeners.notify(id, decision);
+          yield* needs.changed(agentId);
 
           return heldOf(decided);
         }
@@ -204,11 +227,14 @@ export class HeldActions extends Context.Service<
           .update(heldActions)
           .set({ status: "expired", decidedAt: yield* nowIso })
           .where(and(eq(heldActions.id, id), eq(heldActions.status, "pending")))
-          .returning({ id: heldActions.id })
+          .returning({ id: heldActions.id, agentId: heldActions.agentId })
           .pipe(Effect.orDie);
 
-        if (changed.length) {
+        const [expired] = changed;
+
+        if (expired) {
           listeners.notify(id, { status: "expired" });
+          yield* needs.changed(expired.agentId);
         }
       });
 
