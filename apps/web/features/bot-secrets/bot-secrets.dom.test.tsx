@@ -1,3 +1,4 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -12,8 +13,8 @@ import type { Credentials } from "@/features/credentials/api";
 import type { Logins } from "@/features/logins/api";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { credentialSaveInput } from "@crumble/server/contract/secrets";
+import { requestPath } from "@/test/request-path";
 
 const GLOBALS = [
   "window",
@@ -32,7 +33,12 @@ const GLOBALS = [
   "cancelAnimationFrame",
 ];
 
-const bodies: unknown[] = [];
+const bodies: Array<unknown> = [];
+
+const passwordManagerTab = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (each) => each.textContent === "1Password",
+  );
 
 const github = {
   name: "github",
@@ -73,7 +79,8 @@ const moreAcmeHosts = {
   requestedAt: "2026-10-30T11:00:00.000Z",
 } satisfies Credentials["requests"][number];
 
-let passwordManagers: { id: string; name: string; connected: boolean }[] = [];
+let passwordManagers: Array<{ id: string; name: string; connected: boolean }> =
+  [];
 
 async function render(
   listings: {
@@ -81,7 +88,7 @@ async function render(
     "/v1/agents/bot/credentials"?: Credentials;
   },
   ui: () => Promise<ReactNode>,
-  check: (container: HTMLElement, sent: string[]) => Promise<void>,
+  check: (container: HTMLElement, sent: Array<string>) => Promise<void>,
 ) {
   const window = new Window({ url: "http://localhost" });
   const globals = Object.getOwnPropertyDescriptors(globalThis);
@@ -121,34 +128,36 @@ async function render(
     },
   });
 
-  const sent: string[] = [];
+  const sent: Array<string> = [];
   bodies.length = 0;
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
         const method = init?.method ?? "GET";
 
         if (method !== "GET") {
-          if (init?.body) bodies.push(await new Response(init.body).json());
+          if (init?.body) {
+            bodies.push(await new Response(init.body).json());
+          }
           sent.push(`${method} ${path}`);
 
           return new Response(null, { status: 204 });
         }
 
         const answers = new Map<string, unknown>([
+          ["/v1/agents", [agentFixture({ id: "bot", name: "Bot" })]],
           [
-            "/v1/agents",
-            [
-              {
-                id: "bot",
-                name: "Bot",
-                avatar: defaultAvatarDefinition("bot"),
-              },
-            ],
+            "/v1/password-managers",
+            {
+              passwordManagers: passwordManagers.map((manager) => ({
+                connectedAt: "2026-01-01",
+                usedBy: [],
+                ...manager,
+              })),
+            },
           ],
-          ["/v1/password-managers", { passwordManagers }],
           ...Object.entries(listings),
         ]);
 
@@ -182,8 +191,11 @@ async function render(
     fetch.mockRestore();
 
     for (const key of GLOBALS) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -196,16 +208,23 @@ async function render(
 const shows = (container: HTMLElement, text: string) => () =>
   container.textContent?.includes(text) === true;
 
-async function declineFirstRequest(container: HTMLElement, sent: string[]) {
+async function declineFirstRequest(
+  container: HTMLElement,
+  sent: Array<string>,
+) {
   await waitFor(shows(container, "asks for"));
 
   let row: Element | null | undefined = [
     ...container.querySelectorAll("span"),
   ].find((span) => span.textContent === "asks for");
 
-  while (row && !row.querySelector('[title="More"]')) row = row.parentElement;
+  while (row && !row.querySelector('[title="More"]')) {
+    row = row.parentElement;
+  }
 
-  if (!row) throw new Error("Expected a waiting request row");
+  if (!row) {
+    throw new Error("Expected a waiting request row");
+  }
   const requestRow = row;
 
   await act(async () => {
@@ -220,7 +239,9 @@ async function declineFirstRequest(container: HTMLElement, sent: string[]) {
     ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
   ].find((item) => item.textContent?.includes("Decline"));
 
-  if (!decline) throw new Error("Expected a Decline menu item");
+  if (!decline) {
+    throw new Error("Expected a Decline menu item");
+  }
   await act(async () => {
     decline.click();
   });
@@ -417,14 +438,12 @@ test("a requested credential from chat can be read from a password manager", asy
     async (container, sent) => {
       await addRequestedCredential(container);
 
-      const tab = () =>
-        [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-          (each) => each.textContent === "1Password",
-        );
-
-      await waitFor(() => tab() !== undefined, "the 1Password tab");
+      await waitFor(
+        () => passwordManagerTab() !== undefined,
+        "the 1Password tab",
+      );
       await act(async () => {
-        tab()!.dispatchEvent(
+        passwordManagerTab()!.dispatchEvent(
           new window.MouseEvent("click", { bubbles: true, cancelable: true }),
         );
       });

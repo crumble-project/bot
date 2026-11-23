@@ -20,10 +20,14 @@ const count = (value: number, unit: string) =>
 function lasted(ms: number) {
   const minutes = Math.floor(ms / 60_000);
 
-  if (minutes < 1) return "less than a minute";
+  if (minutes < 1) {
+    return "less than a minute";
+  }
   const hours = Math.floor(minutes / 60);
 
-  if (!hours) return count(minutes, "minute");
+  if (!hours) {
+    return count(minutes, "minute");
+  }
 
   return minutes % 60
     ? `${count(hours, "hour")} ${count(minutes % 60, "minute")}`

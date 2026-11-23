@@ -2,17 +2,21 @@ import type { z } from "zod";
 import { asc, eq, isNull, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
-import {
-  SKILL_STATES,
-  type Skill,
-  type SkillInput,
-  type SkillOrigin,
-  type skillDocumentInput,
+import { SKILL_STATES } from "../contract/skills";
+import type {
+  Skill,
+  SkillInput,
+  SkillOrigin,
+  skillDocumentInput,
 } from "../contract/skills";
-import { type ChangeBy } from "../shared/domain";
+import type { ChangeBy } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
+import {
+  LearnedChangeRepository,
+  skillOriginSchema,
+} from "../learned-changes/learned-change-repository";
 import { AgentSkills } from "../bot-store/agent-skills";
 import { skillDocuments, skills } from "./schema";
 
@@ -37,8 +41,8 @@ export type SkillPatch = Partial<
   >
 >;
 
-// SAFETY: the column only holds origins this repository wrote.
-const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
+/** The origin a GitHub-installed skill's `origin` column holds. */
+const originOf = (json: string) => skillOriginSchema.parse(JSON.parse(json));
 
 const isSkillState = (state: string): state is Skill["state"] =>
   SKILL_STATES.some((known) => known === state);
@@ -60,7 +64,7 @@ export class SkillRepository extends Context.Service<
   SkillRepository,
   {
     /** One bot's skills, or the shared ones for `null`, oldest first. */
-    readonly list: (agentId?: string | null) => Effect.Effect<Skill[]>;
+    readonly list: (agentId?: string | null) => Effect.Effect<Array<Skill>>;
     readonly get: (skillId: string) => Effect.Effect<Skill | null>;
     readonly create: (
       input: NewSkill,
@@ -82,7 +86,7 @@ export class SkillRepository extends Context.Service<
     readonly discard: (skillId: string) => Effect.Effect<void>;
     /** Loading a skill counts as using it, and brings a stale skill back to active. */
     readonly recordUse: (skillId: string) => Effect.Effect<void>;
-    readonly listBotCreated: Effect.Effect<Skill[]>;
+    readonly listBotCreated: Effect.Effect<Array<Skill>>;
     /** A bot's inline `skills` write: matched by name, so a kept skill keeps its documents, provenance, and usage. */
     readonly replaceAgentSkills: (
       agentId: string,
@@ -159,7 +163,7 @@ export class SkillRepository extends Context.Service<
           .delete(skillDocuments)
           .where(eq(skillDocuments.skillId, skillId));
 
-        if (documents.length)
+        if (documents.length) {
           yield* db.insert(skillDocuments).values(
             documents.map((document) => ({
               skillId,
@@ -167,6 +171,7 @@ export class SkillRepository extends Context.Service<
               content: document.content,
             })),
           );
+        }
       });
 
       const create = Effect.fn("SkillRepository.create")(function* (
@@ -197,7 +202,7 @@ export class SkillRepository extends Context.Service<
           }),
         );
 
-        const skill = (yield* get(skillId))!;
+        const skill = required(yield* get(skillId), "The skill was not stored");
         yield* changes.record(
           by,
           "skill",
@@ -217,7 +222,9 @@ export class SkillRepository extends Context.Service<
       ) {
         const old = yield* get(skillId);
 
-        if (!old) return null;
+        if (!old) {
+          return null;
+        }
         const next = { ...old, ...patch };
         const at = yield* nowIso;
 
@@ -228,12 +235,13 @@ export class SkillRepository extends Context.Service<
               .set({ ...contentColumns(next), updatedAt: at })
               .where(eq(skills.id, skillId));
 
-            if (patch.documents)
+            if (patch.documents) {
               yield* writeDocuments(skillId, patch.documents);
+            }
           }),
         );
 
-        const skill = (yield* get(skillId))!;
+        const skill = required(yield* get(skillId), "The skill was not stored");
         yield* changes.record(by, "skill", old.agentId, old.id, old, skill);
 
         return skill;
@@ -251,7 +259,9 @@ export class SkillRepository extends Context.Service<
       ) {
         const old = yield* get(skillId);
 
-        if (!old) return false;
+        if (!old) {
+          return false;
+        }
         yield* discard(skillId);
         yield* changes.record(by, "skill", old.agentId, old.id, old, null);
 
@@ -319,9 +329,10 @@ export class SkillRepository extends Context.Service<
               if (match) {
                 kept.add(match.id);
 
-                if (match.instructions !== skill.instructions)
+                if (match.instructions !== skill.instructions) {
                   yield* update(match.id, { instructions: skill.instructions });
-              } else
+                }
+              } else {
                 kept.add(
                   (yield* create({
                     agentId,
@@ -331,10 +342,14 @@ export class SkillRepository extends Context.Service<
                     documents: [],
                   })).id,
                 );
+              }
             }
 
-            for (const skill of existing)
-              if (!kept.has(skill.id)) yield* remove(skill.id);
+            for (const skill of existing) {
+              if (!kept.has(skill.id)) {
+                yield* remove(skill.id);
+              }
+            }
           }),
         );
       }, Effect.orDie);

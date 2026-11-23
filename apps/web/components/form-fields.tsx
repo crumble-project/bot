@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert } from "@/components/page";
@@ -30,7 +31,7 @@ export function OwnerSelectField({
   onValueChange,
 }: {
   label: string;
-  owners: { label: string; value: string }[];
+  owners: Array<{ label: string; value: string }>;
   value: string;
   disabled: boolean;
   onValueChange: (value: string | null) => void;
@@ -64,7 +65,7 @@ export function OwnerSelectField({
 export function SelectOptions({
   items,
 }: {
-  items: { value: string; label: ReactNode }[];
+  items: Array<{ value: string; label: ReactNode }>;
 }) {
   return (
     <SelectContent>
@@ -164,7 +165,9 @@ export function CopyButton({
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!copied) return;
+    if (!copied) {
+      return;
+    }
 
     const timer = setTimeout(() => setCopied(false), 1500);
 

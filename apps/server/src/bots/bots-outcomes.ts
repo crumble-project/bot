@@ -1,5 +1,4 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { EntryId } from "@earendil-works/pi-durable";
 import { noticeRequest } from "../shared/request-ids";
 import { errorText } from "../shared/errors";
 import { logged } from "../shared/app-errors";
@@ -7,7 +6,8 @@ import { Effect, Predicate, Result } from "effect";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import type { BotsAnnouncements } from "./bots-announcements";
-import { isChatTurn, type BotsContext } from "./bots-context";
+import { isChatTurn } from "./bots-context";
+import type { BotsContext } from "./bots-context";
 import type { BotsNotifications } from "./bots-notifications";
 import type { AgentRuntime } from "./runtime";
 
@@ -19,9 +19,13 @@ type MonitorDeps = {
 };
 
 const outcomeError = (result: SubmissionOutcome) => {
-  if (result.status === "done") return null;
+  if (result.status === "done") {
+    return null;
+  }
 
-  if (!("detail" in result)) return "The agent could not answer this input";
+  if (!("detail" in result)) {
+    return "The agent could not answer this input";
+  }
 
   return Predicate.isString(result.detail) ? result.detail : result.reason;
 };
@@ -43,11 +47,12 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
       error: outcomeError(result),
     });
 
-    if (recorded && result.status === "done" && isChatTurn(execution))
+    if (recorded && result.status === "done" && isChatTurn(execution)) {
       yield* announceReply(execution).pipe(
         logged("Reply announcement failed", execution.id),
         Effect.forkIn(scope),
       );
+    }
   });
 
   const upgradeNotice = Effect.fnUntraced(function* (
@@ -59,12 +64,13 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
       runtime.settledTurn(owner, execution.conversationId, submissionId),
     );
 
-    if (!turn) return;
+    if (!turn) {
+      return;
+    }
 
-    // SAFETY: settledTurn returns the durable input entry ID supplied by Pi.
     const page = yield* Effect.promise(() =>
       turn.conversation.entries(
-        { order: "ascending", minEntryId: turn.entry as EntryId },
+        { order: "ascending", minEntryId: turn.entry },
         1,
         undefined,
         BACKGROUND_CONTEXT,
@@ -73,14 +79,17 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
 
     const input = page.items[0];
 
-    if (!input || Number(input.id) !== turn.entry) return;
+    if (!input || Number(input.id) !== turn.entry) {
+      return;
+    }
 
     if (
       Predicate.hasProperty(input.data, "attachments") &&
       Array.isArray(input.data.attachments) &&
       input.data.attachments.length
-    )
+    ) {
       return;
+    }
     yield* notices.notice(
       execution.agentId,
       "Files sent just before the update didn't arrive. Send them again.",
@@ -107,9 +116,10 @@ export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
         : recordOutcome(execution, outcome.success),
     );
 
-    if (legacy && Result.isSuccess(outcome))
+    if (legacy && Result.isSuccess(outcome)) {
       yield* upgradeNotice(execution, submissionId, owner).pipe(
         logged("File upgrade notice failed", execution.id),
       );
+    }
   });
 };

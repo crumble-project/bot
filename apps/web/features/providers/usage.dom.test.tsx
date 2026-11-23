@@ -6,7 +6,8 @@ import {
 } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { type Provider, type Usage, usageQuery } from "./api";
+import { usageQuery } from "./api";
+import type { Provider, Usage } from "./api";
 import { UsageView } from "./usage";
 
 const anthropic: Provider = {
@@ -20,11 +21,11 @@ const anthropic: Provider = {
   externalAuth: null,
 };
 
-function Harness({ providers }: { providers: Provider[] }) {
+function Harness({ providers }: { providers: Array<Provider> }) {
   return <UsageView usage={useQuery(usageQuery)} providers={providers} />;
 }
 
-async function render(usage: Usage, providers: Provider[] = [anthropic]) {
+async function render(usage: Usage, providers: Array<Provider> = [anthropic]) {
   const window = new Window({ url: "http://localhost" });
   const globals = Object.getOwnPropertyDescriptors(globalThis);
   Object.defineProperties(globalThis, {

@@ -15,8 +15,8 @@ export const notificationTitle = (event: ReplyEvent) => event.agentName;
 
 export function notificationPreview(value: string) {
   const cleaned = value
-    .replace(/\*\*|__|`|^\s*[#>]\s*/gm, "")
-    .replace(/\s+/g, " ")
+    .replaceAll(/\*\*|__|`|^\s*[#>]\s*/gm, "")
+    .replaceAll(/\s+/g, " ")
     .trim()
     .slice(0, 120);
 

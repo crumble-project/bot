@@ -1,5 +1,7 @@
 import { GatewayIcon, gatewayOrigin } from "@/components/gateway-brand";
-import { type ReactNode, useEffect, useState } from "react";
+import { useObjectUrl } from "@/lib/use-object-url";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconChevronRight,
@@ -39,16 +41,20 @@ import { blocksOf, toolDetailsOf } from "./tool-details";
 import { ReplyAttention } from "./reply-attention";
 
 /** Merges older pages into the live page, dropping IDs they share. Every page is in transcript order, oldest first. */
-export function mergeMessages(older: Message[], live: Message[]) {
+export function mergeMessages(older: Array<Message>, live: Array<Message>) {
   const byId = new Map<string, Message>();
 
-  for (const message of [...older, ...live]) byId.set(message.id, message);
+  for (const message of [...older, ...live]) {
+    byId.set(message.id, message);
+  }
 
   return [...byId.values()];
 }
 
 export function hasText(message: Message) {
-  if (!Array.isArray(message.blocks)) return message.content.trim() !== "";
+  if (!Array.isArray(message.blocks)) {
+    return message.content.trim() !== "";
+  }
 
   return blocksOf(message).some(
     (block) => block.type === "text" && Boolean(block.text?.trim()),
@@ -66,12 +72,17 @@ export type ReactionTarget = (
   lastOwner: string | undefined,
 ) => string | undefined;
 
-export function reactionsOf(messages: Message[], targetOf: ReactionTarget) {
-  const reactions = new Map<string, Reaction[]>();
+export function reactionsOf(
+  messages: Array<Message>,
+  targetOf: ReactionTarget,
+) {
+  const reactions = new Map<string, Array<Reaction>>();
   let lastOwner: string | undefined;
 
   for (const message of messages) {
-    if (message.role === "user" && message.entryId) lastOwner = message.entryId;
+    if (message.role === "user" && message.entryId) {
+      lastOwner = message.entryId;
+    }
 
     const reaction = toolDetailsOf(
       message,
@@ -81,7 +92,9 @@ export function reactionsOf(messages: Message[], targetOf: ReactionTarget) {
 
     const target = targetOf(message, lastOwner);
 
-    if (!reaction || !target) continue;
+    if (!reaction || !target) {
+      continue;
+    }
 
     reactions.set(target, [
       ...(reactions.get(target) ?? []),
@@ -101,30 +114,35 @@ function timeLabel(timestamp: number) {
     minute: "2-digit",
   });
 
-  if (date.toDateString() === now.toDateString()) return `Today ${time}`;
+  if (date.toDateString() === now.toDateString()) {
+    return `Today ${time}`;
+  }
 
   return date.getFullYear() === now.getFullYear()
     ? `${date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} ${time}`
     : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function withTimeMarkers(messages: Message[]) {
-  const rows: (
+export function withTimeMarkers(messages: Array<Message>) {
+  const rows: Array<
     | { kind: "time"; key: string; label: string }
     | { kind: "message"; message: Message }
-  )[] = [];
+  > = [];
 
   let last = 0;
 
   for (const message of messages) {
-    if (message.timestamp && message.timestamp - last > 30 * 60_000)
+    if (message.timestamp && message.timestamp - last > 30 * 60_000) {
       rows.push({
         kind: "time",
         key: `time-${message.id}`,
         label: timeLabel(message.timestamp),
       });
+    }
 
-    if (message.timestamp) last = message.timestamp;
+    if (message.timestamp) {
+      last = message.timestamp;
+    }
     rows.push({ kind: "message", message });
   }
 
@@ -134,13 +152,15 @@ export function withTimeMarkers(messages: Message[]) {
 export const ARRIVAL =
   "animate-in fade-in slide-in-from-bottom-2 duration-200 ease-out";
 
-export function useArrivals(live: Message[] | undefined) {
+export function useArrivals(live: Array<Message> | undefined) {
   const [seen, setSeen] = useState<Set<string> | null>(null);
 
-  if (live && !seen) setSeen(new Set(live.map((message) => message.id)));
+  if (live && !seen) {
+    setSeen(new Set(live.map((message) => message.id)));
+  }
 
   return {
-    remember: (messages: Message[]) =>
+    remember: (messages: Array<Message>) =>
       setSeen((current) =>
         current
           ? new Set([...current, ...messages.map((message) => message.id)])
@@ -193,8 +213,9 @@ export function CallMarker({
 const titleOf = (message: Message) => {
   const communication = message.communication;
 
-  if (message.kind === "bot-message" && communication)
+  if (message.kind === "bot-message" && communication) {
     return `Bot communication: ${communication.fromName} → ${communication.toName}`;
+  }
 
   return message.kind === "reset"
     ? "Context reset"
@@ -229,15 +250,16 @@ export function NoticeRow({
   reactions,
 }: {
   message: Message;
-  reactions?: Reaction[] | undefined;
+  reactions?: Array<Reaction> | undefined;
 }) {
-  if (message.origin?.kind === "call")
+  if (message.origin?.kind === "call") {
     return (
       <CallMarker
         title={message.content}
         reactions={reactions?.map(({ emoji }) => emoji).join("")}
       />
     );
+  }
 
   return (
     <CenteredDisclosure
@@ -307,20 +329,12 @@ export function AttachmentImage({
     gcTime: 10 * 60_000,
   });
 
-  const [objectUrl, setObjectUrl] = useState<{ blob: Blob; url: string }>();
+  const blob = image.data;
+  const attachImage = useObjectUrl(blob);
 
-  useEffect(() => {
-    if (!image.data) return;
-
-    const url = URL.createObjectURL(image.data);
-    setObjectUrl({ blob: image.data, url });
-
-    return () => URL.revokeObjectURL(url);
-  }, [image.data]);
-
-  return objectUrl && objectUrl.blob === image.data ? (
+  return blob ? (
     <img
-      src={objectUrl.url}
+      ref={attachImage}
       alt={name}
       className={cn(
         "max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10",
@@ -341,17 +355,20 @@ export function Attachments({
 }) {
   const download = useFileDownload();
 
-  if (!message.files?.length) return null;
+  if (!message.files?.length) {
+    return null;
+  }
 
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {message.files?.map((file) => {
-        if ("deleted" in file)
+        if ("deleted" in file) {
           return (
             <Badge key={file.id} variant="outline">
               File deleted
             </Badge>
           );
+        }
 
         const path = filePath(file.id);
 
@@ -392,13 +409,21 @@ export function Attachments({
 function originLabel(message: Message) {
   const origin = message.origin;
 
-  if (!origin) return null;
+  if (!origin) {
+    return null;
+  }
 
-  if (origin.kind === "bot_request") return "Bot request";
+  if (origin.kind === "bot_request") {
+    return "Bot request";
+  }
 
-  if (origin.kind === "call_request") return "Call request";
+  if (origin.kind === "call_request") {
+    return "Call request";
+  }
 
-  if (origin.kind === "call") return "Call";
+  if (origin.kind === "call") {
+    return "Call";
+  }
 
   return originContent(origin);
 }
@@ -406,10 +431,13 @@ function originLabel(message: Message) {
 function automationOrigin(origin: NonNullable<Message["origin"]>) {
   const name = origin.name ?? "";
 
-  if (origin.kind === "task") return `Automation · ${name}`;
+  if (origin.kind === "task") {
+    return `Automation · ${name}`;
+  }
 
-  if (origin.kind === "event")
+  if (origin.kind === "event") {
     return `Automation · ${name}, event from ${origin.source ?? "a deleted source"}`;
+  }
 
   return origin.kind === "script" ? `Script automation · ${name}` : null;
 }
@@ -417,23 +445,27 @@ function automationOrigin(origin: NonNullable<Message["origin"]>) {
 function originContent(origin: NonNullable<Message["origin"]>) {
   const automation = automationOrigin(origin);
 
-  if (automation) return automation;
+  if (automation) {
+    return automation;
+  }
 
-  if (origin.kind === "credential")
+  if (origin.kind === "credential") {
     return (
       <span className="flex items-center gap-1">
         <IconKey className="size-3" />
         Credential · {origin.name}
       </span>
     );
+  }
 
-  if (origin.kind === "bot")
+  if (origin.kind === "bot") {
     return (
       <span className="flex items-center gap-1">
         <IconUsersGroup className="size-3" />
         From {origin.name}
       </span>
     );
+  }
 
   return null;
 }
@@ -471,10 +503,12 @@ function MessageReactions({
   reactions,
   align,
 }: {
-  reactions: Reaction[] | undefined;
+  reactions: Array<Reaction> | undefined;
   align: "start" | "end";
 }) {
-  if (!reactions || reactions.length === 0) return null;
+  if (!reactions || reactions.length === 0) {
+    return null;
+  }
 
   return (
     <BubbleReactions side="bottom" align={align}>
@@ -503,9 +537,9 @@ export function OwnerMessage({
   filePath,
 }: {
   message: Message;
-  uploads?: Upload[];
+  uploads?: Array<Upload>;
   quote?: string | undefined;
-  reactions?: Reaction[] | undefined;
+  reactions?: Array<Reaction> | undefined;
   delivery?: Delivery;
   onRetry?: () => void;
   onReply?: ((message: Message) => void) | undefined;
@@ -540,9 +574,9 @@ function OwnerMessageBody({
   filePath,
 }: {
   message: Message;
-  uploads?: Upload[] | undefined;
+  uploads?: Array<Upload> | undefined;
   quote?: string | undefined;
-  reactions?: Reaction[] | undefined;
+  reactions?: Array<Reaction> | undefined;
   delivery?: Delivery | undefined;
   onRetry?: (() => void) | undefined;
   onReply?: ((message: Message) => void) | undefined;
@@ -573,8 +607,10 @@ function OwnerMessageBody({
   );
 }
 
-function OwnerUploads({ uploads }: { uploads?: Upload[] | undefined }) {
-  if (!uploads?.length) return null;
+function OwnerUploads({ uploads }: { uploads?: Array<Upload> | undefined }) {
+  if (!uploads?.length) {
+    return null;
+  }
 
   // A sent message's uploads never change.
   return (
@@ -608,10 +644,12 @@ function OwnerContent({
 }: {
   message: Message;
   delivery?: Delivery | undefined;
-  reactions?: Reaction[] | undefined;
+  reactions?: Array<Reaction> | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
-  if (!message.content.trim()) return null;
+  if (!message.content.trim()) {
+    return null;
+  }
 
   return (
     <div className="flex w-full min-w-0 items-center justify-end gap-1">
@@ -680,7 +718,7 @@ export function BotMessage({
   message: Message;
   sender?: ReactNode;
   color?: string | undefined;
-  reactions?: Reaction[] | undefined;
+  reactions?: Array<Reaction> | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null);

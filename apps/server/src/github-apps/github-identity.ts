@@ -6,17 +6,21 @@ export type GitHubIdentity = {
 };
 
 export const assignmentChange = (
-  previous: readonly string[],
-  botIds: readonly string[],
+  previous: ReadonlyArray<string>,
+  botIds: ReadonlyArray<string>,
 ) => ({
   added: botIds.filter((botId) => !previous.includes(botId)),
   removed: previous.filter((botId) => !botIds.includes(botId)),
 });
 
-export const githubIdentityLines = (identities: readonly GitHubIdentity[]) => {
+export const githubIdentityLines = (
+  identities: ReadonlyArray<GitHubIdentity>,
+) => {
   const [fallback, ...others] = identities;
 
-  if (!fallback) return [];
+  if (!fallback) {
+    return [];
+  }
 
   const reach = identities.map((each) =>
     each.account === null

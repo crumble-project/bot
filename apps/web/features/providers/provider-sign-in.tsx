@@ -17,13 +17,12 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { HttpError, queryClient, send, call } from "@/lib/api";
 import {
-  type ProviderSignIn,
-  type Provider,
   signInQuery,
   providerSignInPath,
   providerPath,
   invalidateProviders,
 } from "./api";
+import type { ProviderSignIn, Provider } from "./api";
 
 function useProviderLogin(provider: Provider, onClose: () => void) {
   const [sessionId, setSessionId] = useState(provider.activeLoginId);
@@ -31,7 +30,7 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
 
   const start = useMutation({
     mutationFn: () =>
-      call<"startProviderLogin">(path, "POST", { method: "oauth" }),
+      call("startProviderLogin", path, "POST", { method: "oauth" }),
     onSuccess: async (session) => {
       setSessionId(session.id);
       await invalidateProviders();
@@ -55,7 +54,9 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
   const status = session.data?.status;
 
   useEffect(() => {
-    if (status && status !== "pending") void invalidateProviders();
+    if (status && status !== "pending") {
+      void invalidateProviders();
+    }
   }, [status]);
 
   const gone =
@@ -74,15 +75,16 @@ function LoginBody({
   session,
   gone,
 }: Pick<ProviderLogin, "sessionId" | "start" | "session" | "gone">) {
-  if (sessionId === null)
+  if (sessionId === null) {
     return (
       <Button disabled={start.isPending} onClick={() => start.mutate()}>
         {start.isPending && <Spinner data-icon="inline-start" />}
         Start sign-in
       </Button>
     );
+  }
 
-  if (gone)
+  if (gone) {
     return (
       <Alert>
         <AlertDescription>
@@ -90,6 +92,7 @@ function LoginBody({
         </AlertDescription>
       </Alert>
     );
+  }
 
   return session.data ? <SignInSteps session={session.data} /> : <Spinner />;
 }
@@ -137,19 +140,21 @@ export function SignInDialog({
 }
 
 function SignInSteps({ session }: { session: ProviderSignIn }) {
-  if (session.status === "succeeded")
+  if (session.status === "succeeded") {
     return (
       <Alert>
         <AlertDescription>Signed in.</AlertDescription>
       </Alert>
     );
+  }
 
-  if (session.status !== "pending")
+  if (session.status !== "pending") {
     return (
       <ErrorAlert>
         {session.failure?.message ?? `Sign-in ${session.status}.`}
       </ErrorAlert>
     );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -163,7 +168,11 @@ function SignInSteps({ session }: { session: ProviderSignIn }) {
         />
       ))}
       {session.prompt ? (
-        <PromptForm key={session.prompt.id} session={session} />
+        <PromptForm
+          key={session.prompt.id}
+          sessionId={session.id}
+          prompt={session.prompt}
+        />
       ) : (
         session.events.at(-1)?.type !== "progress" && (
           <p className="shimmer text-sm">Waiting for the provider…</p>
@@ -265,7 +274,8 @@ type LoginPrompt = NonNullable<ProviderSignIn["prompt"]>;
 function usePromptAnswer(sessionId: string, promptId: LoginPrompt["id"]) {
   const answer = useMutation({
     mutationFn: (answer: string) =>
-      call<"answerProviderLogin">(
+      call(
+        "answerProviderLogin",
         `${providerSignInPath(sessionId)}/responses`,
         "POST",
         { promptId, value: answer },
@@ -329,7 +339,9 @@ function TextPrompt({
       onSubmit={(event) => {
         event.preventDefault();
 
-        if (value.trim()) answer.mutate(value.trim());
+        if (value.trim()) {
+          answer.mutate(value.trim());
+        }
       }}
     >
       <FieldGroup>
@@ -356,9 +368,14 @@ function TextPrompt({
   );
 }
 
-function PromptForm({ session }: { session: ProviderSignIn }) {
-  const prompt = session.prompt!;
-  const answer = usePromptAnswer(session.id, prompt.id);
+function PromptForm({
+  sessionId,
+  prompt,
+}: {
+  sessionId: string;
+  prompt: LoginPrompt;
+}) {
+  const answer = usePromptAnswer(sessionId, prompt.id);
 
   return prompt.type === "select" ? (
     <SelectPrompt prompt={prompt} answer={answer} />

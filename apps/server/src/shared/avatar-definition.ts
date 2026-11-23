@@ -18,9 +18,11 @@ export const avatarDefinitionSchema = z.object({
     .superRefine((definition, ctx) => {
       const result = validateAvatar(definition);
 
-      if (!result.ok)
-        for (const message of result.errors)
+      if (!result.ok) {
+        for (const message of result.errors) {
           ctx.addIssue({ code: "custom", message });
+        }
+      }
     }),
   color: z
     .string()

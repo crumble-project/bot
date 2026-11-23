@@ -1,9 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import {
-  getCurrentAdapter,
-  type BetterAuthOptions,
-  type DBAdapter,
-} from "better-auth";
+import { getCurrentAdapter } from "better-auth";
+import type { BetterAuthOptions, DBAdapter } from "better-auth";
 import { Schema } from "effect";
 
 export const INVITE_HEADER = "x-crumble-invite";
@@ -86,7 +83,9 @@ export function invites<O extends BetterAuthOptions>(base: DBAdapter<O>) {
     async consume(token: string) {
       const invite = await open(token);
 
-      if (!invite) return false;
+      if (!invite) {
+        return false;
+      }
       await (
         await db()
       ).update({

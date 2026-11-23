@@ -1,44 +1,49 @@
-import {
-  type ComponentProps,
-  isValidElement,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
+import { isValidElement, useEffect, useRef, useState } from "react";
+import type { ComponentProps } from "react";
+import { Markdown } from "@tanstack/markdown/react";
+import type { MarkdownComponents } from "@tanstack/markdown/react";
 import { PELE_PREFIX } from "@crumble/server/contract/ui-modules";
-import type * as Pele from "pele/lazy";
 import type { MarkdownExtension } from "@tanstack/markdown";
 import type { z } from "zod";
 import type { citation } from "@crumble/server/contract/api-responses";
+import type { mountAsync } from "pele/lazy";
 
 const PELE = `${PELE_PREFIX}/lazy.js`;
 
 // The server hosts this module at run time, so the bundler must not resolve it.
 // react-doctor-disable-next-line react-doctor/no-dynamic-import-path
-const loadPele = (): Promise<typeof Pele> => import(PELE);
+type Pele = { mountAsync: typeof mountAsync };
+
+const loadPele = (): Promise<Pele> => import(PELE);
 
 function Diagram({ source }: { source: string }) {
   const box = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(false);
+  // The source that failed to draw: a new source is not failed until it fails itself.
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const failed = failedSource === source;
 
   useEffect(() => {
     let stopped = false;
     let destroy: (() => void) | undefined;
 
-    setFailed(false);
+    const fail = () => {
+      if (!stopped) {
+        setFailedSource(source);
+      }
+    };
+
     void loadPele()
       .then(async ({ mountAsync }) => {
-        if (stopped || !box.current) return;
+        if (stopped || !box.current) {
+          return;
+        }
 
         // Bot text is untrusted: no links or remote images, and Pele's size limits apply.
         const mounted = await mountAsync(box.current, source, {
           links: false,
           images: false,
           zoom: "auto",
-          onError: () => {
-            if (!stopped) setFailed(true);
-          },
+          onError: fail,
         });
 
         if (stopped) {
@@ -47,12 +52,13 @@ function Diagram({ source }: { source: string }) {
           return;
         }
 
-        if (mounted.error) setFailed(true);
+        if (mounted.error) {
+          setFailedSource(source);
+        }
+
         destroy = () => mounted.destroy();
       })
-      .catch(() => {
-        if (!stopped) setFailed(true);
-      });
+      .catch(fail);
 
     return () => {
       stopped = true;
@@ -76,13 +82,15 @@ const link = (props: ComponentProps<"a">) => (
 const components = {
   a: link,
   pre: (props: ComponentProps<"pre"> & { "data-lang"?: string }) => {
-    if (props["data-lang"] !== "mermaid" || !isValidElement(props.children))
+    // TanStack Markdown passes a code block's text as one string child of `code`.
+    if (
+      props["data-lang"] !== "mermaid" ||
+      !isValidElement<{ children?: string }>(props.children)
+    ) {
       return <pre {...props} />;
+    }
 
-    // SAFETY: TanStack Markdown passes a code block's text as one string child of `code`.
-    const code = props.children.props as { children?: string };
-
-    return <Diagram source={code.children ?? ""} />;
+    return <Diagram source={props.children.props.children ?? ""} />;
   },
 } satisfies MarkdownComponents;
 
@@ -96,13 +104,16 @@ function trimUrl(url: string) {
   for (;;) {
     const last = url[end - 1];
 
-    if (last && ".,:;!?'*_~".includes(last)) end--;
-    else if (
+    if (last && ".,:;!?'*_~".includes(last)) {
+      end--;
+    } else if (
       last === ")" &&
       url.slice(0, end).split(")").length > url.slice(0, end).split("(").length
-    )
+    ) {
       end--;
-    else return url.slice(0, end);
+    } else {
+      return url.slice(0, end);
+    }
   }
 }
 
@@ -112,22 +123,33 @@ const autolinks: MarkdownExtension = {
   inlineParser: {
     markers: "h<",
     parse: ({ source, index, inLink }) => {
-      if (inLink) return;
+      if (inLink) {
+        return;
+      }
 
       const rest = source.slice(index);
       const angle = ANGLE_URL.exec(rest);
 
-      if (angle)
-        return {
-          node: {
-            type: "link",
-            href: angle[1]!,
-            children: [{ type: "text", value: angle[1]! }],
-          },
-          length: angle[0].length,
-        };
+      if (angle) {
+        const [, href] = angle;
 
-      if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!)) return;
+        if (href) {
+          return {
+            node: {
+              type: "link",
+              href,
+              children: [{ type: "text", value: href }],
+            },
+            length: angle[0].length,
+          };
+        }
+      }
+
+      const previous = source[index - 1];
+
+      if (index > 0 && previous && /[\p{L}\p{N}]/u.test(previous)) {
+        return;
+      }
 
       const bare = BARE_URL.exec(rest);
       const url = bare ? trimUrl(bare[0]) : "";
@@ -153,7 +175,7 @@ export function Reply({
   citations = [],
 }: {
   source: string;
-  citations?: z.infer<typeof citation>[] | undefined;
+  citations?: Array<z.infer<typeof citation>> | undefined;
 }) {
   return (
     <div className="markdown">

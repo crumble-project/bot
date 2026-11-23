@@ -2,7 +2,8 @@ import type { Context as PiContext } from "@earendil-works/chord";
 import { Context, Deferred, Effect, Layer } from "effect";
 import type { CONTROL_HOLDERS } from "../shared/domain";
 import { keyedListeners } from "../shared/keyed";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { DesktopControlRepository } from "./desktop-control-repository";
 
@@ -58,7 +59,9 @@ export class DesktopControl extends Context.Service<
       ) {
         const current = yield* get(agentId);
 
-        if (current.holder === holder) return current;
+        if (current.holder === holder) {
+          return current;
+        }
 
         const next: ControlState = {
           holder,
@@ -70,7 +73,9 @@ export class DesktopControl extends Context.Service<
 
         listeners.notify(agentId, next);
 
-        for (const listener of everyBot) listener(agentId, next);
+        for (const listener of everyBot) {
+          listener(agentId, next);
+        }
 
         return next;
       });
@@ -90,8 +95,9 @@ export class DesktopControl extends Context.Service<
 
         // Listening before reading, so a hand-back between the two is not missed.
         const stop = listeners.add(agentId, (state) => {
-          if (state.holder === "bot")
+          if (state.holder === "bot") {
             Deferred.doneUnsafe(handedBack, Effect.succeed(state));
+          }
         });
 
         const current = yield* get(agentId);
@@ -131,7 +137,9 @@ export type DesktopControlAccess = Omit<
 export function desktopControlAccess(
   runtime: Runner<DesktopControl>,
 ): DesktopControlAccess {
-  const control = runtime.runSync(DesktopControl.use(Effect.succeed));
+  const control = runtime.runSync(
+    Effect.flatMap(DesktopControl, Effect.succeed),
+  );
 
   return {
     ...accessOf(control, runtime, SYNC_DESKTOP_CONTROL),

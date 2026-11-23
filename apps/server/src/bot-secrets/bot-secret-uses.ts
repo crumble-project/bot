@@ -5,7 +5,8 @@ import { z } from "zod";
 import { BOT_SECRET_USE_RETENTION_DAYS } from "../contract/limits";
 import { ProductDatabase } from "../shared/product-database";
 import { pruneHourly, startTicking } from "../shared/ticker";
-import { botSecretUses, type BotSecretKind } from "./schema";
+import { botSecretUses } from "./schema";
+import type { BotSecretKind } from "./schema";
 
 export const BOT_SECRET_USE_RETENTION_MS =
   BOT_SECRET_USE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -26,6 +27,13 @@ export const lastUseError = (
     string | null
   >`(SELECT ${botSecretUses.error} FROM ${botSecretUses} WHERE ${botSecretUses.agentId} = ${owner.agentId} AND ${botSecretUses.kind} = ${kind} AND ${botSecretUses.name} = ${owner.name} ORDER BY ${botSecretUses.id} DESC LIMIT 1)`;
 
+const of = (agentId: string, kind: BotSecretKind, name: string) =>
+  and(
+    eq(botSecretUses.agentId, agentId),
+    eq(botSecretUses.kind, kind),
+    eq(botSecretUses.name, name),
+  );
+
 export class BotSecretUses extends Context.Service<
   BotSecretUses,
   {
@@ -41,7 +49,7 @@ export class BotSecretUses extends Context.Service<
       kind: BotSecretKind,
       name: string,
       options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<BotSecretUse[]>;
+    ) => Effect.Effect<Array<BotSecretUse>>;
     readonly forget: (
       agentId: string,
       kind: BotSecretKind,
@@ -53,13 +61,6 @@ export class BotSecretUses extends Context.Service<
     BotSecretUses,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-
-      const of = (agentId: string, kind: BotSecretKind, name: string) =>
-        and(
-          eq(botSecretUses.agentId, agentId),
-          eq(botSecretUses.kind, kind),
-          eq(botSecretUses.name, name),
-        );
 
       return BotSecretUses.of({
         record: Effect.fn("BotSecretUses.record")(function* (

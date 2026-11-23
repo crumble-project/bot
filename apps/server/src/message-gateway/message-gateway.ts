@@ -7,16 +7,14 @@ import type {
 } from "../contract/message-gateway";
 import { Secrets } from "../secrets/secrets";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
-import {
-  InvalidInput,
-  NotFound,
-  type AppError,
-  errorText,
-} from "../shared/errors";
+import { InvalidInput, NotFound, errorText } from "../shared/errors";
+import type { AppError } from "../shared/errors";
+import { required } from "../shared/required";
 import { pruneHourly, startTicking } from "../shared/ticker";
 import type { GatewayMessage } from "./adapter";
 import { decodeConfig, gatewayConnections } from "./gateway-connections";
-import { receiptDelivery, type ReceiptDelivery } from "./gateway-delivery";
+import { receiptDelivery } from "./gateway-delivery";
+import type { ReceiptDelivery } from "./gateway-delivery";
 import {
   GATEWAY_RECEIPT_TTL_MS,
   GatewayRepository,
@@ -27,7 +25,7 @@ import { MAX_MESSAGE_CHARS } from "../shared/limits";
 export class MessageGateway extends Context.Service<
   MessageGateway,
   {
-    readonly list: Effect.Effect<GatewayDescription[]>;
+    readonly list: Effect.Effect<Array<GatewayDescription>>;
     readonly update: (
       id: string,
       config: GatewayConfig,
@@ -47,25 +45,29 @@ export class MessageGateway extends Context.Service<
 
       if (
         new Set(adapters.map((adapter) => adapter.id)).size !== adapters.length
-      )
+      ) {
         return yield* new InvalidInput({
           message: "Message gateway adapter IDs must be unique",
         });
+      }
 
       // A spoken message's origin carries this as its `via`, the field adapter IDs also fill.
-      if (adapters.some((adapter) => adapter.id === VOICE_VIA))
+      if (adapters.some((adapter) => adapter.id === VOICE_VIA)) {
         return yield* new InvalidInput({
           message: `Message gateway adapter ID ${VOICE_VIA} is reserved for the voice gateway`,
         });
+      }
 
-      for (const adapter of adapters)
+      for (const adapter of adapters) {
         if (
           !Number.isInteger(adapter.maxMessageLength) ||
           adapter.maxMessageLength < 2
-        )
+        ) {
           return yield* new InvalidInput({
             message: `Invalid message limit for ${adapter.id}`,
           });
+        }
+      }
       const secrets = yield* Secrets;
       const agents = yield* AgentRepository;
       const receipts = yield* GatewayRepository;
@@ -92,19 +94,19 @@ export class MessageGateway extends Context.Service<
         message: GatewayMessage,
       ) {
         let botId: string | null = null;
-        let response: string[] | null = null;
+        let response: Array<string> | null = null;
 
-        if (message.hasAttachments)
+        if (message.hasAttachments) {
           response = [
             "Attachments are not supported by this gateway. Send a text-only message.",
           ];
-        else if (!(message.routingText ?? message.text).trim())
+        } else if (!(message.routingText ?? message.text).trim()) {
           response = ["Send a text message for a bot to answer."];
-        else if (message.text.length > MAX_MESSAGE_CHARS)
+        } else if (message.text.length > MAX_MESSAGE_CHARS) {
           response = [
             `This message is too long. Send at most ${MAX_MESSAGE_CHARS} characters.`,
           ];
-        else {
+        } else {
           const replyBot = message.replyTo
             ? yield* receipts.replyBot(
                 adapterId,
@@ -129,8 +131,11 @@ export class MessageGateway extends Context.Service<
               }),
           }).pipe(Effect.result);
 
-          if (Result.isSuccess(selected)) botId = selected.success.id;
-          else response = [selected.failure.message];
+          if (Result.isSuccess(selected)) {
+            botId = selected.success.id;
+          } else {
+            response = [selected.failure.message];
+          }
         }
 
         return { botId, response };
@@ -142,10 +147,14 @@ export class MessageGateway extends Context.Service<
       ): Effect.fn.Return<void, AppError> {
         const adapter = adapters.find((entry) => entry.id === adapterId);
 
-        if (!adapter || connections.isClosed()) return;
+        if (!adapter || connections.isClosed()) {
+          return;
+        }
         const current = yield* connections.config(adapterId);
 
-        if (!authorizedMessage(current, message)) return;
+        if (!authorizedMessage(current, message)) {
+          return;
+        }
 
         const { botId, response } = yield* selectRecipient(
           adapterId,
@@ -176,7 +185,9 @@ export class MessageGateway extends Context.Service<
       });
 
       const tick = Effect.gen(function* () {
-        if (connections.isClosed()) return;
+        if (connections.isClosed()) {
+          return;
+        }
         yield* prune;
         yield* connections.reconcileAll;
         yield* delivery.dispatch;
@@ -209,10 +220,11 @@ export class MessageGateway extends Context.Service<
         id: string,
         input: GatewayConfig,
       ) {
-        if (!connections.installed(id))
+        if (!connections.installed(id)) {
           return yield* new NotFound({
             message: "Message gateway not installed",
           });
+        }
         const current = yield* decodeConfig(input);
 
         for (const botId of current.enabled
@@ -220,13 +232,18 @@ export class MessageGateway extends Context.Service<
               current.defaultBotId,
               ...current.aliases.map((alias) => alias.botId),
             ]
-          : [])
-          if (botId && !(yield* agents.get(botId)))
+          : []) {
+          if (botId && !(yield* agents.get(botId))) {
             return yield* new InvalidInput({ message: `Unknown bot ${botId}` });
+          }
+        }
 
         yield* connections.reconfigure(id, current);
 
-        return (yield* list).find((description) => description.id === id)!;
+        return required(
+          (yield* list).find((description) => description.id === id),
+          `The message gateway ${id} was not listed`,
+        );
       });
 
       const start = startTicking(tick, scope);

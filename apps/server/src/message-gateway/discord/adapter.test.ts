@@ -324,16 +324,25 @@ describe("Discord connection", () => {
     const settled = Promise.allSettled([first, second]);
     await connection.close();
 
-    expect(await settled).toEqual([
-      {
-        status: "rejected",
-        reason: new Error("Discord connection is closed."),
-      },
-      {
-        status: "rejected",
-        reason: new Error("Discord connection is closed."),
-      },
+    const [inFlight, queued] = await settled;
+
+    expect(
+      [inFlight, queued].map((each) =>
+        each.status === "rejected" ? each.reason.message : each.status,
+      ),
+    ).toEqual([
+      "Discord connection is closed.",
+      "Discord connection is closed.",
     ]);
+
+    if (inFlight.status !== "rejected" || queued.status !== "rejected") {
+      throw new Error("the close should have rejected both sends");
+    }
+
+    // The send whose REST request had started keeps the rejection the close cut short.
+    expect(inFlight.reason).toBeInstanceOf(Error);
+    expect(inFlight.reason.cause).toEqual(new Error("aborted test-token"));
+    expect(queued.reason).toBeInstanceOf(Error);
     expect(networkCalls).toBe(1);
     rest.clearHashSweeper();
     rest.clearHandlerSweeper();

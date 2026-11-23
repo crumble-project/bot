@@ -10,7 +10,7 @@ export const botRequestsQuery = (id: string) =>
   queryOptions({
     queryKey: ["bot-requests", id],
     queryFn: ({ signal }) =>
-      api<"listBotRequests">(`${agentPath(id)}/bot-requests`, { signal }),
+      api("listBotRequests", `${agentPath(id)}/bot-requests`, { signal }),
   });
 
 export const botRequestPath = (id: string, requestId: string) =>

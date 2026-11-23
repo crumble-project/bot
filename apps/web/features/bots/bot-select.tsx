@@ -13,7 +13,7 @@ export function BotSelect({
 }: {
   id?: string;
   label: string;
-  bots: Bot[];
+  bots: Array<Bot>;
   value: string | null;
   invalid?: boolean;
   optional?: boolean;

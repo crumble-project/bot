@@ -9,11 +9,8 @@ import type {
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { attachmentHeaders } from "../shared/attachments";
-import {
-  snapshotSender,
-  streamEvents,
-  type StreamCleanup,
-} from "../shared/event-stream";
+import { snapshotSender, streamEvents } from "../shared/event-stream";
+import type { StreamCleanup } from "../shared/event-stream";
 import type { BotsAccess } from "./bots";
 import type { SnapshotOptions } from "./runtime";
 
@@ -148,7 +145,9 @@ export const chatEventStream = async (
     if (opened) {
       const cleanup = await opened(close);
 
-      if (!cleanup) return close();
+      if (!cleanup) {
+        return close();
+      }
       onClose(cleanup);
     }
 

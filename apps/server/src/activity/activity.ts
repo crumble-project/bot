@@ -4,10 +4,10 @@ import type { BotCommunication } from "../contract/api-responses";
 import type { ACTIVITY_KINDS } from "../shared/domain";
 import type { Agent } from "../contract/agents";
 import type { LearnedChange } from "../contract/skills";
-import {
-  toolBlocks,
-  type TranscriptMessage,
-  type TranscriptPage,
+import { toolBlocks } from "../transcript/transcript";
+import type {
+  TranscriptMessage,
+  TranscriptPage,
 } from "../transcript/transcript";
 import { isMcpTool } from "../contract/tools";
 import { parseEntryId } from "../shared/entry-ids";
@@ -57,7 +57,9 @@ function activityOf(
     details,
   };
 
-  if (message.timestamp !== undefined) item.timestamp = message.timestamp;
+  if (message.timestamp !== undefined) {
+    item.timestamp = message.timestamp;
+  }
 
   return item;
 }
@@ -65,8 +67,8 @@ function activityOf(
 function messageEvents(
   agent: ActivityAgent,
   message: TranscriptMessage,
-): OperationalActivity[] {
-  const result: OperationalActivity[] = [];
+): Array<OperationalActivity> {
+  const result: Array<OperationalActivity> = [];
 
   if (message.kind === "bot-message" && message.communication) {
     const details = {
@@ -112,10 +114,12 @@ function nestedCallEvent(
   message: TranscriptMessage,
   call: z.infer<typeof nestedCallInput>,
   index: number,
-): OperationalActivity[] {
+): Array<OperationalActivity> {
   const name = z.string().safeParse(call.name).data;
 
-  if (name === undefined) return [];
+  if (name === undefined) {
+    return [];
+  }
 
   const callId = String(
     z.union([z.string(), z.number()]).safeParse(call.id).data ?? index,
@@ -155,7 +159,7 @@ function nestedCallEvents(agent: ActivityAgent, message: TranscriptMessage) {
 function blockEvents(
   agent: ActivityAgent,
   message: TranscriptMessage,
-): OperationalActivity[] {
+): Array<OperationalActivity> {
   return toolBlocks(message).flatMap((block) => {
     const id = `${agent.id}:${message.id}:block-${block.index}`;
 
@@ -171,7 +175,9 @@ function blockEvents(
 
     const { name } = block;
 
-    if (name === undefined) return [];
+    if (name === undefined) {
+      return [];
+    }
 
     const details = {
       id: block.id,
@@ -193,8 +199,8 @@ function blockEvents(
 
 export function operationalActivity(
   agent: ActivityAgent,
-  messages: TranscriptMessage[],
-): OperationalActivity[] {
+  messages: Array<TranscriptMessage>,
+): Array<OperationalActivity> {
   return messages.flatMap((message) => [
     ...messageEvents(agent, message),
     ...nestedCallEvents(agent, message),
@@ -254,13 +260,13 @@ const HISTORY_PAGES = 5;
 const HISTORY_PAGE_SIZE = 200;
 
 type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
-  agents: A[];
+  agents: Array<A>;
   history: (
     agent: A,
     before: string | undefined,
     limit: number,
   ) => Promise<TranscriptPage>;
-  changes: (limit: number, before: string | undefined) => LearnedChange[];
+  changes: (limit: number, before: string | undefined) => Array<LearnedChange>;
   agentName: (id: string) => string | null;
   limit: number;
   cursor: Cursor | null;
@@ -270,7 +276,7 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
 /** `before`: the cursor of the transcript page the item was read from, where reading resumes while it is unconsumed. */
 type Queued = { item: FeedItem; before: string | null };
 
-function oldestMessageKey(messages: TranscriptMessage[]) {
+function oldestMessageKey(messages: Array<TranscriptMessage>) {
   return messages.reduce<Key | null>((min, message) => {
     const key = {
       t: message.timestamp ?? 0,
@@ -300,7 +306,7 @@ async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
 ) {
   const { limit, cursor, kind } = options;
   let before = start ?? undefined;
-  const queue: Queued[] = [];
+  const queue: Array<Queued> = [];
   let page: TranscriptPage | null = null;
 
   for (let index = 0; index < HISTORY_PAGES; index++) {
@@ -310,9 +316,13 @@ async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
       isFreshActivity(item, kind, cursor),
     );
 
-    for (const item of fresh) queue.push({ item, before: before ?? null });
+    for (const item of fresh) {
+      queue.push({ item, before: before ?? null });
+    }
 
-    if (!page.hasMore || !page.oldestEntryId || queue.length >= limit) break;
+    if (!page.hasMore || !page.oldestEntryId || queue.length >= limit) {
+      break;
+    }
     before = page.oldestEntryId;
   }
 
@@ -325,48 +335,81 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {
   const { queue, page } = await readTranscriptPages(agent, start, options);
-  const more = Boolean(page?.hasMore && page.oldestEntryId);
+  const oldestEntryId = page?.oldestEntryId;
+  const more = Boolean(page?.hasMore && oldestEntryId);
   const floor = more && page ? oldestMessageKey(page.messages) : null;
 
   queue.sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
 
-  return { queue, floor, next: more ? page!.oldestEntryId! : (false as const) };
+  return {
+    queue,
+    floor,
+    next: more && oldestEntryId ? oldestEntryId : (false as const),
+  };
 }
 
-function newestQueueHead(all: FeedItem[][], heads: number[]) {
+function queueHead(
+  all: Array<Array<FeedItem>>,
+  heads: Array<number>,
+  index: number,
+): FeedItem | undefined {
+  return all[index]?.[heads[index] ?? 0];
+}
+
+function newestQueueHead(
+  all: Array<Array<FeedItem>>,
+  heads: Array<number>,
+): number {
   let best = -1;
 
   for (let index = 0; index < all.length; index++) {
-    const item = all[index]![heads[index]!];
+    const item = queueHead(all, heads, index);
+
+    if (!item) {
+      continue;
+    }
+
+    const bestItem = best < 0 ? undefined : queueHead(all, heads, best);
 
     if (
-      item &&
-      (best < 0 ||
-        compareKeys(keyOf(item), keyOf(all[best]![heads[best]!]!)) > 0)
-    )
+      best < 0 ||
+      !bestItem ||
+      compareKeys(keyOf(item), keyOf(bestItem)) > 0
+    ) {
       best = index;
+    }
   }
 
   return best;
 }
 
 function mergeActivityQueues(
-  all: FeedItem[][],
+  all: Array<Array<FeedItem>>,
   limit: number,
   floor: Key | null,
 ) {
   const heads = all.map(() => 0);
-  const activities: FeedItem[] = [];
+  const activities: Array<FeedItem> = [];
 
   while (activities.length < limit) {
     const best = newestQueueHead(all, heads);
 
-    if (best < 0) break;
-    const item = all[best]![heads[best]!]!;
+    if (best < 0) {
+      break;
+    }
 
-    if (floor && compareKeys(keyOf(item), floor) <= 0) break;
+    const item = queueHead(all, heads, best);
+
+    if (!item) {
+      break;
+    }
+
+    if (floor && compareKeys(keyOf(item), floor) <= 0) {
+      break;
+    }
+
     activities.push(item);
-    heads[best]!++;
+    heads[best] = (heads[best] ?? 0) + 1;
   }
 
   return { heads, activities };
@@ -378,9 +421,9 @@ async function loadAgentQueues<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {
   const { cursor, kind } = options;
-  const queues: Queued[][] = [];
+  const queues: Array<Array<Queued>> = [];
   const hints: Cursor["h"] = {};
-  const fetched: FetchedQueue[] = [];
+  const fetched: Array<FetchedQueue> = [];
   let floor: Key | null = null;
 
   for (const agent of kind === "change" ? [] : options.agents) {
@@ -393,8 +436,9 @@ async function loadAgentQueues<A extends Pick<Agent, "id" | "name">>(
 
     const loaded = await agentActivityQueue(agent, start, options);
 
-    if (loaded.floor && (!floor || compareKeys(loaded.floor, floor) > 0))
+    if (loaded.floor && (!floor || compareKeys(loaded.floor, floor) > 0)) {
       floor = loaded.floor;
+    }
     queues.push(loaded.queue);
 
     fetched.push({
@@ -409,10 +453,12 @@ async function loadAgentQueues<A extends Pick<Agent, "id" | "name">>(
 
 function changeFeedQueue<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
-): FeedItem[] {
+): Array<FeedItem> {
   const { limit, cursor, kind } = options;
 
-  if (kind && kind !== "change") return [];
+  if (kind && kind !== "change") {
+    return [];
+  }
 
   return options.changes(limit + 1, cursor?.c ?? undefined).map((change) => ({
     id: change.id,
@@ -425,7 +471,7 @@ function changeFeedQueue<A extends Pick<Agent, "id" | "name">>(
 }
 
 function nextCursor(
-  activities: FeedItem[],
+  activities: Array<FeedItem>,
   hints: Cursor["h"],
   cursor: Cursor | null | undefined,
 ): Cursor {
@@ -454,14 +500,14 @@ export async function activityPage<A extends Pick<Agent, "id" | "name">>(
   const { heads, activities } = mergeActivityQueues(all, limit, floor);
 
   for (const { agentId, queue, next } of fetched) {
-    const unconsumed = queues[queue]![heads[queue]!];
+    const unconsumed = queues[queue]?.[heads[queue] ?? 0];
 
     hints[agentId] = unconsumed ? unconsumed.before : next;
   }
 
   const hasMore =
     Object.values(hints).some((hint) => hint !== false) ||
-    heads.at(-1)! < changeQueue.length;
+    (heads.at(-1) ?? 0) < changeQueue.length;
 
   return {
     activities,

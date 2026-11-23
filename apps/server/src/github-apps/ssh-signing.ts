@@ -4,8 +4,8 @@ import {
   createPublicKey,
   generateKeyPairSync,
   sign,
-  type KeyObject,
 } from "node:crypto";
+import type { KeyObject } from "node:crypto";
 
 // OpenSSH's signature format: PROTOCOL.sshsig in the OpenSSH sources.
 const MAGIC = Buffer.from("SSHSIG");
@@ -72,5 +72,7 @@ export function sshSign(
     sshBytes(signature),
   ]).toString("base64");
 
-  return `-----BEGIN SSH SIGNATURE-----\n${blob.match(/.{1,70}/g)!.join("\n")}\n-----END SSH SIGNATURE-----\n`;
+  const lines = blob.match(/.{1,70}/g) ?? [blob];
+
+  return `-----BEGIN SSH SIGNATURE-----\n${lines.join("\n")}\n-----END SSH SIGNATURE-----\n`;
 }

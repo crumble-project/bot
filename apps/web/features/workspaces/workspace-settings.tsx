@@ -16,11 +16,8 @@ import {
 import { capabilitiesQuery } from "@/features/bots/api";
 import { send } from "@/lib/api";
 import { useIsAdmin } from "@/lib/auth-client";
-import {
-  type ServerSettings,
-  invalidateAdmin,
-  serverSettingsQuery,
-} from "@/features/settings/api";
+import { invalidateAdmin, serverSettingsQuery } from "@/features/settings/api";
+import type { ServerSettings } from "@/features/settings/api";
 
 const MIB_PER_GB = 1024;
 
@@ -208,7 +205,9 @@ export function WorkspaceSettings() {
       )
     : [];
 
-  if (!admin && !missing.length) return null;
+  if (!admin && !missing.length) {
+    return null;
+  }
   const data = settings.data;
 
   const rows = data ? settingRows(data) : [];

@@ -16,15 +16,18 @@ export const when = (iso: string) =>
 export function ago(iso: string) {
   const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
 
-  if (minutes > -60) return shortRelativeTime.format(minutes, "minute");
+  if (minutes > -60) {
+    return shortRelativeTime.format(minutes, "minute");
+  }
 
-  if (minutes > -24 * 60)
+  if (minutes > -24 * 60) {
     return shortRelativeTime.format(Math.round(minutes / 60), "hour");
+  }
 
   return shortRelativeTime.format(Math.round(minutes / (24 * 60)), "day");
 }
 
-const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
+const STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
   ["minute", 60],
   ["hour", 60],
   ["day", 24],
@@ -38,7 +41,9 @@ export function agoInLargestUnit(iso: string, now: number) {
   let unit: Intl.RelativeTimeFormatUnit = "second";
 
   for (const [next, size] of STEPS) {
-    if (Math.abs(value) < size) break;
+    if (Math.abs(value) < size) {
+      break;
+    }
 
     value /= size;
     unit = next;

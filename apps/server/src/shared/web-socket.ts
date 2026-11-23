@@ -1,10 +1,12 @@
-type BunWebSocketConstructor = typeof WebSocket &
-  (new (url: string, options?: Bun.WebSocketOptions) => WebSocket);
+import { Schema } from "effect";
 
-// SAFETY: lib.dom's WebSocket type hides Bun's constructor options; Bun's WebSocket accepts `headers`.
-const BunWebSocket = WebSocket as BunWebSocketConstructor;
-
+// SAFETY: Bun's WebSocket takes connection options where lib.dom's constructor only declares protocols, so it is
+// called reflectively and the result decoded as a WebSocket before it is handed out.
 export const openWebSocket = (
   url: string,
   options?: Bun.WebSocketOptions,
-): WebSocket => new BunWebSocket(url, options);
+): WebSocket => {
+  const socket: unknown = Reflect.construct(WebSocket, [url, options]);
+
+  return Schema.decodeUnknownSync(Schema.instanceOf(WebSocket))(socket);
+};

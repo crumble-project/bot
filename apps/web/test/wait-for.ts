@@ -1,15 +1,19 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { act } from "react";
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const pause = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 /** Polls inside act so React commits between checks: a fixed wait loses to a loaded machine. */
 export async function waitFor(check: () => boolean, expected = "DOM state") {
   const deadline = Date.now() + 4000;
 
   while (!check()) {
-    if (Date.now() >= deadline)
+    if (Date.now() >= deadline) {
       throw new Error(`Timed out waiting for ${expected}`);
+    }
     await act(async () => {
       await pause(5);
     });

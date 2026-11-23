@@ -19,7 +19,7 @@ export async function uploadFile(
     body: file,
   });
 
-  const result = await bodyOf<"uploadFile">(response);
+  const result = await bodyOf("uploadFile", response);
 
   void queryClient.invalidateQueries({ queryKey: ["library"] });
 

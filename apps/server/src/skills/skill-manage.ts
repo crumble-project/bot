@@ -1,21 +1,20 @@
-import { Type, type Static } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import type { Static } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
-import {
-  skillDocumentInput,
-  skillInput,
-  type Skill,
-  type SkillInput,
-} from "../contract/skills";
-import { type Agent } from "../contract/agents";
+import { skillDocumentInput, skillInput } from "../contract/skills";
+import type { Skill, SkillInput } from "../contract/skills";
+import type { Agent } from "../contract/agents";
 import { skillNameKey } from "./skill-repository";
 import { Effect } from "effect";
 import {
   resolveSkill,
   skillToolContext,
   SkillToolError,
-  type AvailableSkill,
-  type SkillReads,
-  type SkillToolContext,
+} from "./skill-library";
+import type {
+  AvailableSkill,
+  SkillReads,
+  SkillToolContext,
 } from "./skill-library";
 import type { BotSkills } from "./skills";
 import { SKILL_MANAGE_TOOL_NAME } from "../contract/tools";
@@ -35,44 +34,48 @@ const MAX_OPERATIONS = 10;
 
 export type SkillFinding = { skill: string; rule: string; message: string };
 
-const OVERSIZED_BODY = 12000;
+const OVERSIZED_BODY = 12_000;
 const DOCUMENT_SPRAWL = 15;
 
 const INCIDENT_MARKERS =
   /(?:#\d{2,}|\bPR\s?\d+|\bissue\s?\d+|\b20\d\d-\d\d-\d\d\b)/gi;
 
-export function lintSkill(skill: SkillInput): SkillFinding[] {
-  const findings: SkillFinding[] = [];
+export function lintSkill(skill: SkillInput): Array<SkillFinding> {
+  const findings: Array<SkillFinding> = [];
 
-  if (!skill.description.trim())
+  if (!skill.description.trim()) {
     findings.push({
       skill: skill.name,
       rule: "missing-description",
       message:
         "Add a one-line description that says when the skill applies; it is all the index shows.",
     });
+  }
 
-  if (skill.instructions.length > OVERSIZED_BODY)
+  if (skill.instructions.length > OVERSIZED_BODY) {
     findings.push({
       skill: skill.name,
       rule: "oversized-body",
       message: `The instructions exceed ${OVERSIZED_BODY} characters and stay in context once loaded; move depth that is only needed sometimes into reference documents.`,
     });
+  }
 
-  if ((skill.instructions.match(INCIDENT_MARKERS) ?? []).length >= 3)
+  if ((skill.instructions.match(INCIDENT_MARKERS) ?? []).length >= 3) {
     findings.push({
       skill: skill.name,
       rule: "incident-log-shape",
       message:
         "The instructions read like a log of incidents (issue numbers, dates). Write each lesson once as a rule with its reason; the rule must stand without the story.",
     });
+  }
 
-  if (skill.documents.length >= DOCUMENT_SPRAWL)
+  if (skill.documents.length >= DOCUMENT_SPRAWL) {
     findings.push({
       skill: skill.name,
       rule: "document-sprawl",
       message: `The skill has ${skill.documents.length} reference documents; extend one named by topic instead of adding one per session.`,
     });
+  }
 
   return findings;
 }
@@ -168,15 +171,17 @@ export function applyPatch(
 ): Effect.Effect<string, SkillToolError> {
   const count = source.split(oldString).length - 1;
 
-  if (count === 0)
+  if (count === 0) {
     return refuse(
       `${label} does not contain the text to replace; load it again and copy the passage exactly`,
     );
+  }
 
-  if (count > 1 && !replaceAll)
+  if (count > 1 && !replaceAll) {
     return refuse(
       `${label} contains the text to replace ${count} times; include more surrounding text or set replaceAll`,
     );
+  }
 
   return Effect.succeed(
     replaceAll
@@ -190,8 +195,8 @@ type Batch = {
   reads: SkillReads;
   agentId: string;
   context: SkillToolContext;
-  available: AvailableSkill[];
-  applied: Applied[];
+  available: Array<AvailableSkill>;
+  applied: Array<Applied>;
   touched: Map<string, Skill>;
 };
 
@@ -238,10 +243,11 @@ const targetSkill = Effect.fnUntraced(function* (
   const skill = yield* ownSkill(batch, operation.name);
 
   if (skill) {
-    if (!batch.reads.has(batch.context.runKey, skill.id))
+    if (!batch.reads.has(batch.context.runKey, skill.id)) {
       return yield* refuse(
         `Load skill ${skill.name} with the skill tool in this turn before changing it; writes must follow a current read`,
       );
+    }
 
     return skill;
   }
@@ -259,10 +265,11 @@ const createSkill = Effect.fnUntraced(function* (
   batch: Batch,
   operation: CreateOperation,
 ) {
-  if (yield* ownSkill(batch, operation.name))
+  if (yield* ownSkill(batch, operation.name)) {
     return yield* refuse(
       `You already have a skill named ${JSON.stringify(operation.name)}; patch or rewrite it`,
     );
+  }
 
   const created = yield* batch.library.create(
     batch.agentId,
@@ -281,10 +288,11 @@ const createSkill = Effect.fnUntraced(function* (
 });
 
 const deleteSkill = Effect.fnUntraced(function* (batch: Batch, skill: Skill) {
-  if (batch.context.reviewOf)
+  if (batch.context.reviewOf) {
     return yield* refuse(
       "A review never deletes a skill; patch it, or mention the overlap in your reply",
     );
+  }
 
   yield* batch.library.remove(skill.id, batch.context);
   batch.touched.delete(skill.id);
@@ -315,8 +323,9 @@ const patchDocument = Effect.fnUntraced(function* (
     (candidate) => candidate.path === documentPath,
   );
 
-  if (!document)
+  if (!document) {
     return yield* refuse(`Skill ${skill.name} has no document ${documentPath}`);
+  }
 
   const content = yield* applyPatch(
     document.content,
@@ -338,9 +347,9 @@ const patchSkill = Effect.fnUntraced(function* (
   skill: Skill,
   operation: PatchOperation,
 ) {
-  if (operation.path)
+  if (operation.path) {
     yield* patchDocument(batch, skill, operation.path, operation);
-  else
+  } else {
     yield* updateSkill(batch, skill, {
       instructions: yield* applyPatch(
         skill.instructions,
@@ -350,6 +359,7 @@ const patchSkill = Effect.fnUntraced(function* (
         `Skill ${skill.name}`,
       ),
     });
+  }
 
   batch.applied.push({
     action: "patch",
@@ -368,10 +378,11 @@ const writeDocument = Effect.fnUntraced(function* (
     content: operation.content,
   });
 
-  if (!document.success)
+  if (!document.success) {
     return yield* refuse(
       document.error.issues[0]?.message ?? "Invalid document",
     );
+  }
 
   const others = skill.documents.filter(
     (candidate) => candidate.path !== document.data.path,
@@ -390,8 +401,9 @@ const removeDocument = Effect.fnUntraced(function* (
   skill: Skill,
   documentPath: string,
 ) {
-  if (!skill.documents.some((candidate) => candidate.path === documentPath))
+  if (!skill.documents.some((candidate) => candidate.path === documentPath)) {
     return yield* refuse(`Skill ${skill.name} has no document ${documentPath}`);
+  }
 
   yield* updateSkill(batch, skill, {
     documents: skill.documents.filter(
@@ -411,10 +423,13 @@ const applyOperation = Effect.fnUntraced(function* (
 ) {
   const operation = { ...raw, name: raw.name.trim() };
 
-  if (!operation.name) return yield* refuse("A skill name is required");
+  if (!operation.name) {
+    return yield* refuse("A skill name is required");
+  }
 
-  if (operation.action === "create")
+  if (operation.action === "create") {
     return yield* createSkill(batch, operation);
+  }
   const skill = yield* targetSkill(batch, operation);
 
   switch (operation.action) {

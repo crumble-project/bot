@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act, useState } from "react";
-import {
-  defaultAvatarDefinition,
-  type BotAvatarDefinition,
-} from "@crumble/server/contract/avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
+import { defined } from "@/test/defined";
 
 test("gallery, import validation, colors and description-inclusive generation prompt", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -36,15 +35,16 @@ test("gallery, import validation, colors and description-inclusive generation pr
     IS_REACT_ACT_ENVIRONMENT: true,
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
   const { createRoot } = await import("react-dom/client");
   const { AvatarEditor } = await import("./avatar-editor");
 
   const original = defaultAvatarDefinition("studio");
 
   let current: BotAvatarDefinition = original;
-  let replace: (next: BotAvatarDefinition) => void = () => {};
+  let replace: ((next: BotAvatarDefinition) => void) | undefined;
 
   function Editor() {
     const [value, setValue] = useState(original);
@@ -76,7 +76,9 @@ test("gallery, import validation, colors and description-inclusive generation pr
           each.getAttribute("aria-label") === label,
       );
 
-      if (!button) throw new Error(`Missing button ${label}`);
+      if (!button) {
+        throw new Error(`Missing button ${label}`);
+      }
       button.click();
     });
 
@@ -106,7 +108,9 @@ test("gallery, import validation, colors and description-inclusive generation pr
     await type('input[id$="-eyes"]', "#fedcba");
     expect(current.color).toBe("#123456");
     expect(current.eyeColor).toBe("#fedcba");
-    await act(async () => replace({ ...current, color: "#654321" }));
+    const setAvatar = defined(replace, "the editor's value setter");
+
+    await act(async () => setAvatar({ ...current, color: "#654321" }));
     expect(
       container.querySelector<HTMLInputElement>('input[id$="-body"]')!.value,
     ).toBe("#654321");
@@ -152,8 +156,11 @@ test("gallery, import validation, colors and description-inclusive generation pr
     await act(async () => root.unmount());
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     await window.happyDOM.close();

@@ -59,7 +59,9 @@ type JsonValue = z.infer<typeof jsonValue>;
 function originBadJson(raw: JsonValue) {
   const go = goError.safeParse(raw);
 
-  if (go.success) return GO_BAD_JSON.test(go.data.error);
+  if (go.success) {
+    return GO_BAD_JSON.test(go.data.error);
+  }
   const parsed = anthropicError.safeParse(raw);
 
   return parsed.success && invalidJsonEnvelope(parsed.data);
@@ -82,7 +84,9 @@ const fromAnthropic = (headers: Headers) =>
   Boolean(headers.get("cf-ray"));
 
 function headerRejection(status: number, headers: Headers) {
-  if (!fromAnthropic(headers)) return "non_anthropic_rejection";
+  if (!fromAnthropic(headers)) {
+    return "non_anthropic_rejection";
+  }
 
   return status === 415 ? "unsupported_encoding" : undefined;
 }
@@ -91,8 +95,9 @@ const badJsonText = (text: string) =>
   GO_BAD_JSON.test(text.trimEnd()) ? "invalid_json_at_origin" : undefined;
 
 function originRejection(raw: JsonValue) {
-  if (!goError.safeParse(raw).success && encodingUnsupported(raw))
+  if (!goError.safeParse(raw).success && encodingUnsupported(raw)) {
     return "unsupported_encoding";
+  }
 
   return originBadJson(raw) ? "invalid_json_at_origin" : undefined;
 }
@@ -110,7 +115,9 @@ function bodyRejection(text: string) {
 }
 
 export function rejectionKind(status: number, headers: Headers, text: string) {
-  if (![400, 403, 415].includes(status)) return;
+  if (![400, 403, 415].includes(status)) {
+    return;
+  }
 
   return (
     headerRejection(status, headers) ??

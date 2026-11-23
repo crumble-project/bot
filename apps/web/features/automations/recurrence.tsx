@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 export type Recurrence =
   | { kind: "hourly"; minute: number }
   | { kind: "daily" | "weekdays"; hour: number; minute: number }
-  | { kind: "weekly"; days: number[]; hour: number; minute: number }
+  | { kind: "weekly"; days: Array<number>; hour: number; minute: number }
   | { kind: "monthly"; day: number; hour: number; minute: number };
 
 export const KINDS = [
@@ -40,7 +40,7 @@ const time = (match: RegExpExecArray) => ({
   hour: Number(match[2]),
 });
 
-const WORDED_CRONS: [RegExp, (match: RegExpExecArray) => Recurrence][] = [
+const WORDED_CRONS: Array<[RegExp, (match: RegExpExecArray) => Recurrence]> = [
   [
     /^(\d+) \* \* \* \*$/,
     (match) => ({ kind: "hourly", minute: Number(match[1]) }),
@@ -78,19 +78,23 @@ const inBounds = (recurrence: Recurrence) =>
     (recurrence.day >= 1 && recurrence.day <= 31));
 
 export function recurrenceOf(cron: string): Recurrence | null {
-  const text = cron.trim().replace(/\s+/g, " ");
+  const text = cron.trim().replaceAll(/\s+/g, " ");
 
   for (const [pattern, build] of WORDED_CRONS) {
     const match = pattern.exec(text);
 
-    if (match) return inBounds(build(match)) ? build(match) : null;
+    if (match) {
+      return inBounds(build(match)) ? build(match) : null;
+    }
   }
 
   return null;
 }
 
 export function cronOf(recurrence: Recurrence) {
-  if (recurrence.kind === "hourly") return `${recurrence.minute} * * * *`;
+  if (recurrence.kind === "hourly") {
+    return `${recurrence.minute} * * * *`;
+  }
 
   const { minute, hour } = recurrence;
 
@@ -109,7 +113,7 @@ export function cronOf(recurrence: Recurrence) {
 type RecurrenceSettings = {
   hour: number;
   minute: number;
-  days: number[];
+  days: Array<number>;
   day: number;
 };
 
@@ -127,11 +131,17 @@ export function switchedTo(
 
   const { hour, minute } = kept;
 
-  if (kind === "hourly") return { kind, minute };
+  if (kind === "hourly") {
+    return { kind, minute };
+  }
 
-  if (kind === "weekly") return { kind, days: kept.days, hour, minute };
+  if (kind === "weekly") {
+    return { kind, days: kept.days, hour, minute };
+  }
 
-  if (kind === "monthly") return { kind, day: kept.day, hour, minute };
+  if (kind === "monthly") {
+    return { kind, day: kept.day, hour, minute };
+  }
 
   return { kind, hour, minute };
 }
@@ -173,7 +183,7 @@ export function InlineSelect({
 }: {
   label: string;
   value: string;
-  items: { value: string; label: string }[];
+  items: Array<{ value: string; label: string }>;
   className?: string;
   onChange: (value: string) => void;
 }) {
@@ -212,7 +222,9 @@ function TimeInput({
       onChange={(event) => {
         const [hour, minute] = event.target.value.split(":").map(Number);
 
-        if (hour === undefined || minute === undefined) return;
+        if (hour === undefined || minute === undefined) {
+          return;
+        }
 
         onChange({ ...recurrence, hour, minute });
       }}
@@ -224,8 +236,8 @@ function WeekdayToggles({
   days,
   onChange,
 }: {
-  days: number[];
-  onChange: (days: number[]) => void;
+  days: Array<number>;
+  onChange: (days: Array<number>) => void;
 }) {
   return (
     <div
@@ -266,7 +278,7 @@ export function RecurrenceParts({
   recurrence: Recurrence;
   onChange: (next: Recurrence) => void;
 }) {
-  if (recurrence.kind === "hourly")
+  if (recurrence.kind === "hourly") {
     return (
       <>
         <Word>at</Word>
@@ -280,6 +292,7 @@ export function RecurrenceParts({
         />
       </>
     );
+  }
 
   return (
     <>

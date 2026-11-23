@@ -8,7 +8,8 @@ import { Context, Effect, Layer, Redacted } from "effect";
 import { secretKey } from "../secrets/secret-key";
 import { Secrets } from "../secrets/secrets";
 import type { SecretInput } from "../contract/secrets";
-import { runnerOf, type Runner } from "../shared/runner";
+import { runnerOf } from "../shared/runner";
+import type { Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 
 export const providerApiKeyKey = (providerId: string) =>
@@ -52,7 +53,7 @@ class QueuedCredentialStore implements CredentialStore {
       repository: ProviderCredentialRepository["Service"],
     ) => Effect.Effect<A>,
   ) {
-    return this.run.runSync(ProviderCredentialRepository.use(use));
+    return this.run.runSync(Effect.flatMap(ProviderCredentialRepository, use));
   }
 
   private write(providerId: string, credential: Credential) {
@@ -61,14 +62,17 @@ class QueuedCredentialStore implements CredentialStore {
     if (credential.type === "api_key") {
       const { key, ...rest } = credential;
 
-      if (key !== undefined)
+      if (key !== undefined) {
         this.run.runSync(
-          Secrets.use((s) => s.save(apiKey, { value: key })).pipe(Effect.orDie),
+          Effect.flatMap(Secrets, (s) => s.save(apiKey, { value: key })).pipe(
+            Effect.orDie,
+          ),
         );
+      }
       this.repository((r) => r.set(providerId, rest));
     } else {
       this.repository((r) => r.set(providerId, credential));
-      this.run.runSync(Secrets.use((s) => s.delete(apiKey)));
+      this.run.runSync(Effect.flatMap(Secrets, (s) => s.delete(apiKey)));
     }
   }
 
@@ -79,10 +83,14 @@ class QueuedCredentialStore implements CredentialStore {
   private async resolve(providerId: string): Promise<Credential | undefined> {
     const credential = this.stored(providerId);
 
-    if (credential?.type !== "api_key") return credential;
+    if (credential?.type !== "api_key") {
+      return credential;
+    }
 
     const key = await this.run.runPromise(
-      Secrets.use((s) => s.read(providerApiKeyKey(providerId))).pipe(
+      Effect.flatMap(Secrets, (s) =>
+        s.read(providerApiKeyKey(providerId)),
+      ).pipe(
         Effect.mapError(
           (error) =>
             // Pi AI puts this after "Credential store read failed for <provider>: ", which names the provider.
@@ -101,7 +109,7 @@ class QueuedCredentialStore implements CredentialStore {
           (info) => info.providerId === providerId,
         )?.type ?? null,
       apiKey: this.run.runSync(
-        Secrets.use((s) => s.status(providerApiKeyKey(providerId))),
+        Effect.flatMap(Secrets, (s) => s.status(providerApiKeyKey(providerId))),
       ),
     };
   }
@@ -114,7 +122,7 @@ class QueuedCredentialStore implements CredentialStore {
 
   async list(
     options?: AuthOperationOptions,
-  ): Promise<readonly CredentialInfo[]> {
+  ): Promise<ReadonlyArray<CredentialInfo>> {
     options?.signal?.throwIfAborted();
 
     return this.repository((r) => r.list);
@@ -133,7 +141,9 @@ class QueuedCredentialStore implements CredentialStore {
         const next = await update(this.stored(providerId));
 
         // A started refresh persists even if its caller went away, so a rotated token is never lost.
-        if (next !== undefined) this.write(providerId, next);
+        if (next !== undefined) {
+          this.write(providerId, next);
+        }
 
         return this.stored(providerId);
       },
@@ -165,7 +175,9 @@ class QueuedCredentialStore implements CredentialStore {
     onCommitted: () => void,
   ) {
     return this.enqueue(providerId, async () => {
-      if (!isCurrent()) return false;
+      if (!isCurrent()) {
+        return false;
+      }
       this.write(providerId, credential);
       onCommitted();
 
@@ -196,7 +208,9 @@ class QueuedCredentialStore implements CredentialStore {
     let started = false;
 
     const run = previous.then(() => {
-      if (signal?.aborted) throw signal.reason;
+      if (signal?.aborted) {
+        throw signal.reason;
+      }
       started = true;
 
       return task();
@@ -205,15 +219,21 @@ class QueuedCredentialStore implements CredentialStore {
     const tail = run.catch(() => {});
     this.queues.set(providerId, tail);
     void tail.then(() => {
-      if (this.queues.get(providerId) === tail) this.queues.delete(providerId);
+      if (this.queues.get(providerId) === tail) {
+        this.queues.delete(providerId);
+      }
     });
 
-    if (!signal) return run;
+    if (!signal) {
+      return run;
+    }
 
     // Waiting callers honor cancellation; a started task keeps the queue until it settles.
     return new Promise<T>((resolve, reject) => {
       const onAbort = () => {
-        if (!started) reject(signal.reason);
+        if (!started) {
+          reject(signal.reason);
+        }
       };
 
       signal.addEventListener("abort", onAbort, { once: true });

@@ -1,16 +1,19 @@
 import { botRequestRequest } from "../shared/request-ids";
 import { and, desc, eq } from "drizzle-orm";
+import { copyJson } from "@earendil-works/chord";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Context, Effect, Layer } from "effect";
-import { agentInput, type Agent, type AgentInput } from "../contract/agents";
+import { Context, Effect, Layer, Schema } from "effect";
+import { agentInput } from "../contract/agents";
+import type { Agent, AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { BotNotices, loggedNotices } from "../bot-ports/bot-notices";
-import { Conflict, NotFound, type AppError } from "../shared/errors";
+import { Conflict, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import type { BOT_REQUEST_STATUSES } from "./schema";
 import { botRequests } from "./schema";
 import { toolOutput } from "../shared/tool-output";
@@ -57,7 +60,7 @@ export class BotRequests extends Context.Service<
       agentId: string,
       input: { proposal: AgentInput; reason: string },
     ) => Effect.Effect<BotRequest, AppError>;
-    readonly list: (agentId: string) => Effect.Effect<BotRequest[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<BotRequest>>;
     /** `decide` runs only on a pending request: what the owner approves, given what the bot proposed. */
     readonly approve: (
       agentId: string,
@@ -103,15 +106,17 @@ export class BotRequests extends Context.Service<
       ) {
         const row = yield* getRow(agentId, requestId);
 
-        if (!row)
+        if (!row) {
           return yield* Effect.fail(
             new NotFound({ message: "Bot request not found" }),
           );
+        }
 
-        if (row.status !== "pending")
+        if (row.status !== "pending") {
           return yield* Effect.fail(
             new Conflict({ message: "Bot request has already been decided" }),
           );
+        }
 
         return row;
       });
@@ -170,12 +175,13 @@ export class BotRequests extends Context.Service<
                 .limit(1)
                 .pipe(Effect.orDie);
 
-              if (pending)
+              if (pending) {
                 return yield* Effect.fail(
                   new Conflict({
                     message: "A bot request is already pending; please wait.",
                   }),
                 );
+              }
               yield* db
                 .insert(botRequests)
                 .values({
@@ -197,7 +203,7 @@ export class BotRequests extends Context.Service<
           )
           .pipe(
             Effect.catch((error) =>
-              error instanceof Conflict
+              Schema.is(Conflict)(error)
                 ? Effect.fail(error)
                 : Effect.die(error),
             ),
@@ -234,8 +240,9 @@ export class BotRequests extends Context.Service<
         const { agent, updated } = yield* db
           .transaction(() =>
             Effect.gen(function* () {
-              if (!(yield* claim(agentId, requestId, "approved", at)))
+              if (!(yield* claim(agentId, requestId, "approved", at))) {
                 return yield* alreadyDecided(agentId, requestId);
+              }
 
               const agent = yield* agents.create(nextProposal);
               yield* db
@@ -248,10 +255,11 @@ export class BotRequests extends Context.Service<
                 .pipe(Effect.orDie);
               const updated = yield* getRow(agentId, requestId);
 
-              if (!updated)
+              if (!updated) {
                 return yield* Effect.die(
                   new Error("Approved bot request disappeared"),
                 );
+              }
 
               return { agent, updated };
             }),
@@ -274,15 +282,17 @@ export class BotRequests extends Context.Service<
         const row = yield* pendingRow(agentId, requestId);
         const at = yield* nowIso;
 
-        if (!(yield* claim(agentId, requestId, "declined", at)))
+        if (!(yield* claim(agentId, requestId, "declined", at))) {
           return yield* alreadyDecided(agentId, requestId);
+        }
 
         const updated = yield* getRow(agentId, requestId);
 
-        if (!updated)
+        if (!updated) {
           return yield* Effect.die(
             new Error("Declined bot request disappeared"),
           );
+        }
         yield* notify(
           agentId,
           `The owner declined your request for bot ${requestOf(row).proposal.name}.`,
@@ -349,8 +359,10 @@ const requestBotTool = (agent: Agent, service: BotRequests["Service"]) =>
         service.request(agent.id, { proposal, reason: args.reason }),
       );
 
-      // SAFETY: BotRequest contains only JSON data; serialization removes optional undefined fields.
-      const details = JSON.parse(JSON.stringify(saved)) as JsonValue;
+      // The tool answer is JSON: optional fields BotRequest leaves undefined stay out of it.
+      const details: JsonValue = copyJson(saved, {
+        omitUndefinedProperties: true,
+      });
 
       return { ...toolOutput({ request: details }), details };
     },

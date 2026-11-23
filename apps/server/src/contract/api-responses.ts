@@ -1205,11 +1205,11 @@ export const pinsEvent = z
 
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
 
-export const eventSchemas: {
+export const eventSchemas: Array<{
   schema: z.ZodType;
   component?: string;
   artifact?: string;
-}[] = [
+}> = [
   { schema: replyEvent, component: "ReplyEvent" },
   { schema: chatPreviewEvent, component: "ChatPreviewEvent" },
   {

@@ -23,7 +23,9 @@ export const endNotice = Effect.fnUntraced(function* (
       ),
     );
 
-    if (woken) return;
+    if (woken) {
+      return;
+    }
   }
 
   yield* bots.recordCallEvent(botId, marker, requestId);

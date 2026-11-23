@@ -12,7 +12,7 @@ export const callRequestsQuery = (id: string) =>
   queryOptions({
     queryKey: ["call-requests", id],
     queryFn: ({ signal }) =>
-      api<"listCallRequests">(`${agentPath(id)}/call-requests`, { signal }),
+      api("listCallRequests", `${agentPath(id)}/call-requests`, { signal }),
     // Another client can decide a request, and a call ends without the owner.
     refetchInterval: (query) =>
       query.state.data?.some(
@@ -37,7 +37,8 @@ export const callTranscriptQuery = (
   queryOptions({
     queryKey: ["call-request-transcript", id, requestId],
     queryFn: ({ signal }) =>
-      api<"callRequestTranscript">(
+      api(
+        "callRequestTranscript",
         historyPage(`${callRequestPath(id, requestId)}/transcript`, 200),
         { signal },
       ),
@@ -55,9 +56,13 @@ export const CALL_OUTCOMES: Record<
 };
 
 export const callStateOf = (request: CallRequest) => {
-  if (request.status === "declined") return "Declined";
+  if (request.status === "declined") {
+    return "Declined";
+  }
 
-  if (request.status === "calling") return "Calling";
+  if (request.status === "calling") {
+    return "Calling";
+  }
 
   return request.outcome ? CALL_OUTCOMES[request.outcome] : "Ended";
 };

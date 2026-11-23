@@ -1,23 +1,18 @@
 import { replyText } from "../shared/reply-text";
-import {
-  calculateCost,
-  isModelType,
-  type AnyModel,
-  type ClassifierModel,
-  type ClassifierApi,
-  type ClassifierContext,
-  type Model,
-  type Api,
-  type Models,
-  type Usage,
+import { calculateCost, isModelType } from "@earendil-works/pi-ai";
+import type {
+  AnyModel,
+  ClassifierModel,
+  ClassifierApi,
+  ClassifierContext,
+  Model,
+  Api,
+  Models,
+  Usage,
 } from "@earendil-works/pi-ai";
 import { z } from "zod";
-import {
-  JUDGE_QUESTIONS,
-  judgeState,
-  type Judge,
-  type IntentRequest,
-} from "./intent-check";
+import { JUDGE_QUESTIONS, judgeState } from "./intent-check";
+import type { Judge, IntentRequest } from "./intent-check";
 
 export type JudgeModelRef = { provider: string; model: string };
 
@@ -41,7 +36,7 @@ type JudgeRecord = JudgeModelRef &
 // A model nobody evaluated must be sure.
 const UNEVALUATED_BAR = 0.9;
 
-const JUDGES: JudgeRecord[] = [
+const JUDGES: Array<JudgeRecord> = [
   // Bar from `bun tools/intent-eval.ts`: Jev put every action the owner asked for at 55% or more and every one they
   // didn't at 42% or less (38 cases, 2026-10-30). It let a typed repository delete and a URL sending session data
   // through, so it keeps the Enter rule. Price: TypeSafe's stated price.
@@ -86,7 +81,9 @@ const classifierRecord = (model: AnyModel) =>
 export function judgeUsage(model: AnyModel, usage: Usage): Usage {
   const price = classifierRecord(model)?.price;
 
-  if (!price || model.cost.input > 0) return usage;
+  if (!price || model.cost.input > 0) {
+    return usage;
+  }
 
   return {
     ...usage,
@@ -140,8 +137,9 @@ function classifierJudge(
       result.stopReason !== "stop" ||
       irreversible?.type !== "bool" ||
       inIntent?.type !== "bool"
-    )
+    ) {
       throw new Error(result.errorMessage ?? "The judge gave no answer");
+    }
 
     return {
       irreversible: irreversible.probability,
@@ -173,8 +171,9 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
       signal ? { signal } : {},
     );
 
-    if (reply.stopReason === "error" || reply.stopReason === "aborted")
+    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
       throw new Error(reply.errorMessage ?? "The judge gave no answer");
+    }
 
     const text = replyText(reply);
 
@@ -209,7 +208,9 @@ export async function judgeModel(
     classifiers.find((model) => sameRef(model, DEFAULT_JUDGE)) ??
     classifiers[0];
 
-  if (classifier) return classifier;
+  if (classifier) {
+    return classifier;
+  }
 
   const chat = await models.getAvailableOfType("chat");
 
@@ -221,9 +222,13 @@ export async function judgeModel(
 }
 
 export function judgeWith(models: Models, model: AnyModel): Judge {
-  if (isModelType(model, "classifier")) return classifierJudge(models, model);
+  if (isModelType(model, "classifier")) {
+    return classifierJudge(models, model);
+  }
 
-  if (isModelType(model, "chat")) return chatJudge(models, model);
+  if (isModelType(model, "chat")) {
+    return chatJudge(models, model);
+  }
 
   throw new Error(`${model.name} can't judge`);
 }

@@ -1,4 +1,5 @@
-import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../support/store";
 import { AgentRuntime } from "../../src/bots/runtime";
@@ -7,7 +8,9 @@ import { runtimeCallbacks } from "../support/runtime-callbacks";
 
 const dir = process.env["BOT_CRASH_DIR"];
 
-if (!dir) throw new Error("BOT_CRASH_DIR is required");
+if (!dir) {
+  throw new Error("BOT_CRASH_DIR is required");
+}
 
 const faux = fauxProvider({
   provider: "faux",

@@ -7,16 +7,18 @@ import {
   Partials,
   RateLimitError,
   Routes,
-  type ClientOptions,
-  type REST,
-  type RESTPostAPIChannelMessageJSONBody,
+} from "discord.js";
+import type {
+  ClientOptions,
+  REST,
+  RESTPostAPIChannelMessageJSONBody,
 } from "discord.js";
 import { z } from "zod";
-import {
-  GatewayTransportError,
-  type ChatAdapter,
-  type GatewayConnection,
-  type GatewayMessage,
+import { GatewayTransportError } from "../adapter";
+import type {
+  ChatAdapter,
+  GatewayConnection,
+  GatewayMessage,
 } from "../adapter";
 import { pluginSettingKey } from "../../shared/vendors";
 import type { ConnectionStatus } from "../../shared/domain";
@@ -83,7 +85,7 @@ function httpErrorDetails(failure: Error): DeliveryErrorDetails {
     const parsed = rateLimitResponseSchema.safeParse(failure.rawError);
 
     if (parsed.success) {
-      details.retryAfterMs = Math.ceil(parsed.data.retry_after * 1_000);
+      details.retryAfterMs = Math.ceil(parsed.data.retry_after * 1000);
       details.rateLimit = {
         scope: parsed.data.global ? "adapter" : "channel",
       };
@@ -127,7 +129,9 @@ export function normalizeDiscordMessage(
   message: DiscordMessage,
   applicationId?: string,
 ): GatewayMessage | undefined {
-  if (message.author.bot || message.webhookId) return undefined;
+  if (message.author.bot || message.webhookId) {
+    return undefined;
+  }
 
   const normalized: GatewayMessage = {
     id: message.id,
@@ -138,8 +142,9 @@ export function normalizeDiscordMessage(
     hasAttachments: message.attachments.size > 0,
   };
 
-  if (message.reference?.messageId)
+  if (message.reference?.messageId) {
     normalized.replyTo = message.reference.messageId;
+  }
 
   if (applicationId) {
     const content = message.content.trimStart();
@@ -151,8 +156,9 @@ export function normalizeDiscordMessage(
           /^\s/.test(content.slice(mention.length))),
     );
 
-    if (prefix)
+    if (prefix) {
       normalized.routingText = content.slice(prefix.length).trimStart();
+    }
   }
 
   return normalized;
@@ -189,11 +195,12 @@ function outgoingMessageBody(
     enforce_nonce: true,
   };
 
-  if (input.replyTo)
+  if (input.replyTo) {
     body.message_reference = {
       message_id: input.replyTo,
       fail_if_not_exists: false,
     };
+  }
 
   return body;
 }
@@ -208,17 +215,23 @@ function watchClient(
   const reportError = () => status("error");
 
   client.on("messageCreate", (message) => {
-    if (state.closed) return;
+    if (state.closed) {
+      return;
+    }
     const normalized = normalizeDiscordMessage(message, client.user?.id);
 
-    if (normalized) void host.onMessage(normalized).catch(reportError);
+    if (normalized) {
+      void host.onMessage(normalized).catch(reportError);
+    }
   });
   client.on("clientReady", () => status("connected"));
   client.on("shardResume", () => status("connected"));
   client.on("shardReconnecting", () => status("connecting"));
   client.on("shardDisconnect", () => status("disconnected"));
   client.on("invalidated", () => {
-    if (state.closed || invalidated) return;
+    if (state.closed || invalidated) {
+      return;
+    }
     invalidated = true;
     status("error");
     host.onInvalidated();
@@ -258,7 +271,9 @@ async function sendMessage(
   pending: Set<AbortController>,
   deadline: (milliseconds: number) => AbortSignal,
 ) {
-  if (state.closed) throw new Error("Discord connection is closed.");
+  if (state.closed) {
+    throw new Error("Discord connection is closed.");
+  }
   const controller = new AbortController();
 
   const signal = AbortSignal.any([
@@ -276,17 +291,20 @@ async function sendMessage(
 
     const parsed = sentMessageSchema.safeParse(response);
 
-    if (!parsed.success)
+    if (!parsed.success) {
       throw new Error("Discord returned an invalid message response.");
+    }
 
     return parsed.data.id;
   } catch (error) {
-    if (signal.aborted)
+    if (signal.aborted) {
       throw new Error(
         state.closed
           ? "Discord connection is closed."
           : "Discord message delivery timed out.",
+        { cause: error },
       );
+    }
 
     const failure = error instanceof Error ? error : new Error(String(error));
 
@@ -306,17 +324,23 @@ function openConnection(
 
   return {
     async typing(channelId) {
-      if (state.closed) return;
+      if (state.closed) {
+        return;
+      }
       await client.rest.post(Routes.channelTyping(channelId), {
         signal: deadline(SEND_TIMEOUT_MS),
       });
     },
     send: (input) => sendMessage(client, input, state, pending, deadline),
     async close() {
-      if (state.closed) return;
+      if (state.closed) {
+        return;
+      }
       state.closed = true;
 
-      for (const controller of pending) controller.abort();
+      for (const controller of pending) {
+        controller.abort();
+      }
       pending.clear();
 
       try {
@@ -354,15 +378,17 @@ export function discordAdapter(
     id: DISCORD_PLUGIN_ID,
     label: "Discord",
     secretKey: DISCORD_SECRET_KEY,
-    maxMessageLength: 2_000,
+    maxMessageLength: 2000,
     // The indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
-    typingRenewalMs: 8_000,
+    typingRenewalMs: 8000,
     async connect(host) {
       const client = clientFactory(options);
       const state: ConnectionState = { closed: false };
 
       const status = (value: ConnectionStatus) => {
-        if (!state.closed) host.onStatus(value);
+        if (!state.closed) {
+          host.onStatus(value);
+        }
       };
 
       watchClient(client, host, state, status);

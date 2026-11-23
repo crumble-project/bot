@@ -1,8 +1,5 @@
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { IconPencil, IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -12,10 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import type { Bot } from "@/features/bots/api";
 import {
-  type Schedule,
   schedulesQuery,
   toggleScheduleOptions,
 } from "@/features/automations/api";
+import type { Schedule } from "@/features/automations/api";
 import { LiveBotAvatar } from "./avatar";
 import { DesktopPreview } from "@/features/bot-desktop/desktop";
 import { finished } from "@/features/automations/timing";
@@ -71,8 +68,8 @@ function AutomationList({
   schedules,
   automations,
 }: {
-  schedules: UseQueryResult<Schedule[]>;
-  automations: Schedule[];
+  schedules: UseQueryResult<Array<Schedule>>;
+  automations: Array<Schedule>;
 }) {
   return (
     <>

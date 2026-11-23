@@ -27,7 +27,7 @@ const largeImage: Upload = { ...image, size: 6 * 1024 * 1024 };
 const text: Upload = { ...image, name: "notes.txt", mimeType: "text/plain" };
 
 async function render(
-  uploads: Upload[],
+  uploads: Array<Upload>,
   { images = false, vision = false } = {},
 ) {
   const window = new Window({ url: "http://localhost" });
@@ -44,7 +44,7 @@ async function render(
       async (input: RequestInfo | URL) => {
         const url = z.string().parse(input);
 
-        if (url.startsWith("/v1/models"))
+        if (url.startsWith("/v1/models")) {
           return Response.json([
             {
               provider: "p",
@@ -56,6 +56,7 @@ async function render(
               images,
             },
           ]);
+        }
 
         return Response.json({
           visionModel: vision ? { provider: "p", model: "eyes" } : null,
@@ -123,7 +124,7 @@ for (const [name, uploads, options] of [
   ["a vision model describes images", [image], { vision: true }],
   ["no image is attached", [text], {}],
   ["the image is sent as a file reference", [largeImage], {}],
-] as const)
+] as const) {
   test(`stays quiet when ${name}`, async () => {
     const { container, cleanup } = await render([...uploads], options);
 
@@ -133,3 +134,4 @@ for (const [name, uploads, options] of [
       await cleanup();
     }
   });
+}

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { type ChatSnapshot, chatQuery } from "@/features/chat/api";
+import { chatQuery } from "@/features/chat/api";
+import type { ChatSnapshot } from "@/features/chat/api";
 import { queryClient } from "@/lib/api";
-import { type Bot } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import type { BotState } from "@/components/bot-avatar";
 
 export type Working = ChatSnapshot["working"];
@@ -21,9 +22,13 @@ export const isBusy = (working: Working) =>
   working !== "idle" && working !== "failed";
 
 export const workingAvatar = (working: Working): BotState => {
-  if (working === "thinking") return "thinking";
+  if (working === "thinking") {
+    return "thinking";
+  }
 
-  if (working === "struggling") return "blocked";
+  if (working === "struggling") {
+    return "blocked";
+  }
 
   return isBusy(working) ? "working" : "idle";
 };
@@ -44,7 +49,9 @@ export function botStatusLine(
   working: boolean,
   idle: string,
 ) {
-  if (working) return "Working…";
+  if (working) {
+    return "Working…";
+  }
 
   return bot.enabled ? idle : "Paused";
 }

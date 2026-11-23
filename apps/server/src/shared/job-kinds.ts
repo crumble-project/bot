@@ -29,4 +29,4 @@ export const JOB_KINDS = {
 export type JobKindName = keyof typeof JOB_KINDS;
 
 export const jobKindTitle = ({ label }: Pick<JobKindFacts, "label">) =>
-  `${label[0]!.toUpperCase()}${label.slice(1)}`;
+  `${label.charAt(0).toUpperCase()}${label.slice(1)}`;

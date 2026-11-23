@@ -4,14 +4,17 @@ import {
   PasswordManagerTokenRejected,
   PasswordManagerUnreachable,
   SecretUnreadable,
-  type PasswordManagerClient,
-  type PasswordManagerVendor,
+} from "../../src/password-managers/password-manager";
+import type {
+  PasswordManagerClient,
+  PasswordManagerVendor,
 } from "../../src/password-managers/password-manager";
 import { onePassword } from "../../src/password-managers/one-password";
 
 export const FAKE_TOKEN = "fake-token";
 
-export const connectFakePasswordManager = PasswordManagerRepository.use(
+export const connectFakePasswordManager = Effect.flatMap(
+  PasswordManagerRepository,
   (repository) => repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
 );
 
@@ -43,7 +46,9 @@ const itemOf = (reference: string) =>
 const missing = (state: FakePasswordManager, reference: string) => {
   const reason = state.unreadable.get(reference);
 
-  if (reason) return { message: reason };
+  if (reason) {
+    return { message: reason };
+  }
 
   return [...state.values.keys()].some(
     (held) => itemOf(held) === itemOf(reference),
@@ -83,7 +88,7 @@ const fakeRead =
     Effect.suspend(() => {
       state.reads++;
 
-      if (state.mode === "hang")
+      if (state.mode === "hang") {
         return Effect.never.pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {
@@ -91,14 +96,16 @@ const fakeRead =
             }),
           ),
         );
+      }
 
-      if (state.mode === "unreachable")
+      if (state.mode === "unreachable") {
         return Effect.fail(
           new PasswordManagerUnreachable({
             message: "could not be reached",
             cause: undefined,
           }),
         );
+      }
 
       const held = state.held;
 
@@ -110,17 +117,17 @@ const fakeRead =
 export const fakeVendor = (
   state: FakePasswordManager,
 ): PasswordManagerVendor => ({
+  ...onePassword,
   id: "1password",
   name: "Fake",
   reference: Schema.String,
-  itemFields: onePassword.itemFields!,
-  isVolatile: onePassword.isVolatile!,
   signIn: (token) =>
     Effect.suspend(() => {
-      if (Redacted.value(token) !== FAKE_TOKEN)
+      if (Redacted.value(token) !== FAKE_TOKEN) {
         return Effect.fail(
           new PasswordManagerTokenRejected({ message: "rejected" }),
         );
+      }
 
       state.signIns++;
 

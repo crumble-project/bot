@@ -4,19 +4,16 @@
 // wait for approval.
 import type { Context } from "@earendil-works/chord";
 import type { ImageContent, TextContent, Usage } from "@earendil-works/pi-ai";
-import { defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
+import { defineTool } from "@earendil-works/pi-durable";
+import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { ControlState } from "./desktop-control";
 import type { LoginFill } from "../logins/login-fill";
 import type { DesktopFills } from "./computer-use-login";
-import {
-  computerUseState,
-  type ComputerUseOptions,
-} from "./computer-use-state";
-import {
-  computerUseParameters,
-  type ComputerUseArgs,
-} from "./computer-use-args";
+import { computerUseState } from "./computer-use-state";
+import type { ComputerUseOptions } from "./computer-use-state";
+import { computerUseParameters } from "./computer-use-args";
+import type { ComputerUseArgs } from "./computer-use-args";
 import { runAction } from "./computer-use-run";
 import type { IntentGate } from "./computer-use-intent";
 import { COMPUTER_USE_TOOL_NAME } from "../contract/tools";
@@ -27,7 +24,7 @@ export type DesktopShell = Pick<
 >;
 
 export type ComputerUseResult = {
-  content: (TextContent | ImageContent)[];
+  content: Array<TextContent | ImageContent>;
   isError: boolean;
   usage?: Usage;
 };
@@ -82,7 +79,7 @@ export function computerUseTool({
     execute: async (args, api, callContext) => {
       const env = api.env;
 
-      if (!env)
+      if (!env) {
         return {
           output: [
             {
@@ -92,6 +89,7 @@ export function computerUseTool({
           ],
           isError: true,
         };
+      }
 
       const key = String(api.conversationId);
       let computer = instances.get(key);

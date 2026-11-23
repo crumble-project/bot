@@ -1,12 +1,13 @@
 import { z } from "zod";
+import { fallingBackTo } from "../shared/fallback-schema";
 
 const asText = z.union([
   z.string(),
   z.unknown().transform((value) => JSON.stringify(value) ?? ""),
 ]);
 
-export const activityDetails = z
-  .object({
+export const activityDetails = fallingBackTo(
+  z.object({
     toolName: z.string().optional(),
     name: z.string().optional(),
     content: asText.optional(),
@@ -20,5 +21,6 @@ export const activityDetails = z
         toName: z.string().optional(),
       })
       .optional(),
-  })
-  .catch({});
+  }),
+  {},
+);

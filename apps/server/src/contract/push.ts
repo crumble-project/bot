@@ -48,26 +48,29 @@ export const pushInput = z
     enabled: z.boolean(),
   })
   .superRefine((value, ctx) => {
-    if (value.transport === "fcm" && value.platform !== "android")
+    if (value.transport === "fcm" && value.platform !== "android") {
       ctx.addIssue({
         code: "custom",
         path: ["transport"],
         message: "FCM is only valid for Android",
       });
+    }
 
-    if (value.transport === "apns" && value.platform === "android")
+    if (value.transport === "apns" && value.platform === "android") {
       ctx.addIssue({
         code: "custom",
         path: ["transport"],
         message: "APNs is only valid for macOS or iOS",
       });
+    }
 
-    if (value.transport === "apns" && !value.bundleId)
+    if (value.transport === "apns" && !value.bundleId) {
       ctx.addIssue({
         code: "custom",
         path: ["bundleId"],
         message: "APNs requires bundleId",
       });
+    }
   });
 
 export const viewInput = z.object({ chat: chatReference.nullable() });

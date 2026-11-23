@@ -20,9 +20,9 @@ const steps = new Map<string, { label: string; icon: Step["icon"] }>([
 ]);
 
 export function jobItems(
-  messages: TranscriptMessage[],
-  results: TranscriptMessage[],
-): Item[] {
+  messages: Array<TranscriptMessage>,
+  results: Array<TranscriptMessage>,
+): Array<Item> {
   const byCall = new Map(
     results.flatMap((message) =>
       message.role === "toolResult" && message.toolCallId
@@ -31,19 +31,25 @@ export function jobItems(
     ),
   );
 
-  return messages.flatMap((message): Item[] => {
-    if (message.role === "user" && message.content.trim())
+  return messages.flatMap((message): Array<Item> => {
+    if (message.role === "user" && message.content.trim()) {
       return [{ kind: "task", id: message.id, text: message.content }];
+    }
 
-    if (message.role !== "assistant") return [];
+    if (message.role !== "assistant") {
+      return [];
+    }
 
-    return (message.blocks ?? []).flatMap((block, index): Item[] => {
-      if (block.type === "text" && block.text.trim())
+    return (message.blocks ?? []).flatMap((block, index): Array<Item> => {
+      if (block.type === "text" && block.text.trim()) {
         return [
           { kind: "reply", id: `${message.id}:${index}`, text: block.text },
         ];
+      }
 
-      if (block.type !== "toolCall" || !block.name) return [];
+      if (block.type !== "toolCall" || !block.name) {
+        return [];
+      }
 
       const detail = steps.get(block.name) ?? {
         label: block.name.charAt(0).toUpperCase() + block.name.slice(1),
@@ -63,9 +69,13 @@ export function jobItems(
         ...detail,
       };
 
-      if (subject !== undefined) step.subject = subject;
+      if (subject !== undefined) {
+        step.subject = subject;
+      }
 
-      if (result) step.result = { ...result, replyReferences: [] };
+      if (result) {
+        step.result = { ...result, replyReferences: [] };
+      }
 
       return [step];
     });

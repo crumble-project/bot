@@ -1,15 +1,16 @@
 import { Spinner } from "@/components/ui/spinner";
 import { JOB_KINDS } from "./kinds";
-import { type JobRef } from "./api";
+import type { JobRef } from "./api";
 import {
   JOB_FAILURE_EVENT,
   JOB_KIND_NAMES,
   isJobKind,
 } from "@crumble/server/contract/tools";
 import { jobDetails } from "@crumble/server/contract/tool-details";
-import { type Message } from "@/features/chat/api";
+import type { Message } from "@/features/chat/api";
 import { toolDetailsOf } from "@/features/chat/tool-details";
-import { messageCard, type CardChat } from "@/features/chat/message-card";
+import { messageCard } from "@/features/chat/message-card";
+import type { CardChat } from "@/features/chat/message-card";
 
 export function jobOf(message: Message) {
   const kind = JOB_KIND_NAMES.find(

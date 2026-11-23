@@ -4,12 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { connect } from "node:http2";
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
-import {
-  notificationPreview,
-  notificationTitle,
-  type PushDevice,
-  type PushDeviceInput,
-  type PushTransportName,
+import { notificationPreview, notificationTitle } from "./push-model";
+import type {
+  PushDevice,
+  PushDeviceInput,
+  PushTransportName,
 } from "./push-model";
 
 export class PermanentRejection extends Schema.TaggedError<PermanentRejection>()(
@@ -98,22 +97,27 @@ export const loadApnsSettings = Effect.fnUntraced(function* (
   const keyPath = env["CRUMBLE_APNS_PRIVATE_KEY_PATH"];
   const allowedTopics = env["CRUMBLE_APNS_ALLOWED_TOPICS"];
 
-  if (![teamId, keyId, keyPath, allowedTopics].some(Boolean)) return undefined;
+  if (![teamId, keyId, keyPath, allowedTopics].some(Boolean)) {
+    return undefined;
+  }
 
-  if (!(teamId && keyId && keyPath && allowedTopics))
+  if (!(teamId && keyId && keyPath && allowedTopics)) {
     return yield* configError(
       "APNs requires TEAM_ID, KEY_ID, PRIVATE_KEY_PATH, and ALLOWED_TOPICS",
     );
+  }
 
   const topics = apnsTopics(allowedTopics);
 
-  if (!topics.size)
+  if (!topics.size) {
     return yield* configError(
       "APNs ALLOWED_TOPICS must contain at least one topic",
     );
+  }
 
-  if (!existsSync(keyPath))
+  if (!existsSync(keyPath)) {
     return yield* configError("APNs private key file does not exist");
+  }
 
   yield* Effect.try({
     try: () => createPrivateKey(readFileSync(keyPath)),
@@ -128,10 +132,13 @@ export const loadFcmSettings = Effect.fnUntraced(function* (
 ): Effect.fn.Return<ServiceAccount | undefined, PushConfigError> {
   const path = env["CRUMBLE_FCM_SERVICE_ACCOUNT_PATH"];
 
-  if (!path) return undefined;
+  if (!path) {
+    return undefined;
+  }
 
-  if (!existsSync(path))
+  if (!existsSync(path)) {
     return yield* configError("FCM service account file does not exist");
+  }
 
   const account = yield* Schema.decodeUnknownEffect(
     Schema.fromJsonString(ServiceAccount),
@@ -185,7 +192,9 @@ function apnsRequest(
       }, 15_000);
 
       const fail = (error: Error) => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         settled = true;
         clearTimeout(timer);
         reject(error);
@@ -197,7 +206,9 @@ function apnsRequest(
         req.setEncoding("utf8");
         req.on("data", (chunk) => (responseBody += chunk));
         req.on("end", () => {
-          if (settled) return;
+          if (settled) {
+            return;
+          }
           settled = true;
           clearTimeout(timer);
 
@@ -298,18 +309,21 @@ export function classifyApnsResponse(
   if (
     status === 410 ||
     (reason !== undefined && apnsRejectedTokens.has(reason))
-  )
+  ) {
     return new PermanentRejection({ message: "APNs rejected token" });
+  }
 
-  if (status >= 500 || status === 429)
+  if (status >= 500 || status === 429) {
     return new TemporaryFailure({
       message: `APNs temporary failure ${status}`,
     });
+  }
 
-  if (status >= 400 && status !== 401 && status !== 403)
+  if (status >= 400 && status !== 401 && status !== 403) {
     return new TerminalResponse({
       message: `APNs terminal response ${status}`,
     });
+  }
 
   return undefined;
 }
@@ -320,6 +334,14 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
   return {
     canSend: (device) => !!device.bundleId && topics.has(device.bundleId),
     send: Effect.fn("APNs.send")(function* (device, event) {
+      const bundleId = device.bundleId;
+
+      if (!bundleId) {
+        return yield* new TerminalResponse({
+          message: "The device has no bundle ID",
+        });
+      }
+
       const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
       const jwt = apnsJwt(settings, seconds);
 
@@ -327,7 +349,7 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
         try: () =>
           apnsRequest(
             apnsHost(device.environment),
-            apnsHeaders(device.bundleId!, device, event, jwt, seconds),
+            apnsHeaders(bundleId, device, event, jwt, seconds),
             JSON.stringify(apnsPayload(event)),
           ),
         catch: temporaryFailure,
@@ -335,7 +357,9 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
 
       const failure = classifyApnsResponse(status, reason);
 
-      if (failure) return yield* failure;
+      if (failure) {
+        return yield* failure;
+      }
 
       return deliveryOutcome(status);
     }),
@@ -382,14 +406,17 @@ export function classifyFcmResponse(
   status: number,
   errorCode: string | undefined,
 ): SendFailure | undefined {
-  if (errorCode !== undefined && fcmRejectedTokens.has(errorCode))
+  if (errorCode !== undefined && fcmRejectedTokens.has(errorCode)) {
     return new PermanentRejection({ message: "FCM rejected token" });
+  }
 
-  if (status === 429 || status >= 500)
+  if (status === 429 || status >= 500) {
     return new TemporaryFailure({ message: `FCM temporary failure ${status}` });
+  }
 
-  if (status >= 400 && status !== 401 && status !== 403)
+  if (status >= 400 && status !== 401 && status !== 403) {
     return new TerminalResponse({ message: `FCM terminal response ${status}` });
+  }
 
   return undefined;
 }
@@ -446,10 +473,11 @@ const fcmAccessToken = Effect.fnUntraced(function* (account: ServiceAccount) {
     catch: temporaryFailure,
   });
 
-  if (!response.ok)
+  if (!response.ok) {
     return yield* new TemporaryFailure({
       message: `FCM OAuth failure ${response.status}`,
     });
+  }
 
   const body = yield* Effect.tryPromise({
     try: () => response.text(),
@@ -487,7 +515,9 @@ function fcmTransport(account: ServiceAccount): PushTransport {
       const errorCode = yield* fcmErrorCode(response);
       const failure = classifyFcmResponse(response.status, errorCode);
 
-      if (failure) return yield* failure;
+      if (failure) {
+        return yield* failure;
+      }
 
       return deliveryOutcome(response.status);
     }),

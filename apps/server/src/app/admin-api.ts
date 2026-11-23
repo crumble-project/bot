@@ -33,7 +33,7 @@ type AdminOptions = {
   accounts: Accounts;
   origin: () => string;
   removeAccount: (userId: string) => Promise<void>;
-  outdatedWorkspaces: () => Promise<{ userId: string; agentId: string }[]>;
+  outdatedWorkspaces: () => Promise<Array<{ userId: string; agentId: string }>>;
 };
 
 function registerUserRoutes(register: AdminRegister, options: AdminOptions) {
@@ -45,7 +45,9 @@ function registerUserRoutes(register: AdminRegister, options: AdminOptions) {
       where: [{ field: "id", value: id }],
     });
 
-    if (!user) throw new HTTPException(404, { message: "No such user" });
+    if (!user) {
+      throw new HTTPException(404, { message: "No such user" });
+    }
 
     return user;
   };
@@ -68,8 +70,9 @@ function registerUserRoutes(register: AdminRegister, options: AdminOptions) {
       role === "user" &&
       user.role === ADMIN_ROLE &&
       (await adminCount(adapter)) <= 1
-    )
+    ) {
       return c.json({ error: "The server needs at least one admin" }, 409);
+    }
     await auth.api.setRole({
       body: { userId: id, role },
       headers: c.req.raw.headers,
@@ -81,8 +84,9 @@ function registerUserRoutes(register: AdminRegister, options: AdminOptions) {
   register(routes.removeUser, async (c) => {
     const { id } = c.req.valid("param");
 
-    if (id === c.get("adminId"))
+    if (id === c.get("adminId")) {
       return c.json({ error: "You can't remove your own account" }, 409);
+    }
     await findUser(id);
     await auth.api.removeUser({
       body: { userId: id },
@@ -124,8 +128,9 @@ function registerInviteRoutes(register: AdminRegister, options: AdminOptions) {
   });
 
   register(routes.revokeInvite, async (c) => {
-    if (!(await invites.revoke(c.req.valid("param").id)))
+    if (!(await invites.revoke(c.req.valid("param").id))) {
       return c.json({ error: "No such invite" }, 404);
+    }
 
     return c.body(null, 204);
   });
@@ -156,10 +161,13 @@ export function adminAPI(options: AdminOptions) {
       headers: c.req.raw.headers,
     });
 
-    if (!session) return c.json({ error: "Sign in required" }, 401);
+    if (!session) {
+      return c.json({ error: "Sign in required" }, 401);
+    }
 
-    if (!(await accounts.isAdmin(session.user.id)))
+    if (!(await accounts.isAdmin(session.user.id))) {
       return c.json({ error: "Only admins can do this" }, 403);
+    }
     c.set("adminId", session.user.id);
 
     return next();

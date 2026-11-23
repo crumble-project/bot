@@ -4,6 +4,12 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
+import { requestPath } from "@/test/request-path";
+
+const button = (label: string) =>
+  [...document.querySelectorAll("button")].find(
+    (each) => each.textContent?.trim() === label,
+  );
 
 test("closing the invite sheet leaves the shown invite the only one minted", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -23,8 +29,9 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const removedListeners = spyOn(window, "removeEventListener");
   let minted = 0;
@@ -32,7 +39,7 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
         if (init?.method === "POST") {
           minted++;
@@ -43,17 +50,30 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
           );
         }
 
-        if (path.endsWith("/get-session"))
+        if (path.endsWith("/get-session")) {
           return Response.json({
             session: { id: "s", userId: "u" },
             user: { id: "u", role: "admin" },
           });
+        }
 
-        if (path === "/v1/admin/users") return Response.json({ users: [] });
+        if (path === "/v1/admin/users") {
+          return Response.json({ users: [] });
+        }
 
-        if (path === "/v1/admin/invites") return Response.json({ invites: [] });
+        if (path === "/v1/admin/invites") {
+          return Response.json({ invites: [] });
+        }
 
-        if (path === "/v1/admin/settings") return Response.json({});
+        if (path === "/v1/admin/settings") {
+          return Response.json({
+            signUpOpen: false,
+            workspaceCpus: 2,
+            workspaceMemoryMib: 4096,
+            codingImage: null,
+            questionGraceMinutes: 5,
+          });
+        }
 
         return Response.json(null);
       },
@@ -67,11 +87,6 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-
-  const button = (label: string) =>
-    [...document.querySelectorAll("button")].find(
-      (each) => each.textContent?.trim() === label,
-    );
 
   try {
     await act(async () =>
@@ -102,8 +117,11 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

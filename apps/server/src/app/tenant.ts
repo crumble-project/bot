@@ -1,7 +1,8 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { Effect, Layer, ManagedRuntime, Schedule, type Scope } from "effect";
+import { Effect, Layer, ManagedRuntime, Schedule } from "effect";
+import type { Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
@@ -11,16 +12,14 @@ import { BotExtensions } from "../bot-ports/bot-extensions";
 import { reactionTools } from "../bots/reaction";
 import { codemodeTools } from "../integrations/codemode";
 import { configuredWebSearchTools } from "../web-search/web-search-tools";
-import {
-  Scheduler,
-  schedulerAccess,
-  type SchedulerAccess,
-} from "../automations/scheduler";
+import { Scheduler, schedulerAccess } from "../automations/scheduler";
+import type { SchedulerAccess } from "../automations/scheduler";
 import { BotSchedules, scheduleTools } from "../automations/bot-schedules";
 import { Automations } from "../automations/automations";
 import { AutomationDispatch } from "../automations/automation-dispatch";
 import { ScriptRuns, scriptRunRetention } from "../automations/script-runs";
-import { createAPI, type ApiServices } from "./api";
+import { createAPI } from "./api";
+import type { ApiServices } from "./api";
 import { historyTools } from "../history/history-tools";
 import { BotSkills } from "../skills/skills";
 import { LearningReview, learningReviews } from "../learning/learning-review";
@@ -53,7 +52,8 @@ import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
 import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
 import { credentialInterception } from "../credentials/credential-interception";
-import { coreLayer, type CoreServices } from "./core-layer";
+import { coreLayer } from "./core-layer";
+import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
 import { heldActionNotices } from "../bot-desktop/held-action-notices";
@@ -118,7 +118,7 @@ export type TenantRuntime = {
   /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
   removeWorkspaces: () => Promise<void>;
   /** Tells the account's open /v1/events streams that its pinned conversations changed. */
-  announcePins: (pins: string[]) => void;
+  announcePins: (pins: Array<string>) => void;
   close: () => Promise<void>;
 };
 
@@ -144,7 +144,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
       const machineOptions = {
         dataDir,
-        namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
+        namePrefix: `crumble-${options.tenantId.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) => {
           const agent = Effect.runSync(agents.get(agentId));
 
@@ -158,8 +158,9 @@ function accountLayer(options: TenantOptions, dataDir: string) {
         ...credentialInterception(run),
       };
 
-      if (options.emulate)
+      if (options.emulate) {
         return BotWorkspaces.layer(Effect.succeed(undefined));
+      }
 
       return BotWorkspaces.layer(
         options.workspaces ??
@@ -209,7 +210,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   );
 
   const models = Layer.unwrap(
-    Plugins.use((installed) =>
+    Effect.flatMap(Plugins, (installed) =>
       Effect.succeed(
         ProviderModels.layer(
           (credentials, contributions) =>
@@ -243,7 +244,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const activity = Layer.effect(
     BotActivity,
-    Bots.use((service) =>
+    Effect.flatMap(Bots, (service) =>
       Effect.succeed(
         BotActivity.of({
           subscribe: (listener) => service.onActivity(listener),
@@ -258,7 +259,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const dispatch = Layer.effect(
     AutomationDispatch,
-    Bots.use((service) => Effect.succeed(service.dispatch)),
+    Effect.flatMap(Bots, (service) => Effect.succeed(service.dispatch)),
   );
 
   const automations = Automations.layer.pipe(Layer.provide(dispatch));
@@ -361,17 +362,20 @@ const workspaceCleanup = Layer.effectDiscard(
   Effect.gen(function* () {
     const workspaces = yield* BotWorkspaces;
 
-    if (workspaces)
+    if (workspaces) {
       yield* (yield* BotDeletion).register((agentId) =>
         Effect.succeed(removeWorkspace(workspaces, agentId)),
       );
+    }
   }),
 );
 
 const removeAccountWorkspaces = Effect.fnUntraced(function* (
   workspaces: Workspaces | undefined,
 ) {
-  if (!workspaces) return;
+  if (!workspaces) {
+    return;
+  }
 
   const bots = yield* (yield* AgentRepository).list;
 

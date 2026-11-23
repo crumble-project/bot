@@ -4,11 +4,8 @@ import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import type { InputOrigin } from "../transcript/origins";
-import {
-  latestMessagePreview,
-  latestReply,
-  type TranscriptMessage,
-} from "../transcript/transcript";
+import { latestMessagePreview, latestReply } from "../transcript/transcript";
+import type { TranscriptMessage } from "../transcript/transcript";
 import type { ChatSnapshot } from "./bots";
 import type { BotsContext } from "./bots-context";
 import type { BotsNotifications } from "./bots-notifications";
@@ -35,7 +32,7 @@ export const botsAnnouncements = (
   const { agents, activityListeners, scope } = context;
   const { emit } = deps.notifications;
 
-  const preview = (owner: Agent, messages: TranscriptMessage[]) =>
+  const preview = (owner: Agent, messages: Array<TranscriptMessage>) =>
     emit({
       type: "chat-preview",
       agentId: owner.id,
@@ -49,10 +46,14 @@ export const botsAnnouncements = (
     subject: string,
   ) =>
     Effect.gen(function* () {
-      if (!activityListeners.size) return;
+      if (!activityListeners.size) {
+        return;
+      }
       const owner = yield* agents.get(agentId);
 
-      if (!owner) return;
+      if (!owner) {
+        return;
+      }
       const { messages } = yield* deps.snapshot(conversationId);
 
       yield* preview(owner, messages);
@@ -63,10 +64,14 @@ export const botsAnnouncements = (
     );
 
   const announceReply = Effect.fnUntraced(function* (execution: Execution) {
-    if (!activityListeners.size) return;
+    if (!activityListeners.size) {
+      return;
+    }
     const owner = yield* agents.get(execution.agentId);
 
-    if (!owner) return;
+    if (!owner) {
+      return;
+    }
     const { messages } = yield* deps.snapshot(execution.conversationId);
 
     yield* preview(owner, messages);
@@ -75,7 +80,9 @@ export const botsAnnouncements = (
     const { reply, waitingFor } = latest;
     const origin = (yield* deps.origin(execution)).kind;
 
-    if (quiet(latest, origin)) return;
+    if (quiet(latest, origin)) {
+      return;
+    }
 
     const surface = waitingFor ? latest.waiting : reply;
 
@@ -86,7 +93,7 @@ export const botsAnnouncements = (
         entryId: surface.entryId,
         messageId: surface.id,
         surface: waitingFor
-          ? { kind: "tool-card", toolCallId: surface.toolCallId! }
+          ? { kind: "tool-card", toolCallId: surface.toolCallId ?? "" }
           : { kind: "text" },
       });
     }

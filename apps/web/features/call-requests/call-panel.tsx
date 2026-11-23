@@ -4,12 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { hasText } from "@/features/chat/transcript";
 import { cn } from "@/lib/utils";
-import {
-  type CallRequest,
-  callRequestsQuery,
-  callStateOf,
-  callTranscriptQuery,
-} from "./api";
+import { callRequestsQuery, callStateOf, callTranscriptQuery } from "./api";
+import type { CallRequest } from "./api";
 
 function CallPanelHeader({
   request,
@@ -103,7 +99,7 @@ function CallLines({
       {transcript.isPending && <Spinner className="mx-auto" />}
       {transcript.isError && (
         <li className="text-sm text-muted-foreground">
-          Couldn't load the transcript.
+          Couldn&apos;t load the transcript.
         </li>
       )}
       {transcript.isSuccess && !lines.length && !calling && (

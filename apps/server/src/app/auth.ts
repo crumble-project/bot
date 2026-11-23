@@ -3,18 +3,17 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import {
-  APIError,
-  betterAuth,
-  getCurrentAdapter,
-  type BetterAuthOptions,
-  type DBAdapter,
-  type DBTransactionAdapter,
+import { APIError, betterAuth, getCurrentAdapter } from "better-auth";
+import type {
+  BetterAuthOptions,
+  DBAdapter,
+  DBTransactionAdapter,
 } from "better-auth";
 import { getSessionFromCtx } from "better-auth/api";
 import { passkey } from "@better-auth/passkey";
 import { admin } from "better-auth/plugins/admin";
 import { bearer } from "better-auth/plugins/bearer";
+import { fallingBackTo } from "../shared/fallback-schema";
 import { Option, Schema } from "effect";
 import { getMigrations } from "better-auth/db/migration";
 import { eq } from "drizzle-orm";
@@ -24,12 +23,10 @@ import {
   pinnedConversations,
   userPreferenceFields,
 } from "../contract/user-preferences";
-import { INVITE_HEADER, invites, type Invites } from "./invites";
-import {
-  serverSettingsStore,
-  serverTables,
-  type ServerSettingsStore,
-} from "./server-settings";
+import { INVITE_HEADER, invites } from "./invites";
+import type { Invites } from "./invites";
+import { serverSettingsStore, serverTables } from "./server-settings";
+import type { ServerSettingsStore } from "./server-settings";
 
 export const ADMIN_ROLE = "admin";
 
@@ -54,7 +51,9 @@ export const adminCount = (adapter: Pick<DBAdapter, "count">) =>
 
 /** Promotes the oldest user on a server that has users but no admin, as one upgraded from before roles. */
 async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
-  if (await adminCount(adapter)) return;
+  if (await adminCount(adapter)) {
+    return;
+  }
 
   const [oldest] = await adapter.findMany<{ id: string }>({
     model: "user",
@@ -62,12 +61,13 @@ async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
     limit: 1,
   });
 
-  if (oldest)
+  if (oldest) {
     await adapter.update({
       model: "user",
       where: [{ field: "id", value: oldest.id }],
       update: { role: ADMIN_ROLE },
     });
+  }
 }
 
 /**
@@ -77,8 +77,9 @@ async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
 export function passkeyOriginFor(baseURL: string) {
   const url = new URL(baseURL);
 
-  if (url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+  if (url.hostname === "127.0.0.1" || url.hostname === "[::1]") {
     url.hostname = "localhost";
+  }
 
   return url.origin;
 }
@@ -87,14 +88,14 @@ export function trustedOriginsFor(baseURL: string) {
   return [...new Set([new URL(baseURL).origin, passkeyOriginFor(baseURL)])];
 }
 
+const isFirstUser = async <O extends BetterAuthOptions>(
+  adapter: DBTransactionAdapter<O>,
+) => (await adapter.count({ model: "user" })) === 0;
+
 function signUpGate() {
   // Set once Better Auth is up; hooks only run on requests, after that.
   let settings: ServerSettingsStore;
   let inviteStore: Invites;
-
-  const isFirstUser = async <O extends BetterAuthOptions>(
-    adapter: DBTransactionAdapter<O>,
-  ) => (await adapter.count({ model: "user" })) === 0;
 
   const mayJoin = async <O extends BetterAuthOptions>(
     adapter: DBTransactionAdapter<O>,
@@ -124,23 +125,25 @@ type SignUpGate = ReturnType<typeof signUpGate>;
 /** What the server does when an account changes, beyond saving it. */
 export type AccountHooks = {
   /** Every saved account update, with the pins it now has: a theme change reports unchanged pins. */
-  onPinsChanged?: (userId: string, pins: string[]) => void;
+  onPinsChanged?: (userId: string, pins: Array<string>) => void;
 };
 
 /** The pins on a saved user row: Better Auth hands hooks the stored JSON text, not the array. */
-const storedPins = z
-  .string()
-  .transform((text, context) => {
-    try {
-      return pinnedConversations.parse(JSON.parse(text));
-    } catch {
-      context.addIssue({ code: "custom", message: "Unreadable pins" });
+const storedPins = fallingBackTo(
+  z
+    .string()
+    .transform((text, context) => {
+      try {
+        return pinnedConversations.parse(JSON.parse(text));
+      } catch {
+        context.addIssue({ code: "custom", message: "Unreadable pins" });
 
-      return z.NEVER;
-    }
-  })
-  .or(pinnedConversations)
-  .catch([]);
+        return z.NEVER;
+      }
+    })
+    .or(pinnedConversations),
+  [],
+);
 
 const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
   ({
@@ -156,11 +159,14 @@ const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
       create: {
         // Every way to create a user passes here: the gate for closed sign-up and the first admin.
         async before(user, context) {
-          if (!context) throw signUpClosed();
+          if (!context) {
+            throw signUpClosed();
+          }
           const adapter = await getCurrentAdapter(context.context.adapter);
 
-          if (await gate.isFirstUser(adapter))
+          if (await gate.isFirstUser(adapter)) {
             return { data: { ...user, role: ADMIN_ROLE } };
+          }
 
           switch (context.path) {
             case "/admin/create-user":
@@ -169,8 +175,9 @@ const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
             case "/sign-up/email": {
               const invite = context.headers?.get(INVITE_HEADER);
 
-              if (await gate.mayJoin(adapter, invite, gate.consumeInvite))
+              if (await gate.mayJoin(adapter, invite, gate.consumeInvite)) {
                 return;
+              }
               throw signUpClosed();
             }
 
@@ -181,7 +188,9 @@ const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
         async after(user, context) {
           const invite = context?.headers?.get(INVITE_HEADER);
 
-          if (invite) await gate.attribute(invite, user.id);
+          if (invite) {
+            await gate.attribute(invite, user.id);
+          }
         },
       },
     },
@@ -194,32 +203,38 @@ const passkeyRegistration = (gate: SignUpGate) =>
     async resolveUser({ ctx, context }) {
       const signUp = Schema.decodeUnknownOption(PasskeySignUp)(context);
 
-      if (Option.isNone(signUp))
+      if (Option.isNone(signUp)) {
         throw new APIError("BAD_REQUEST", {
           message: "A passkey sign-up needs an email and a name",
         });
+      }
       const { email, name, invite } = signUp.value;
 
-      if (await ctx.context.internalAdapter.findUserByEmail(email))
+      if (await ctx.context.internalAdapter.findUserByEmail(email)) {
         throw new APIError("BAD_REQUEST", {
           message: "An account with this email already exists",
         });
+      }
 
-      if (!(await gate.mayJoin(ctx.context.adapter, invite, gate.inviteOpen)))
+      if (!(await gate.mayJoin(ctx.context.adapter, invite, gate.inviteOpen))) {
         throw signUpClosed();
+      }
 
       return { id: randomUUID(), name: email, displayName: name };
     },
     async afterVerification({ ctx, user, context }) {
-      if (await getSessionFromCtx(ctx)) return;
+      if (await getSessionFromCtx(ctx)) {
+        return;
+      }
 
       const { email, name, invite } =
         Schema.decodeUnknownSync(PasskeySignUp)(context);
 
       const adapter = await getCurrentAdapter(ctx.context.adapter);
 
-      if (!(await gate.mayJoin(adapter, invite, gate.consumeInvite)))
+      if (!(await gate.mayJoin(adapter, invite, gate.consumeInvite))) {
         throw signUpClosed();
+      }
 
       const created = await ctx.context.internalAdapter.createUser(
         {
@@ -231,7 +246,9 @@ const passkeyRegistration = (gate: SignUpGate) =>
         { method: "passkey" },
       );
 
-      if (invite) await gate.attribute(invite, created.id);
+      if (invite) {
+        await gate.attribute(invite, created.id);
+      }
 
       return { userId: created.id };
     },
@@ -278,11 +295,12 @@ export async function createAuth(
 ) {
   const secretPath = join(dataDir, ".auth-secret");
 
-  if (!existsSync(secretPath))
+  if (!existsSync(secretPath)) {
     writeFileSync(secretPath, randomBytes(48).toString("hex"), {
       mode: 0o600,
       flag: "wx",
     });
+  }
   chmodSync(secretPath, 0o600);
   const database = new Database(join(dataDir, "auth.sqlite"));
   database.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
@@ -300,7 +318,9 @@ export async function createAuth(
         .all();
 
       for (const row of rows) {
-        if (row.pins === null) continue;
+        if (row.pins === null) {
+          continue;
+        }
 
         const pins = Schema.decodeUnknownSync(
           Schema.fromJsonString(Schema.Array(Schema.String)),
@@ -308,10 +328,11 @@ export async function createAuth(
 
         const retained = pins.filter((pin) => !pin.startsWith("group:"));
 
-        if (retained.length !== pins.length)
+        if (retained.length !== pins.length) {
           database
             .query("UPDATE user SET pinnedConversations = ? WHERE id = ?")
             .run(JSON.stringify(retained), row.id);
+        }
       }
     })();
     const auth = betterAuth(options);

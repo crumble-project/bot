@@ -12,7 +12,7 @@ import {
   IconPresentation,
 } from "@tabler/icons-react";
 
-const FILE_ICONS: [RegExp, typeof IconFile][] = [
+const FILE_ICONS: Array<[RegExp, typeof IconFile]> = [
   [/^image\//, IconPhoto],
   [/^video\//, IconMovie],
   [/^audio\//, IconMusic],

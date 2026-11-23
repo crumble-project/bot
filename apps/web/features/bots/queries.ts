@@ -1,21 +1,19 @@
-import {
-  type UseQueryOptions,
-  useQueries,
-  useQuery,
-} from "@tanstack/react-query";
-import { type Bot, botsQuery } from "./api";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import type { UseQueryOptions } from "@tanstack/react-query";
+import { botsQuery } from "./api";
+import type { Bot } from "./api";
 
 export const ALL = "all";
 
 export const SHARED = "shared";
 
-export const ownerItems = (sharedLabel: string, bots: Bot[]) => [
+export const ownerItems = (sharedLabel: string, bots: Array<Bot>) => [
   { label: sharedLabel, value: SHARED },
   ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
 ];
 
 export function useBotQueries<D>(
-  queryOf: (botId: string) => UseQueryOptions<D, Error, D, string[]>,
+  queryOf: (botId: string) => UseQueryOptions<D, Error, D, Array<string>>,
 ) {
   const bots = useQuery(botsQuery);
 

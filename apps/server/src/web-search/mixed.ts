@@ -1,11 +1,7 @@
 import { Effect, Result, Semaphore } from "effect";
 import type { CrumblePlugin } from "../plugins/plugins";
-import {
-  WebExtractionError,
-  WebSearchError,
-  type WebSearchProvider,
-  type WebSearchQuery,
-} from "./provider";
+import { WebExtractionError, WebSearchError } from "./provider";
+import type { WebSearchProvider, WebSearchQuery } from "./provider";
 import {
   exaSearch,
   jinaExtract,
@@ -17,8 +13,10 @@ import type { WebSearchResult } from "../contract/web-search";
 const ALL_VENDORS_DOWN =
   "Web search is unavailable right now: the free services Crumble uses are rate-limited or down. Try again later.";
 
-const matchesDomains = (url: string, domains: string[]) => {
-  if (!domains.length) return true;
+const matchesDomains = (url: string, domains: Array<string>) => {
+  if (!domains.length) {
+    return true;
+  }
   let hostname: string;
 
   try {
@@ -35,7 +33,9 @@ const matchesDomains = (url: string, domains: string[]) => {
 };
 
 const matchesDate = (published: string | undefined, query: WebSearchQuery) => {
-  if (!published) return true;
+  if (!published) {
+    return true;
+  }
   const date = published.slice(0, 10);
 
   return (
@@ -44,7 +44,10 @@ const matchesDate = (published: string | undefined, query: WebSearchQuery) => {
   );
 };
 
-const filterResults = (results: WebSearchResult[], query: WebSearchQuery) =>
+const filterResults = (
+  results: Array<WebSearchResult>,
+  query: WebSearchQuery,
+) =>
   results
     .filter(
       (result) =>
@@ -68,17 +71,22 @@ const makeParallelSearch = () => {
 
       const initialized = yield* initializer.withPermit(
         Effect.gen(function* () {
-          if (sessions.has(bot)) return;
+          if (sessions.has(bot)) {
+            return;
+          }
           const response = yield* parallelSearch(query);
 
-          if (response.sessionId !== undefined)
+          if (response.sessionId !== undefined) {
             sessions.set(bot, response.sessionId);
+          }
 
           return response.results;
         }),
       );
 
-      if (initialized !== undefined) return initialized;
+      if (initialized !== undefined) {
+        return initialized;
+      }
     }
 
     return (yield* parallelSearch(query, sessions.get(bot))).results;
@@ -106,11 +114,15 @@ export const mixedProvider = (): WebSearchProvider => {
     for (let i = 0; i < vendors.length; i++) {
       const vendor = vendors[(start + i) % vendors.length];
 
-      if (!vendor) continue;
+      if (!vendor) {
+        continue;
+      }
 
       const result = yield* vendor().pipe(Effect.result);
 
-      if (Result.isSuccess(result)) return filterResults(result.success, query);
+      if (Result.isSuccess(result)) {
+        return filterResults(result.success, query);
+      }
     }
 
     return yield* new WebSearchError({ message: ALL_VENDORS_DOWN });

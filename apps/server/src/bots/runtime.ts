@@ -4,26 +4,27 @@ import {
   CALL_ENTRY,
   contentText,
   MESSAGE_ENTRY,
-  type CallEventData,
 } from "../transcript/entries";
+import type { CallEventData } from "../transcript/entries";
 import type { InputOrigin } from "../transcript/origins";
-import {
-  BACKGROUND_CONTEXT,
-  type Context as PiContext,
-} from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Context as PiContext } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import type { Models } from "@earendil-works/pi-ai";
 import {
   Harness,
   createRegistry,
-  type ConversationId,
-  type DocumentReader,
-  type Tx,
   defineExtension,
-  type EnvTarget,
-  type Extension,
-  type LiveState,
   watchEvents,
+} from "@earendil-works/pi-durable";
+import type {
+  ConversationId,
+  DocumentReader,
+  SubmissionId,
+  Tx,
+  EnvTarget,
+  Extension,
+  LiveState,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
@@ -33,31 +34,33 @@ import {
   defineJobKind,
   mergeTurnWork,
   modelRef,
-  type JobKind,
-  type TurnWork,
 } from "../jobs/jobs";
-import { JOB_KINDS, jobKindTitle, type JobKindName } from "../shared/job-kinds";
+import type { JobKind, TurnWork } from "../jobs/jobs";
+import { JOB_KINDS, jobKindTitle } from "../shared/job-kinds";
+import type { JobKindName } from "../shared/job-kinds";
 import type { Agent } from "../contract/agents";
 import {
   formatEntryId,
   localConversationId,
   parseEntryId,
   positiveId,
+  submissionIdOf,
 } from "../shared/entry-ids";
 import { HarnessFiles } from "../shared/harness-files";
 import { isCallOnly } from "../shared/chat-only";
 import type { defineAnchorTask } from "../shared/anchor-task";
 import { ProviderModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
-import { memoryExtension, type MemoryStore } from "../memory/memory-tool";
+import { memoryExtension } from "../memory/memory-tool";
+import type { MemoryStore } from "../memory/memory-tool";
 import { SettingsRepository } from "../shared/settings-repository";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotExtensions } from "../bot-ports/bot-extensions";
-import {
-  CHAT_STYLE,
-  type BotTool,
-  type ConversationKind,
-  type ConversationStyle,
+import { CHAT_STYLE } from "../bot-ports/conversation-kind";
+import type {
+  BotTool,
+  ConversationKind,
+  ConversationStyle,
 } from "../bot-ports/conversation-kind";
 import {
   clockInstructions,
@@ -70,12 +73,8 @@ import { skillManageTool } from "../skills/skill-manage";
 import { FileStore } from "../files/file-store";
 import { Library } from "../files/library";
 import { libraryExtension } from "../files/library-tool";
-import {
-  modelBlocks,
-  resolveMessageFiles,
-  type MessageFile,
-  type ResolvedFile,
-} from "../files/message-files";
+import { modelBlocks, resolveMessageFiles } from "../files/message-files";
+import type { MessageFile, ResolvedFile } from "../files/message-files";
 import { BOT_TOOL } from "../contract/tools";
 import {
   prepareReply,
@@ -83,10 +82,12 @@ import {
   readResponse,
   readConversationTranscript,
   readTranscript,
-  type BotMessageEvent,
-  type PageOptions,
-  type TranscriptMessage,
-  type TranscriptPage,
+} from "../transcript/transcript";
+import type {
+  BotMessageEvent,
+  PageOptions,
+  TranscriptMessage,
+  TranscriptPage,
 } from "../transcript/transcript";
 import { InvalidInput, NotFound } from "../shared/errors";
 import {
@@ -94,8 +95,8 @@ import {
   describesImages,
   readsImages,
   visionExtension,
-  type VisionModelRef,
 } from "../vision/vision";
+import type { VisionModelRef } from "../vision/vision";
 
 export const OWNER_TIMEZONE = "owner-timezone";
 
@@ -107,20 +108,20 @@ export type RuntimeCallbacks = MemoryStore & {
   library: Library["Service"];
   validateFiles: (
     agentId: string,
-    ids: readonly string[],
+    ids: ReadonlyArray<string>,
   ) => Effect.Effect<void, InvalidInput>;
   resolveFiles: (
     agentId: string,
-    ids: readonly string[],
-  ) => Effect.Effect<ResolvedFile[]>;
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<Array<ResolvedFile>>;
   existingFiles: (
     agentId: string,
-    ids: readonly string[],
+    ids: ReadonlyArray<string>,
   ) => Effect.Effect<Set<string>>;
   visionModel: () => VisionModelRef | undefined;
-  extensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
-  jobExtensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
-  conversationKinds: () => ConversationKind[];
+  extensions: (agent: Agent) => Array<Extension> | Promise<Array<Extension>>;
+  jobExtensions: (agent: Agent) => Array<Extension> | Promise<Array<Extension>>;
+  conversationKinds: () => Array<ConversationKind>;
   env: (
     agent: Agent,
     target: EnvTarget,
@@ -130,7 +131,7 @@ export type RuntimeCallbacks = MemoryStore & {
 
 export type RuntimeSnapshot = {
   conversationId: string;
-  messages: TranscriptMessage[];
+  messages: Array<TranscriptMessage>;
   live: ReturnType<typeof publicLive>;
   partial: string;
   usage: JsonValue | undefined;
@@ -152,6 +153,8 @@ export type SnapshotOptions = {
 
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
 
+type OpenedHarness = { harness?: Harness | undefined };
+
 type HarnessRecord = {
   harness: Harness;
   models: Models;
@@ -165,10 +168,10 @@ type HarnessRecord = {
   libraryExtension: Extension;
   visionExtension: Extension;
   askAboutImage: BotTool;
-  kinds: ConversationKind[];
+  kinds: Array<ConversationKind>;
   jobKnowledgeExtension: Extension;
   registry: ReturnType<typeof createRegistry>;
-  extensions: Extension[];
+  extensions: Array<Extension>;
 };
 
 /**
@@ -178,9 +181,13 @@ type HarnessRecord = {
  * only after the run has ended.
  */
 function publicLive(live: LiveState | undefined) {
-  if (!live) return live;
+  if (!live) {
+    return live;
+  }
 
-  if (!live.generation) return live;
+  if (!live.generation) {
+    return live;
+  }
   const { message: _message, ...generation } = live.generation;
 
   return { ...live, generation };
@@ -191,11 +198,13 @@ type InferenceOptions = { temperature?: number; maxTokens?: number };
 function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
   const options: InferenceOptions = {};
 
-  if (inference?.temperature !== undefined)
+  if (inference?.temperature !== undefined) {
     options.temperature = inference.temperature;
+  }
 
-  if (inference?.maxOutputTokens !== undefined)
+  if (inference?.maxOutputTokens !== undefined) {
     options.maxTokens = inference.maxOutputTokens;
+  }
 
   return options;
 }
@@ -203,21 +212,27 @@ function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
 type EntryMetadata = {
   requestId?: string;
   origin?: InputOrigin;
-  files?: MessageFile[];
+  files?: Array<MessageFile>;
 };
 
 function entryMetadata(
   requestId: string | undefined,
   origin: InputOrigin | undefined,
-  files: MessageFile[],
+  files: Array<MessageFile>,
 ) {
   const metadata: EntryMetadata = {};
 
-  if (requestId) metadata.requestId = requestId;
+  if (requestId) {
+    metadata.requestId = requestId;
+  }
 
-  if (origin) metadata.origin = origin;
+  if (origin) {
+    metadata.origin = origin;
+  }
 
-  if (files.length) metadata.files = files;
+  if (files.length) {
+    metadata.files = files;
+  }
 
   return metadata;
 }
@@ -231,7 +246,7 @@ type HistoryOptions = PageOptions & {
   includeActiveAssistant?: boolean | undefined;
 };
 
-function hideIncompleteAssistant(messages: TranscriptMessage[]) {
+function hideIncompleteAssistant(messages: Array<TranscriptMessage>) {
   return messages.filter(
     (message) =>
       message.role !== "assistant" ||
@@ -247,7 +262,7 @@ function hideIncompleteAssistant(messages: TranscriptMessage[]) {
 async function visibleMessages(
   harness: Harness,
   chat: ConversationId,
-  messages: TranscriptMessage[],
+  messages: Array<TranscriptMessage>,
 ) {
   const { submissions } = await harness.inspect(BACKGROUND_CONTEXT);
 
@@ -261,7 +276,9 @@ async function visibleMessages(
 
   const finished = hideIncompleteAssistant(messages);
 
-  if (!cutoffs.length) return finished;
+  if (!cutoffs.length) {
+    return finished;
+  }
   const cutoff = Math.min(...cutoffs);
 
   return finished.filter((message) => {
@@ -282,17 +299,18 @@ const JOB_READERS: Record<JobKindName, JobKind> = {
 const isJobKind = (kind: string): kind is JobKindName =>
   Object.hasOwn(JOB_READERS, kind);
 
-function numericId(value: string): never {
+function numericId(value: string): SubmissionId {
   const id = positiveId(value);
 
-  if (id === undefined) throw new Error("Invalid durable record ID");
+  if (id === undefined) {
+    throw new Error("Invalid durable record ID");
+  }
 
-  // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
-  return id as never;
+  return submissionIdOf(id);
 }
 
 async function styleOf(
-  kinds: ConversationKind[],
+  kinds: Array<ConversationKind>,
   reader: DocumentReader,
   conversationId: ConversationId,
   context: PiContext,
@@ -300,7 +318,9 @@ async function styleOf(
   for (const kind of kinds) {
     const style = await kind.recognize(reader, conversationId, context);
 
-    if (style) return style;
+    if (style) {
+      return style;
+    }
   }
 
   return CHAT_STYLE;
@@ -310,8 +330,9 @@ async function ensureModel(
   models: Models,
   choice: Pick<Agent, "provider" | "model">,
 ) {
-  if (!models.getModel(choice.provider, choice.model))
+  if (!models.getModel(choice.provider, choice.model)) {
     await models.refresh({ providers: [choice.provider] });
+  }
 }
 
 type ModelBlocks = ReturnType<typeof modelBlocks>;
@@ -323,7 +344,7 @@ export const unreadableImages = (agent: Pick<Agent, "name" | "model">) =>
 // the vision extension describes images for a model that can't read them.
 function assertImageSupport(
   agent: Agent,
-  model: { input?: readonly string[] } | undefined,
+  model: { input?: ReadonlyArray<string> } | undefined,
   blocks: ModelBlocks,
   vision: VisionModelRef | undefined,
 ) {
@@ -331,12 +352,15 @@ function assertImageSupport(
     blocks.some((item) => item.type === "image") &&
     !readsImages(model) &&
     !vision
-  )
+  ) {
     throw new InvalidInput({ message: unreadableImages(agent) });
+  }
 }
 
 function inputContent(text: string, blocks: ModelBlocks) {
-  if (!blocks.length) return text;
+  if (!blocks.length) {
+    return text;
+  }
 
   return [...(text.trim() ? [{ type: "text" as const, text }] : []), ...blocks];
 }
@@ -344,7 +368,7 @@ function inputContent(text: string, blocks: ModelBlocks) {
 function inferenceModels(models: Models, choices: { agent: Agent }) {
   return new Proxy(models, {
     get(target, property) {
-      if (property === "streamSimple")
+      if (property === "streamSimple") {
         return (...args: Parameters<Models["streamSimple"]>) => {
           const inference = choices.agent.inference;
 
@@ -353,18 +377,31 @@ function inferenceModels(models: Models, choices: { agent: Agent }) {
             ...inferenceOptions(inference),
           });
         };
+      }
 
-      // SAFETY: Proxy properties are the keys of the Models instance; the
-      // special streamSimple branch above handles the only replaced method.
-      const value = target[property as keyof Models];
+      // The special streamSimple branch above handles the only replaced method, so every other property is the
+      // Models instance's own, bound to it where it is a method.
+      if (!Predicate.hasProperty(target, property)) {
+        return undefined;
+      }
 
-      return value instanceof Function ? value.bind(target) : value;
+      const value = target[property];
+
+      if (!Predicate.isFunction(value)) {
+        return value;
+      }
+
+      const bound: unknown = value.bind(target);
+
+      return bound;
     },
   });
 }
 
-function modelToolsOf(tools: BotTool[]) {
-  if (!tools.some((tool) => tool.name === CODEMODE_TOOL_NAME)) return tools;
+function modelToolsOf(tools: Array<BotTool>) {
+  if (!tools.some((tool) => tool.name === CODEMODE_TOOL_NAME)) {
+    return tools;
+  }
 
   return tools.filter(
     (tool) => tool.callers !== undefined && !tool.callers.includes("tools"),
@@ -376,7 +413,9 @@ async function ensureAgentModels(models: Models, agent: Agent) {
   await ensureModel(models, agent);
 
   // The desktop job model may come from another provider with a dynamic catalog.
-  if (agent.desktopModel) await ensureModel(models, agent.desktopModel);
+  if (agent.desktopModel) {
+    await ensureModel(models, agent.desktopModel);
+  }
 }
 
 export class AgentRuntime {
@@ -389,22 +428,27 @@ export class AgentRuntime {
     this.records = new HarnessFiles(dataDir, "Runtime is closed");
   }
 
-  validateFiles(agentId: string, ids: readonly string[]) {
+  validateFiles(agentId: string, ids: ReadonlyArray<string>) {
     return this.callbacks.validateFiles(agentId, ids);
   }
 
-  resolveFiles(agentId: string, ids: readonly string[]) {
+  resolveFiles(agentId: string, ids: ReadonlyArray<string>) {
     return this.callbacks.resolveFiles(agentId, ids);
   }
 
-  private async currentFiles(agentId: string, messages: TranscriptMessage[]) {
+  private async currentFiles(
+    agentId: string,
+    messages: Array<TranscriptMessage>,
+  ) {
     const ids = messages.flatMap((message) =>
       (message.files ?? [])
         .filter((file) => !("deleted" in file))
         .map((file) => file.id),
     );
 
-    if (!ids.length) return messages;
+    if (!ids.length) {
+      return messages;
+    }
 
     const existing = await Effect.runPromise(
       this.callbacks.existingFiles(agentId, ids),
@@ -443,8 +487,9 @@ export class AgentRuntime {
     const currentAgent = () => {
       const current = this.callbacks.currentAgent(agent);
 
-      if (!current?.enabled)
+      if (!current?.enabled) {
         throw new Error("Skill access is disabled for this bot");
+      }
 
       return current;
     };
@@ -508,7 +553,9 @@ export class AgentRuntime {
     const library = this.libraryTools(agent);
     const libraryTool = library.tools?.[0];
 
-    if (!libraryTool) throw new Error("Library tool is missing");
+    if (!libraryTool) {
+      throw new Error("Library tool is missing");
+    }
     registry.install(library);
 
     return {
@@ -578,17 +625,19 @@ export class AgentRuntime {
     const { registry } = tools;
 
     // Hooks and tools run only once the harness is open; until then nothing calls them.
-    let opened: Harness | undefined;
+    const opened: OpenedHarness = {};
 
     const vision = visionExtension({
-      harness: () => opened,
+      harness: () => opened.harness,
       visionModel: () => this.callbacks.visionModel(),
     });
 
     registry.install(vision.extension);
     const kinds = this.callbacks.conversationKinds();
 
-    for (const kind of kinds) registry.install(kind.extension);
+    for (const kind of kinds) {
+      registry.install(kind.extension);
+    }
     const choices = { agent };
 
     const jobKnowledgeExtension = this.jobKnowledgeExtensionOf(
@@ -600,7 +649,9 @@ export class AgentRuntime {
 
     const { installed: extensions } = await this.extensionsOf(agent);
 
-    for (const extension of extensions) registry.install(extension);
+    for (const extension of extensions) {
+      registry.install(extension);
+    }
 
     const harness = await this.openHarness(storage, {
       registry,
@@ -608,9 +659,11 @@ export class AgentRuntime {
       choices,
     });
 
-    opened = harness;
+    opened.harness = harness;
 
-    if (agent.enabled) harness.resume();
+    if (agent.enabled) {
+      harness.resume();
+    }
 
     return {
       ...tools,
@@ -628,11 +681,15 @@ export class AgentRuntime {
   private async installExtensions(record: HarnessRecord, agent: Agent) {
     const { next, installed } = await this.extensionsOf(agent);
 
-    for (const previous of record.extensions)
-      if (!installed.some((extension) => extension.name === previous.name))
+    for (const previous of record.extensions) {
+      if (!installed.some((extension) => extension.name === previous.name)) {
         record.registry.uninstall(previous);
+      }
+    }
 
-    for (const extension of installed) record.registry.install(extension);
+    for (const extension of installed) {
+      record.registry.install(extension);
+    }
     record.extensions = installed;
 
     return next;
@@ -646,7 +703,7 @@ export class AgentRuntime {
     record: HarnessRecord,
     agent: Agent,
     skillCount: number,
-    offered: Extension[],
+    offered: Array<Extension>,
   ) {
     return {
       memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
@@ -678,7 +735,9 @@ export class AgentRuntime {
 
     const model = style.model?.(agent);
 
-    if (model) await ensureModel(record.models, model);
+    if (model) {
+      await ensureModel(record.models, model);
+    }
 
     return { style, model };
   }
@@ -706,7 +765,9 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!conversation) throw new Error("Conversation not found");
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
     const memory = await this.callbacks.listMemory(agent.id);
     const clock = clockInstructions(this.callbacks.ownerTimezone);
 
@@ -797,9 +858,11 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!status?.entry || !conversation) return;
+    if (!status?.entry || !conversation) {
+      return;
+    }
 
-    return { conversation, entry: Number(status.entry) };
+    return { conversation, entry: status.entry };
   }
 
   private describesImagesFor(record: HarnessRecord, agent: Agent) {
@@ -829,12 +892,16 @@ export class AgentRuntime {
     await ensureModel(models, agent);
     const model = models.getModel(agent.provider, agent.model);
 
-    if (!model) throw new Error(`${agent.model} is not available`);
+    if (!model) {
+      throw new Error(`${agent.model} is not available`);
+    }
 
     const options: InferenceOptions & { signal?: AbortSignal } =
       inferenceOptions(agent.inference);
 
-    if (signal) options.signal = signal;
+    if (signal) {
+      options.signal = signal;
+    }
 
     return models.completeSimple(
       model,
@@ -861,7 +928,9 @@ export class AgentRuntime {
     text: string,
     replyTo: string | undefined,
   ): Promise<PreparedInput> {
-    if (!replyTo) return { modelContent: text, data: { text } };
+    if (!replyTo) {
+      return { modelContent: text, data: { text } };
+    }
     const { harness } = await this.open(agent);
 
     return prepareReply(harness, agent.id, replyTo, text);
@@ -875,7 +944,7 @@ export class AgentRuntime {
     options: {
       input?: PreparedInput | undefined;
       origin?: InputOrigin;
-      files?: ResolvedFile[] | undefined;
+      files?: Array<ResolvedFile> | undefined;
     } = {},
   ): Promise<string> {
     const record = await this.open(agent);
@@ -949,7 +1018,9 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!conversation) throw new Error("Conversation not found");
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
     await conversation.submit(
       { type: "write", requestId, entry },
       BACKGROUND_CONTEXT,
@@ -971,7 +1042,9 @@ export class AgentRuntime {
       await this.open(agent)
     ).harness.submission(numericId(submissionId), context);
 
-    if (!submission) throw new Error("Submission not found");
+    if (!submission) {
+      throw new Error("Submission not found");
+    }
 
     return submission.wait(context);
   }
@@ -988,7 +1061,9 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    if (!conversation) throw new Error("Conversation not found");
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
 
     // Read transcript before attaching the live view. A run may commit an
     // intermediate assistant entry while the view is being attached; the
@@ -1063,7 +1138,9 @@ export class AgentRuntime {
     kind: string,
     answer: { name: string; questionId: string; text: string; by?: string },
   ) {
-    if (!isJobKind(kind)) return false;
+    if (!isJobKind(kind)) {
+      return false;
+    }
     const { harness } = await this.open(agent);
     const root = await harness.root(BACKGROUND_CONTEXT);
 
@@ -1104,10 +1181,11 @@ export class AgentRuntime {
       (each) => each.name === name,
     );
 
-    if (!job)
+    if (!job) {
       throw new NotFound({
         message: `${jobKindTitle(JOB_KINDS[kind])} not found`,
       });
+    }
 
     const page = await this.visible(
       harness,
@@ -1166,13 +1244,16 @@ export class AgentRuntime {
   ) {
     const transcript = await read();
 
-    if (options.includeActiveAssistant) return transcript;
+    if (options.includeActiveAssistant) {
+      return transcript;
+    }
 
-    if (!hideActive)
+    if (!hideActive) {
       return {
         ...transcript,
         messages: hideIncompleteAssistant(transcript.messages),
       };
+    }
 
     const chat = await harness.root(BACKGROUND_CONTEXT);
 
@@ -1186,10 +1267,12 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
     submissionId: string,
-  ): Promise<string[]> {
+  ): Promise<Array<string>> {
     const turn = await this.settledTurn(agent, conversationId, submissionId);
 
-    if (!turn) return [];
+    if (!turn) {
+      return [];
+    }
 
     return readResponse(turn.conversation, turn.entry);
   }

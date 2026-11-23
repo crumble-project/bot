@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { IconKey, IconPlugConnectedX } from "@tabler/icons-react";
-import { si1password, siBitwarden, type SimpleIcon } from "simple-icons";
+import { si1password, siBitwarden } from "simple-icons";
+import type { SimpleIcon } from "simple-icons";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
@@ -24,11 +25,11 @@ import {
   Page,
 } from "@/components/page";
 import {
-  type PasswordManager,
   passwordManagerPath,
   passwordManagersQuery,
   invalidateSecrets,
 } from "./api";
+import type { PasswordManager } from "./api";
 import { send } from "@/lib/api";
 
 const LOGOS = {

@@ -12,25 +12,36 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { send } from "@/lib/api";
-import { type Job, jobPath, invalidateJobs } from "./api";
+import { jobPath, invalidateJobs } from "./api";
+import type { Job } from "./api";
 
 export type Question = NonNullable<Job["question"]>;
 
-const markOf = ({
+function OptionMark({
   sending,
   multiple,
   picked,
+  className,
 }: {
   sending: boolean;
   multiple: boolean;
   picked: boolean;
-}) => {
-  if (sending) return Spinner;
+  className: string;
+}) {
+  if (sending) {
+    return <Spinner className={className} />;
+  }
 
-  if (!multiple) return IconCircle;
+  if (!multiple) {
+    return <IconCircle className={className} />;
+  }
 
-  return picked ? IconSquareCheckFilled : IconSquare;
-};
+  return picked ? (
+    <IconSquareCheckFilled className={className} />
+  ) : (
+    <IconSquare className={className} />
+  );
+}
 
 function OptionRow({
   option,
@@ -47,8 +58,6 @@ function OptionRow({
   disabled: boolean;
   onPick: () => void;
 }) {
-  const Mark = markOf({ sending, multiple, picked });
-
   return (
     <button
       type="button"
@@ -61,7 +70,10 @@ function OptionRow({
         picked && "bg-muted",
       )}
     >
-      <Mark
+      <OptionMark
+        sending={sending}
+        multiple={multiple}
+        picked={picked}
         className={cn(
           "size-4 shrink-0",
           picked ? "text-foreground" : "text-muted-foreground",
@@ -94,7 +106,9 @@ function useJobAnswer(botId: string, job: string, question: Question) {
   });
 
   const submit = () => {
-    if (reply && !answer.isPending) answer.mutate(reply);
+    if (reply && !answer.isPending) {
+      answer.mutate(reply);
+    }
   };
 
   return { text, setText, picked, setPicked, multiple, reply, answer, submit };
@@ -106,7 +120,7 @@ function QuestionOptions({
   options,
   draft: { picked, setPicked, multiple, answer },
 }: {
-  options: string[];
+  options: Array<string>;
   draft: JobAnswer;
 }) {
   return (
@@ -129,8 +143,11 @@ function QuestionOptions({
                 ? setPicked((current) => {
                     const next = new Set(current);
 
-                    if (on) next.delete(option);
-                    else next.add(option);
+                    if (on) {
+                      next.delete(option);
+                    } else {
+                      next.add(option);
+                    }
 
                     return next;
                   })

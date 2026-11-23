@@ -9,14 +9,11 @@ import {
   turnSource,
   UNKNOWN_BOT_NAME,
   UNKNOWN_SCHEDULE_NAME,
-  type InputOrigin,
 } from "../transcript/origins";
+import type { InputOrigin } from "../transcript/origins";
 import type { RuntimeWatch, SnapshotOptions } from "./runtime";
-import {
-  latestMessagePreview,
-  type PageOptions,
-  type TranscriptMessage,
-} from "../transcript/transcript";
+import { latestMessagePreview } from "../transcript/transcript";
+import type { PageOptions, TranscriptMessage } from "../transcript/transcript";
 import type { JobKindName } from "../shared/job-kinds";
 import { usageSummary } from "./usage-summary";
 
@@ -67,10 +64,13 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     Effect.gen(function* () {
       const source = turnSource(execution);
 
-      if (source.kind === "event") return yield* eventOrigin(source);
+      if (source.kind === "event") {
+        return yield* eventOrigin(source);
+      }
 
-      if (source.kind === "task" || source.kind === "script")
+      if (source.kind === "task" || source.kind === "script") {
         return yield* scheduleOrigin(source);
+      }
 
       if (source.kind === "bot") {
         const bot = yield* agents.get(source.agentId);
@@ -82,14 +82,16 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
         };
       }
 
-      if (source.kind === "callee") return yield* calleeOrigin(execution);
+      if (source.kind === "callee") {
+        return yield* calleeOrigin(execution);
+      }
 
       return source;
     });
 
   const withReferences = Effect.fnUntraced(function* (
     agentId: string,
-    messages: TranscriptMessage[],
+    messages: Array<TranscriptMessage>,
   ) {
     const references = yield* context.attention.references(
       { kind: "bot", id: agentId },
@@ -131,7 +133,9 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       Effect.fnUntraced(function* (each) {
         const [first] = yield* conversations.list(each.id, true);
 
-        if (!first) return { agent: each, lastMessage: "" };
+        if (!first) {
+          return { agent: each, lastMessage: "" };
+        }
 
         const history = yield* Effect.promise(() =>
           runtime.history(each, { limit: 200 }),

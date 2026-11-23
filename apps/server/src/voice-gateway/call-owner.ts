@@ -6,7 +6,8 @@ import { CALL_OWNER_TOOL_NAME, HANG_UP_TOOL_NAME } from "../contract/tools";
 import { VOICE_CALL_GREETING_MAX } from "../contract/voice-gateway";
 import { callOnly } from "../shared/chat-only";
 import { CallConversation } from "./call-conversation";
-import { VoiceGateway, type VoiceCallResult } from "./voice-gateway";
+import { VoiceGateway } from "./voice-gateway";
+import type { VoiceCallResult } from "./voice-gateway";
 
 type Calls = Pick<VoiceGateway["Service"], "callRefusal" | "callOwner">;
 
@@ -30,7 +31,9 @@ const OUTCOMES = {
 };
 
 const outcomeText = (result: VoiceCallResult) => {
-  if (result.outcome === "refused") return result.reason;
+  if (result.outcome === "refused") {
+    return result.reason;
+  }
 
   return result.outcome === "failed" && result.error
     ? `The call failed: ${result.error}`
@@ -125,10 +128,11 @@ export function outsideHangUpExtension(
     }),
     callers: ["model"],
     execute: async ({ objected }, api, context) => {
-      if (objected)
+      if (objected) {
         await api.commit(async (tx) => {
           (await tx.doc(CallConversation, api.conversationId)).objected = true;
         }, context);
+      }
 
       return hangUpResult(await Effect.runPromise(calls.hangUp(botId)));
     },
@@ -142,12 +146,15 @@ export function outsideHangUpExtension(
 async function voiceOffers(agentId: string, gateway: Offers) {
   const call = await Effect.runPromise(gateway.currentCall(agentId));
 
-  if (call?.party === "outside")
+  if (call?.party === "outside") {
     return [
       outsideHangUpExtension(agentId, call.callee ?? "the callee", gateway),
     ];
+  }
 
-  if (call) return [hangUpExtension(agentId, gateway)];
+  if (call) {
+    return [hangUpExtension(agentId, gateway)];
+  }
 
   return (await Effect.runPromise(gateway.callRefusal(agentId)))
     ? []

@@ -18,10 +18,8 @@ import type {
 import { Context, Effect, Layer, Predicate } from "effect";
 import { REMOTE_HINTS } from "./provider-hints";
 import { SettingsRepository } from "../shared/settings-repository";
-import {
-  ProviderCredentials,
-  type ProviderCredentialStore,
-} from "./provider-credentials";
+import { ProviderCredentials } from "./provider-credentials";
+import type { ProviderCredentialStore } from "./provider-credentials";
 import { ProviderModels } from "./providers";
 import type { SecretInput } from "../contract/secrets";
 import {
@@ -73,13 +71,13 @@ type Session = {
   lastActivity: number;
   endedAt?: number;
   prompt: PendingPrompt | null;
-  events: LoginEvent[];
+  events: Array<LoginEvent>;
   failure: Failure | null;
   controller: AbortController;
   timer?: ReturnType<typeof setTimeout>;
 };
 
-export function loginMethods(provider: Provider): LoginMethod[] {
+export function loginMethods(provider: Provider): Array<LoginMethod> {
   const { apiKey, oauth } = provider.auth;
 
   return [
@@ -130,7 +128,9 @@ export class ProviderSignIns extends Context.Service<
       const deviceId = () => {
         const saved = Effect.runSync(settings.get(DEVICE_ID));
 
-        if (Predicate.isString(saved) && saved) return saved;
+        if (Predicate.isString(saved) && saved) {
+          return saved;
+        }
         const created = randomUUID();
         Effect.runSync(settings.set(DEVICE_ID, created));
 
@@ -158,8 +158,9 @@ class SignInSessions {
   ) {}
 
   start(providerId: string, method: AuthType): LoginSession {
-    if (this.closed)
+    if (this.closed) {
       throw new Unavailable({ message: "The server is shutting down" });
+    }
 
     const login = this.loginFor(providerId, method);
 
@@ -220,7 +221,9 @@ class SignInSessions {
   async close() {
     this.closed = true;
 
-    for (const session of this.active.values()) this.end(session, "cancelled");
+    for (const session of this.active.values()) {
+      this.end(session, "cancelled");
+    }
     await Promise.all(this.flows);
     await this.credentials.idle();
   }
@@ -228,25 +231,30 @@ class SignInSessions {
   private loginFor(providerId: string, method: AuthType) {
     const provider = this.models.getProvider(providerId);
 
-    if (!provider) throw new NotFound({ message: "Unknown provider" });
+    if (!provider) {
+      throw new NotFound({ message: "Unknown provider" });
+    }
     const login = this.loginFunction(provider, method);
 
-    if (!login)
+    if (!login) {
       throw new InvalidInput({
         message: `${provider.name} does not offer this sign-in`,
       });
+    }
 
     return login;
   }
 
   private reserve(providerId: string) {
-    if (this.active.has(providerId))
+    if (this.active.has(providerId)) {
       throw new Conflict({
         message: "A sign-in for this provider is in progress",
       });
+    }
 
-    if (this.active.size >= MAX_ACTIVE)
+    if (this.active.size >= MAX_ACTIVE) {
       throw new Conflict({ message: "Too many sign-ins are in progress" });
+    }
   }
 
   private createSession(providerId: string, method: AuthType): Session {
@@ -271,10 +279,14 @@ class SignInSessions {
     providerId: string,
     method: AuthType,
   ) {
-    if (method !== "oauth") return;
+    if (method !== "oauth") {
+      return;
+    }
     const hint = REMOTE_HINTS.get(providerId);
 
-    if (hint) session.events.push({ type: "info", message: hint });
+    if (hint) {
+      session.events.push({ type: "info", message: hint });
+    }
   }
 
   private beginFlow(
@@ -288,14 +300,16 @@ class SignInSessions {
   }
 
   private awaitingAnswer(session: Session, promptId: string): PendingPrompt {
-    if (session.status !== "pending")
+    if (session.status !== "pending") {
       throw new Conflict({ message: "This sign-in has ended" });
+    }
     const pending = session.prompt;
 
-    if (!pending || pending.prompt.id !== promptId)
+    if (!pending || pending.prompt.id !== promptId) {
       throw new Conflict({
         message: "This prompt no longer accepts an answer",
       });
+    }
 
     return pending;
   }
@@ -310,8 +324,9 @@ class SignInSessions {
     if (
       prompt.type === "select" &&
       !prompt.options?.some((option) => option.id === value)
-    )
+    ) {
       throw new InvalidInput({ message: "Choose one of the offered options" });
+    }
     session.lastActivity = Date.now();
     this.schedule(session);
     pending.settle(value);
@@ -341,7 +356,9 @@ class SignInSessions {
   ) {
     const credential = await this.authenticate(session, login);
 
-    if (credential) await this.save(session, credential);
+    if (credential) {
+      await this.save(session, credential);
+    }
   }
 
   private async authenticate(
@@ -378,15 +395,18 @@ class SignInSessions {
         () => this.end(session, "succeeded"),
       );
 
-      if (!committed) this.end(session, "expired");
+      if (!committed) {
+        this.end(session, "expired");
+      }
     } catch {
       this.fail(session, "storage_failure");
     }
   }
 
   private prompt(session: Session, prompt: AuthPrompt): Promise<string> {
-    if (session.status !== "pending")
+    if (session.status !== "pending") {
       return Promise.reject(new Error("Login ended"));
+    }
 
     if (session.prompt) {
       this.fail(session, "provider_failure");
@@ -415,10 +435,13 @@ class SignInSessions {
     const signals = [session.controller.signal, prompt.signal];
 
     const release = () => {
-      for (const signal of signals)
+      for (const signal of signals) {
         signal?.removeEventListener("abort", withdraw);
+      }
 
-      if (session.prompt?.prompt.id === id) session.prompt = null;
+      if (session.prompt?.prompt.id === id) {
+        session.prompt = null;
+      }
     };
 
     const withdraw = () => {
@@ -426,10 +449,13 @@ class SignInSessions {
       reject(new Error("Prompt withdrawn"));
     };
 
-    if (signals.some((signal) => signal?.aborted)) return withdraw();
+    if (signals.some((signal) => signal?.aborted)) {
+      return withdraw();
+    }
 
-    for (const signal of signals)
+    for (const signal of signals) {
       signal?.addEventListener("abort", withdraw, { once: true });
+    }
 
     session.prompt = {
       prompt: promptView(id, prompt),
@@ -441,10 +467,13 @@ class SignInSessions {
   }
 
   private notify(session: Session, event: AuthEvent) {
-    if (session.status !== "pending") return;
+    if (session.status !== "pending") {
+      return;
+    }
 
-    if (JSON.stringify(event).length > MAX_EVENT_BYTES)
+    if (JSON.stringify(event).length > MAX_EVENT_BYTES) {
       return this.fail(session, "provider_failure");
+    }
 
     this.appendEvent(session, copyEvent(event));
   }
@@ -452,9 +481,11 @@ class SignInSessions {
   private appendEvent(session: Session, copy: LoginEvent) {
     const events = session.events;
 
-    if (copy.type === "progress" && events.at(-1)?.type === "progress")
+    if (copy.type === "progress" && events.at(-1)?.type === "progress") {
       events[events.length - 1] = copy;
-    else events.push(copy);
+    } else {
+      events.push(copy);
+    }
 
     trimEvents(events);
   }
@@ -471,11 +502,15 @@ class SignInSessions {
   private invalidate(providerId: string) {
     const session = this.active.get(providerId);
 
-    if (session) this.end(session, "cancelled");
+    if (session) {
+      this.end(session, "cancelled");
+    }
   }
 
   private fail(session: Session, code: Failure["code"]) {
-    if (session.status !== "pending") return;
+    if (session.status !== "pending") {
+      return;
+    }
     session.failure = { code, message: FAILURES[code] };
     this.end(session, "failed");
   }
@@ -485,13 +520,16 @@ class SignInSessions {
     session: Session,
     status: Exclude<LoginSession["status"], "pending">,
   ) {
-    if (session.status !== "pending") return;
+    if (session.status !== "pending") {
+      return;
+    }
     session.status = status;
     session.endedAt = Date.now();
     clearTimeout(session.timer);
 
-    if (this.active.get(session.provider) === session)
+    if (this.active.get(session.provider) === session) {
       this.active.delete(session.provider);
+    }
     session.controller.abort(new Error("Login ended"));
     session.prompt = null;
     // Links and codes authorize only this attempt; keep them no longer than it runs.
@@ -511,8 +549,11 @@ class SignInSessions {
     clearTimeout(session.timer);
     session.timer = setTimeout(
       () => {
-        if (Date.now() >= this.expiresAt(session)) this.end(session, "expired");
-        else this.schedule(session);
+        if (Date.now() >= this.expiresAt(session)) {
+          this.end(session, "expired");
+        } else {
+          this.schedule(session);
+        }
       },
       Math.max(0, this.expiresAt(session) - Date.now()),
     );
@@ -522,21 +563,26 @@ class SignInSessions {
     this.prune();
     const session = this.sessions.get(sessionId);
 
-    if (!session) throw new Gone({ message: "This sign-in no longer exists" });
+    if (!session) {
+      throw new Gone({ message: "This sign-in no longer exists" });
+    }
 
     return session;
   }
 
   private prune() {
-    const ended = [...this.sessions.values()].filter(
-      (session) => session.endedAt !== undefined,
+    const ended = [...this.sessions.values()].flatMap((session) =>
+      session.endedAt === undefined
+        ? []
+        : [{ session, endedAt: session.endedAt }],
     );
 
     const cutoff = Date.now() - RETAIN_ENDED_MS;
 
-    ended.forEach((session, index) => {
-      if (session.endedAt! < cutoff || ended.length - index > MAX_ENDED)
+    ended.forEach(({ session, endedAt }, index) => {
+      if (endedAt < cutoff || ended.length - index > MAX_ENDED) {
         this.sessions.delete(session.id);
+      }
     });
   }
 
@@ -559,7 +605,11 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal) {
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(signal.reason);
 
-    if (signal.aborted) return onAbort();
+    if (signal.aborted) {
+      onAbort();
+
+      return;
+    }
     signal.addEventListener("abort", onAbort, { once: true });
     operation.then(resolve, reject).finally(() => {
       signal.removeEventListener("abort", onAbort);
@@ -588,7 +638,7 @@ function failureCode(error: Error | undefined): Failure["code"] {
 }
 
 function promptView(id: string, prompt: AuthPrompt): LoginPrompt {
-  if (prompt.type === "select")
+  if (prompt.type === "select") {
     return {
       id,
       type: "select",
@@ -599,6 +649,7 @@ function promptView(id: string, prompt: AuthPrompt): LoginPrompt {
         ...(description !== undefined && { description }),
       })),
     };
+  }
 
   return {
     id,
@@ -611,7 +662,9 @@ function promptView(id: string, prompt: AuthPrompt): LoginPrompt {
 }
 
 function copyEvent(event: AuthEvent): LoginEvent {
-  if (event.type !== "info") return { ...event };
+  if (event.type !== "info") {
+    return { ...event };
+  }
 
   return {
     type: "info",
@@ -622,7 +675,7 @@ function copyEvent(event: AuthEvent): LoginEvent {
   };
 }
 
-function trimEvents(events: LoginEvent[]) {
+function trimEvents(events: Array<LoginEvent>) {
   // The current authorization link or device code outlives older messages.
   while (events.length > MAX_EVENTS) {
     const index = events.findIndex(

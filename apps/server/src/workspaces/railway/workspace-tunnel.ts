@@ -34,7 +34,9 @@ async function readFrames(
     while (pending.length >= HEADER_BYTES) {
       const length = pending.readUInt32BE(5);
 
-      if (pending.length < HEADER_BYTES + length) break;
+      if (pending.length < HEADER_BYTES + length) {
+        break;
+      }
       receive(
         pending.readUInt8(0),
         pending.readUInt32BE(1),
@@ -59,7 +61,9 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
     let ended = false;
 
     const end = () => {
-      if (ended) return;
+      if (ended) {
+        return;
+      }
       ended = true;
       write(frame(END, connection));
     };
@@ -75,18 +79,25 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   };
 
   const receive = (kind: number, connection: number, payload: Buffer) => {
-    if (kind === OPEN) return open(connection);
+    if (kind === OPEN) {
+      return open(connection);
+    }
 
     const socket = sockets.get(connection);
 
-    if (kind === DATA) socket?.write(payload);
-    else if (kind === END) socket?.end();
+    if (kind === DATA) {
+      socket?.write(payload);
+    } else if (kind === END) {
+      socket?.end();
+    }
   };
 
   const done = readFrames(stream.output, receive)
     .catch(() => {})
     .finally(() => {
-      for (const socket of sockets.values()) socket.destroy();
+      for (const socket of sockets.values()) {
+        socket.destroy();
+      }
     });
 
   return {
@@ -98,7 +109,9 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
         // The stream may already be gone with its machine.
       }
 
-      for (const socket of sockets.values()) socket.destroy();
+      for (const socket of sockets.values()) {
+        socket.destroy();
+      }
     },
   };
 }

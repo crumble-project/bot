@@ -38,7 +38,7 @@ function idleDays(skill: Skill, now: Date): number {
 export class SkillCurator extends Context.Service<
   SkillCurator,
   {
-    readonly pass: (now: Date) => Effect.Effect<CuratorAction[]>;
+    readonly pass: (now: Date) => Effect.Effect<Array<CuratorAction>>;
   }
 >()("crumble/skills/SkillCurator") {
   static readonly layer = Layer.effect(
@@ -63,21 +63,29 @@ export class SkillCurator extends Context.Service<
 
       return SkillCurator.of({
         pass: Effect.fn("SkillCurator.pass")(function* (now: Date) {
-          const actions: CuratorAction[] = [];
+          const actions: Array<CuratorAction> = [];
 
           for (const skill of yield* skills.listBotCreated) {
-            if (skill.pinned || skill.state === "archived") continue;
+            if (skill.pinned || skill.state === "archived") {
+              continue;
+            }
 
             const days = idleDays(skill, now);
 
-            if (days < STALE_AFTER_DAYS) continue;
+            if (days < STALE_AFTER_DAYS) {
+              continue;
+            }
 
-            if (yield* namedByTask(skill)) continue;
+            if (yield* namedByTask(skill)) {
+              continue;
+            }
 
             const to: Skill["state"] =
               days >= ARCHIVE_AFTER_DAYS ? "archived" : "stale";
 
-            if (to === skill.state) continue;
+            if (to === skill.state) {
+              continue;
+            }
             yield* skills.update(skill.id, { state: to }, { actor: "curator" });
 
             actions.push({

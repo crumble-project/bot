@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { logWarning } from "../shared/process-log";
 import { join, relative, resolve } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { skillDocumentInput } from "../contract/skills";
@@ -11,24 +12,27 @@ export type DefaultSkill = {
   name: string;
   description?: string | undefined;
   instructions: string;
-  documents: SkillDocument[];
+  documents: Array<SkillDocument>;
   path: string;
 };
 
 const MAX_SKILLS = 100;
 
-function loadDocuments(skillDir: string): SkillDocument[] {
+function loadDocuments(skillDir: string): Array<SkillDocument> {
   const directory = join(skillDir, "references");
 
-  if (!existsSync(directory) || !statSync(directory).isDirectory()) return [];
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+    return [];
+  }
 
   const files = readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
 
-  if (files.length > MAX_SKILL_DOCUMENTS)
+  if (files.length > MAX_SKILL_DOCUMENTS) {
     throw new Error(`Too many reference documents in ${directory}`);
+  }
 
   return files.map((name) => {
     const file = join(directory, name);
@@ -39,8 +43,9 @@ function loadDocuments(skillDir: string): SkillDocument[] {
       content,
     });
 
-    if (!document.success)
+    if (!document.success) {
       throw new Error(`Invalid common skill document: ${file}`);
+    }
 
     return document.data;
   });
@@ -53,15 +58,20 @@ function parseSkill(
 ): DefaultSkill {
   const source = readFileSync(file, "utf8");
 
-  if (Buffer.byteLength(source, "utf8") > MAX_SKILL_FILE_BYTES)
+  if (Buffer.byteLength(source, "utf8") > MAX_SKILL_FILE_BYTES) {
     throw new Error(`Common skill is too large: ${file}`);
+  }
 
   const parsed = parseSkillMarkdown(source);
 
-  if (!parsed) throw new Error(`Invalid common skill frontmatter: ${file}`);
+  if (!parsed) {
+    throw new Error(`Invalid common skill frontmatter: ${file}`);
+  }
   const { fields, body } = parsed;
 
-  if (!body) throw new Error(`Common skill has no instructions: ${file}`);
+  if (!body) {
+    throw new Error(`Common skill has no instructions: ${file}`);
+  }
   const path = relative(root, file);
 
   return {
@@ -74,22 +84,27 @@ function parseSkill(
   };
 }
 
-export function loadDefaultSkills(root: string): DefaultSkill[] {
+export function loadDefaultSkills(root: string): Array<DefaultSkill> {
   const resolved = resolve(root);
 
-  if (!existsSync(resolved)) return [];
+  if (!existsSync(resolved)) {
+    return [];
+  }
 
   const entries = readdirSync(resolved, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  if (entries.length > MAX_SKILLS)
+  if (entries.length > MAX_SKILLS) {
     throw new Error(`Too many common skills in ${resolved}`);
+  }
 
   return entries.flatMap((entry) => {
     const file = join(resolved, entry.name, "SKILL.md");
 
-    if (!existsSync(file) || !statSync(file).isFile()) return [];
+    if (!existsSync(file) || !statSync(file).isFile()) {
+      return [];
+    }
 
     return [parseSkill(file, resolved, entry.name)];
   });
@@ -97,21 +112,23 @@ export function loadDefaultSkills(root: string): DefaultSkill[] {
 
 export class DefaultSkills extends Context.Service<
   DefaultSkills,
-  DefaultSkill[]
+  Array<DefaultSkill>
 >()("crumble/skills/DefaultSkills") {
   static layer(root: string, explicit: boolean) {
     return Layer.effect(
       DefaultSkills,
       Effect.sync(() => {
-        if (explicit && !existsSync(root))
+        if (explicit && !existsSync(root)) {
           throw new Error(
             `Configured common skills directory does not exist: ${root}`,
           );
+        }
 
-        if (!existsSync(root))
-          console.warn(
+        if (!existsSync(root)) {
+          logWarning(
             `Common skills directory not found; continuing with no common skills: ${root}`,
           );
+        }
 
         return loadDefaultSkills(root);
       }),

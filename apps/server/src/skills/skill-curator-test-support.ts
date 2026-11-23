@@ -18,4 +18,4 @@ export const curateNow = (
         ),
       ),
     ),
-  ).runSync(SkillCurator.use((curator) => curator.pass(now)));
+  ).runSync(Effect.flatMap(SkillCurator, (curator) => curator.pass(now)));

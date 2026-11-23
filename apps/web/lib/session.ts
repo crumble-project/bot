@@ -5,16 +5,24 @@ export function onSessionReset(reset: () => void) {
 }
 
 export function resetSession() {
-  for (const reset of resets) reset();
+  for (const reset of resets) {
+    reset();
+  }
 }
 
 /** Where sign-in returns to: a path on this site, never another origin or the sign-in page. */
 export function returnPath(next: string | null | undefined): string {
-  if (!next?.startsWith("/")) return "/";
+  if (!next?.startsWith("/")) {
+    return "/";
+  }
 
-  if (next.startsWith("//") || next.startsWith("/\\")) return "/";
+  if (next.startsWith("//") || next.startsWith("/\\")) {
+    return "/";
+  }
 
-  if (next === "/connect" || next.startsWith("/connect?")) return "/";
+  if (next === "/connect" || next.startsWith("/connect?")) {
+    return "/";
+  }
 
   return next;
 }
@@ -31,8 +39,9 @@ export function connectPath(path: string): string {
 export function signedOut() {
   resetSession();
 
-  if (!location.pathname.endsWith("/connect"))
+  if (!location.pathname.endsWith("/connect")) {
     window.location.assign(
       connectPath(location.pathname + location.search + location.hash),
     );
+  }
 }

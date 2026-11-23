@@ -8,15 +8,10 @@ import type {
   SecretStatus,
 } from "../contract/secrets";
 import { InvalidInput } from "../shared/errors";
-import {
-  PasswordManagers,
-  type PasswordManagerVendor,
-} from "../password-managers/password-manager";
-import {
-  SecretValues,
-  type SecretSource,
-  type SecretUnavailable,
-} from "./secret-values";
+import { PasswordManagers } from "../password-managers/password-manager";
+import type { PasswordManagerVendor } from "../password-managers/password-manager";
+import { SecretValues } from "./secret-values";
+import type { SecretSource, SecretUnavailable } from "./secret-values";
 
 export class Secrets extends Context.Service<
   Secrets,
@@ -25,11 +20,14 @@ export class Secrets extends Context.Service<
      * Gets the value, reading a reference now and refusing one that can't be read, hands it to `verify`, and stores
      * the secret only if `verify` succeeds. Returns what `verify` returns.
      */
-    readonly save: <A = void, E = never, R = never>(
-      key: string,
-      input: SecretInput,
-      verify?: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
-    ) => Effect.Effect<A, E | InvalidInput, R>;
+    readonly save: {
+      (key: string, input: SecretInput): Effect.Effect<void, InvalidInput>;
+      <A, E = never, R = never>(
+        key: string,
+        input: SecretInput,
+        verify: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | InvalidInput, R>;
+    };
     /** Saves several secrets, such as a login's fields, storing none unless every one reads and passes `verify`. */
     readonly saveAll: <E = never, R = never>(
       entries: ReadonlyArray<{
@@ -67,7 +65,9 @@ export class Secrets extends Context.Service<
           : Effect.void;
 
       const valueOf = Effect.fnUntraced(function* (input: SecretInput) {
-        if (!input.reference) return Redacted.make(input.value ?? "");
+        if (!input.reference) {
+          return Redacted.make(input.value ?? "");
+        }
 
         yield* managers.checkReference(
           input.reference.passwordManager,
@@ -90,9 +90,11 @@ export class Secrets extends Context.Service<
       ) {
         const before = yield* repository.source(key);
 
-        if (input.reference)
+        if (input.reference) {
           yield* repository.setReference(key, input.reference);
-        else yield* repository.set(key, Redacted.value(value));
+        } else {
+          yield* repository.set(key, Redacted.value(value));
+        }
 
         const same =
           before &&
@@ -100,22 +102,49 @@ export class Secrets extends Context.Service<
           before.passwordManager === input.reference?.passwordManager &&
           before.reference === input.reference.reference;
 
-        if (!same) yield* forget(before);
+        if (!same) {
+          yield* forget(before);
+        }
       });
 
-      const save = Effect.fnUntraced(function* <A, E, R>(
+      const saveVerified = Effect.fnUntraced(function* <A, E, R>(
         key: string,
         input: SecretInput,
-        verify?: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+        verify: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
       ) {
         const value = yield* valueOf(input);
-        // SAFETY: A defaults to void when `verify` is omitted, so undefined is what the caller gets.
-        const verified = verify ? yield* verify(value) : (undefined as A);
+        const verified = yield* verify(value);
 
         yield* store(key, input, value);
 
         return verified;
       });
+
+      const saveUnverified = Effect.fnUntraced(function* (
+        key: string,
+        input: SecretInput,
+      ) {
+        yield* store(key, input, yield* valueOf(input));
+      });
+
+      function save(
+        key: string,
+        input: SecretInput,
+      ): Effect.Effect<void, InvalidInput>;
+      function save<A, E = never, R = never>(
+        key: string,
+        input: SecretInput,
+        verify: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | InvalidInput, R>;
+      function save<A, E, R>(
+        key: string,
+        input: SecretInput,
+        verify?: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+      ) {
+        return verify === undefined
+          ? saveUnverified(key, input)
+          : saveVerified(key, input, verify);
+      }
 
       const saveAll = Effect.fnUntraced(function* <E, R>(
         entries: ReadonlyArray<{
@@ -130,8 +159,13 @@ export class Secrets extends Context.Service<
           ),
         );
 
-        for (const [index, entry] of entries.entries())
-          yield* store(entry.key, entry.input, checked[index]!);
+        for (const [index, entry] of entries.entries()) {
+          const value = checked[index];
+
+          if (value !== undefined) {
+            yield* store(entry.key, entry.input, value);
+          }
+        }
       });
 
       const read = Effect.fn("Secrets.read")(function* (key: string) {
@@ -170,8 +204,9 @@ export class Secrets extends Context.Service<
       const deleteAll = Effect.fn("Secrets.deleteAll")(function* (
         prefix: string,
       ) {
-        for (const source of yield* repository.deleteAll(prefix))
+        for (const source of yield* repository.deleteAll(prefix)) {
           yield* forget(source);
+        }
       });
 
       return Secrets.of({

@@ -1,6 +1,8 @@
 import { Effect, Exit, Layer, Predicate, Scope } from "effect";
-import { coreLayer, type CoreServices } from "../../src/app/core-layer";
-import { runnerOf, type Runner } from "../../src/shared/runner";
+import { coreLayer } from "../../src/app/core-layer";
+import type { CoreServices } from "../../src/app/core-layer";
+import { runnerOf } from "../../src/shared/runner";
+import type { Runner } from "../../src/shared/runner";
 import { botStore } from "./store-bots";
 import { configurationStore } from "./store-configuration";
 import { learningStore } from "./store-learning";
@@ -27,7 +29,9 @@ export class Store {
     return this.runtime.runSync(effect);
   }
   close() {
-    if (this.owned) Effect.runSync(Scope.close(this.owned, Exit.void));
+    if (this.owned) {
+      Effect.runSync(Scope.close(this.owned, Exit.void));
+    }
   }
   private readonly bots = botStore((effect) => this.run(effect));
   private readonly learning = learningStore((effect) => this.run(effect));

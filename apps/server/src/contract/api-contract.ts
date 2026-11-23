@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { Predicate } from "effect";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import {
   ACTIVITY_KINDS,
@@ -26,8 +27,59 @@ import {
   MAX_SECRET_CHARS,
 } from "../shared/limits";
 import { MAX_MCP_SERVER_NAME_CHARS } from "./limits";
-import * as response from "./api-responses";
+import {
+  activityFeedResponse,
+  agentPreviewResponse,
+  agentResponse,
+  botRequestResponse,
+  capabilitiesResponse,
+  chatSnapshotResponse,
+  codingJobsResponse,
+  compactResponse,
+  credentialResponse,
+  credentialUseResponse,
+  credentialsResponse,
+  describedMcpServerResponse,
+  desktopControlResponse,
+  desktopJobsResponse,
+  desktopStatusResponse,
+  desktopViewerResponse,
+  eventSchemas,
+  executionResponse,
+  healthResponse,
+  heldActionResponse,
+  historyResponse,
+  jobHistoryResponse,
+  judgeModelResponse,
+  learnedChangeResponse,
+  libraryFileResponse,
+  listedSkillResponse,
+  loginResponse,
+  loginSessionResponse,
+  loginUseResponse,
+  loginsResponse,
+  mcpServerResponse,
+  memoryResponse,
+  modelResponse,
+  oauthStartResponse,
+  passwordManagerResponse,
+  passwordManagersResponse,
+  pluginSettingResponse,
+  pluginSettingsResponse,
+  providerConfiguredResponse,
+  providerResponse,
+  reviewResultResponse,
+  scheduleResponse,
+  scheduleRunResponse,
+  scriptRunResponse,
+  skillPackageResponse,
+  skillResponse,
+  uploadFileResponse,
+  usageResponse,
+  visionModelResponse,
+} from "./api-responses";
 import { body, define, defineVoiceGateway, empty, error, json } from "./route";
+import { isZodSchema } from "../shared/zod-guards";
 import { pushRoutes } from "./push";
 import { adminRoutes } from "./admin";
 import {
@@ -206,7 +258,7 @@ const pluginSettingParams = z.object({
 });
 
 /** Login answers may be pasted callback URLs, never larger than this. */
-const MAX_LOGIN_VALUE = 16384;
+const MAX_LOGIN_VALUE = 16_384;
 
 export const providerLoginInput = z.object({
   method: z.enum(SIGN_IN_METHODS),
@@ -268,13 +320,23 @@ const credentialParams = id.extend({ name: z.string() });
 const heldActionParams = id.extend({ actionId: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
 
+/** A field with a default: zod's `def.type` names it and `unwrap` reaches the wrapped schema. */
+const isDefaultField = (
+  field: z.ZodType,
+): field is z.ZodType & { unwrap: () => z.ZodType } =>
+  field.def.type === "default" &&
+  Predicate.hasProperty(field, "unwrap") &&
+  Predicate.isFunction(field["unwrap"]);
+
 export function patchInput(schema: z.ZodObject<Record<string, z.ZodType>>) {
   const fields: Record<string, z.ZodType> = {};
 
   for (const [key, field] of Object.entries(schema.shape)) {
-    const inner = field instanceof z.ZodDefault ? field.unwrap() : field;
+    const inner = isDefaultField(field) ? field.unwrap() : field;
 
-    if (inner instanceof z.ZodType) fields[key] = inner.optional();
+    if (isZodSchema(inner)) {
+      fields[key] = inner.optional();
+    }
   }
 
   return z.object(fields);
@@ -291,7 +353,7 @@ export const routes = {
     path: "/health",
     operationId: "getHealth",
     security: [],
-    responses: { 200: json(response.healthResponse) },
+    responses: { 200: json(healthResponse) },
   }),
   openAPI: createRoute({
     method: "get",
@@ -305,7 +367,7 @@ export const routes = {
     method: "get",
     path: "/v1/capabilities",
     operationId: "getCapabilities",
-    responses: { 200: json(response.capabilitiesResponse) },
+    responses: { 200: json(capabilitiesResponse) },
   }),
   ...pushRoutes,
   ...adminRoutes,
@@ -402,7 +464,7 @@ export const routes = {
     description:
       "Sends what the owner said on a call to the line's bot. On the line's active outside call, what the callee said goes to that call's conversation instead, never the bot chat, under requestId outside-call:{callId}:{requestId}. The same IDs with other content answer 409, and so do a callId whose call ended and an outside call's ID that is not the line's active call: hang up. A callId the server doesn't know is accepted.",
     request: { params: voiceLineParams, body: body(spokenMessageInput) },
-    responses: { 202: json(response.executionResponse) },
+    responses: { 202: json(executionResponse) },
   }),
   voiceLineEvents: defineVoiceGateway({
     method: "get",
@@ -433,7 +495,7 @@ export const routes = {
       200: json(
         z
           .object({
-            execution: response.executionResponse,
+            execution: executionResponse,
             reply: z.array(z.string()).nullable().openapi({
               description:
                 "The bot's reply, read by the message's submission; null unless the execution's status is done. A failed or cancelled execution never gets one.",
@@ -670,14 +732,14 @@ export const routes = {
     operationId: "getJudgeModel",
     description:
       "The account's judge model for desktop jobs' intent checks, and the models the account's provider keys reach.",
-    responses: { 200: json(response.judgeModelResponse) },
+    responses: { 200: json(judgeModelResponse) },
   }),
   updateJudgeModel: define({
     method: "put",
     path: "/v1/judge-model",
     operationId: "updateJudgeModel",
     request: { body: body(judgeModelInput) },
-    responses: { 200: json(response.judgeModelResponse) },
+    responses: { 200: json(judgeModelResponse) },
   }),
   getVisionModel: define({
     method: "get",
@@ -685,7 +747,7 @@ export const routes = {
     operationId: "getVisionModel",
     description:
       "The account's vision model, which describes images for bots whose model can't read them, and the models that read images the account's provider keys reach.",
-    responses: { 200: json(response.visionModelResponse) },
+    responses: { 200: json(visionModelResponse) },
   }),
   updateVisionModel: define({
     method: "put",
@@ -694,41 +756,41 @@ export const routes = {
     description:
       "Choose the account's vision model, or turn it off with null. It must be one of the choices `getVisionModel` lists.",
     request: { body: body(visionModelInput) },
-    responses: { 200: json(response.visionModelResponse) },
+    responses: { 200: json(visionModelResponse) },
   }),
   listAgents: define({
     method: "get",
     path: "/v1/agents",
     operationId: "listAgents",
-    responses: { 200: json(z.array(response.agentPreviewResponse)) },
+    responses: { 200: json(z.array(agentPreviewResponse)) },
   }),
   createAgent: define({
     method: "post",
     path: "/v1/agents",
     operationId: "createAgent",
     request: { body: body(agentInput) },
-    responses: { 201: json(response.agentResponse) },
+    responses: { 201: json(agentResponse) },
   }),
   getAgent: define({
     method: "get",
     path: "/v1/agents/{id}",
     operationId: "getAgent",
     request: { params: id },
-    responses: { 200: json(response.agentResponse) },
+    responses: { 200: json(agentResponse) },
   }),
   updateAgent: define({
     method: "patch",
     path: "/v1/agents/{id}",
     operationId: "updateAgent",
     request: { params: id, body: body(patchInput(agentInput)) },
-    responses: { 200: json(z.union([response.agentResponse, z.null()])) },
+    responses: { 200: json(z.union([agentResponse, z.null()])) },
   }),
   duplicateAgent: define({
     method: "post",
     path: "/v1/agents/{id}/duplicate",
     operationId: "duplicateAgent",
     request: { params: id },
-    responses: { 201: json(z.union([response.agentResponse, z.null()])) },
+    responses: { 201: json(z.union([agentResponse, z.null()])) },
   }),
   deleteAgent: define({
     method: "delete",
@@ -742,21 +804,21 @@ export const routes = {
     path: "/v1/agents/{id}/chat",
     operationId: "getChat",
     request: { params: id, query: snapshotInput },
-    responses: { 200: json(response.chatSnapshotResponse) },
+    responses: { 200: json(chatSnapshotResponse) },
   }),
   history: define({
     method: "get",
     path: "/v1/agents/{id}/chat/history",
     operationId: "getChatHistory",
     request: { params: id, query: historyInput },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(historyResponse) },
   }),
   codingJobs: define({
     method: "get",
     path: "/v1/agents/{id}/coding-jobs",
     operationId: "listCodingJobs",
     request: { params: id },
-    responses: { 200: json(response.codingJobsResponse) },
+    responses: { 200: json(codingJobsResponse) },
   }),
   answerCodingJob: define({
     method: "post",
@@ -775,21 +837,21 @@ export const routes = {
     path: "/v1/agents/{id}/coding-jobs/{name}/history",
     operationId: "getCodingJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.jobHistoryResponse) },
+    responses: { 200: json(jobHistoryResponse) },
   }),
   desktopJobs: define({
     method: "get",
     path: "/v1/agents/{id}/desktop-jobs",
     operationId: "listDesktopJobs",
     request: { params: id },
-    responses: { 200: json(response.desktopJobsResponse) },
+    responses: { 200: json(desktopJobsResponse) },
   }),
   desktopControl: define({
     method: "get",
     path: "/v1/agents/{id}/desktop/control",
     operationId: "getDesktopControl",
     request: { params: id },
-    responses: { 200: json(response.desktopControlResponse) },
+    responses: { 200: json(desktopControlResponse) },
   }),
   putDesktopControl: define({
     method: "put",
@@ -798,7 +860,7 @@ export const routes = {
     description:
       "Take control of the bot desktop (holder owner) or hand it back (holder bot). 409 when the bot has no bot desktop.",
     request: { params: id, body: body(desktopControlInput) },
-    responses: { 200: json(response.desktopControlResponse) },
+    responses: { 200: json(desktopControlResponse) },
   }),
   desktopEvents: define({
     method: "get",
@@ -823,7 +885,7 @@ export const routes = {
     path: "/v1/agents/{id}/desktop/status",
     operationId: "getDesktopStatus",
     request: { params: id },
-    responses: { 200: json(response.desktopStatusResponse) },
+    responses: { 200: json(desktopStatusResponse) },
   }),
   createDesktopViewer: define({
     method: "post",
@@ -832,35 +894,35 @@ export const routes = {
     description:
       "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. With passive=true the link is watch-only: it neither boots the bot's machine nor keeps it awake, and its connection ends when the machine stops. 409 when the bot has no bot desktop.",
     request: { params: id, query: desktopViewerInput },
-    responses: { 201: json(response.desktopViewerResponse) },
+    responses: { 201: json(desktopViewerResponse) },
   }),
   desktopJobHistory: define({
     method: "get",
     path: "/v1/agents/{id}/desktop-jobs/{name}/history",
     operationId: "getDesktopJobHistory",
     request: { params: id.extend({ name: z.string() }), query: historyInput },
-    responses: { 200: json(response.jobHistoryResponse) },
+    responses: { 200: json(jobHistoryResponse) },
   }),
   sendMessage: define({
     method: "post",
     path: "/v1/agents/{id}/messages",
     operationId: "sendMessage",
     request: { params: id, body: body(messageInput) },
-    responses: { 202: json(response.executionResponse) },
+    responses: { 202: json(executionResponse) },
   }),
   uploadFile: define({
     method: "post",
     path: "/v1/agents/{id}/files",
     operationId: "uploadFile",
     request: { params: id, headers: fileHeaders, body: rawFileBody },
-    responses: { 201: json(response.uploadFileResponse) },
+    responses: { 201: json(uploadFileResponse) },
   }),
   listFiles: define({
     method: "get",
     path: "/v1/agents/{id}/files",
     operationId: "listFiles",
     request: { params: id, query: filePageInput },
-    responses: { 200: json(z.array(response.libraryFileResponse)) },
+    responses: { 200: json(z.array(libraryFileResponse)) },
   }),
   getFile: define({
     method: "get",
@@ -921,7 +983,7 @@ export const routes = {
     path: "/v1/agents/{id}/compact",
     operationId: "compactChat",
     request: { params: id },
-    responses: { 202: json(response.compactResponse) },
+    responses: { 202: json(compactResponse) },
   }),
   chatEvents: define({
     method: "get",
@@ -967,7 +1029,7 @@ export const routes = {
     description:
       "The bot's credentials and its requests for credentials the owner has not answered. Values are never returned.",
     request: { params: id },
-    responses: { 200: json(response.credentialsResponse) },
+    responses: { 200: json(credentialsResponse) },
   }),
   listBotRequests: define({
     method: "get",
@@ -976,7 +1038,7 @@ export const routes = {
     description:
       "Lists bot requests, newest first, including their current approval status.",
     request: { params: id },
-    responses: { 200: json(z.array(response.botRequestResponse)) },
+    responses: { 200: json(z.array(botRequestResponse)) },
   }),
   approveBotRequest: define({
     method: "post",
@@ -998,8 +1060,8 @@ export const routes = {
     responses: {
       200: json(
         z.object({
-          request: response.botRequestResponse,
-          agent: response.agentResponse,
+          request: botRequestResponse,
+          agent: agentResponse,
         }),
       ),
     },
@@ -1010,7 +1072,7 @@ export const routes = {
     operationId: "declineBotRequest",
     description: "Declines a pending bot request.",
     request: { params: id.extend({ requestId: z.string() }) },
-    responses: { 200: json(response.botRequestResponse) },
+    responses: { 200: json(botRequestResponse) },
   }),
   listCallRequests: define({
     method: "get",
@@ -1048,7 +1110,7 @@ export const routes = {
       params: id.extend({ requestId: z.string() }),
       query: historyInput,
     },
-    responses: { 200: json(response.historyResponse) },
+    responses: { 200: json(historyResponse) },
   }),
   saveAgentCredential: define({
     method: "put",
@@ -1057,7 +1119,7 @@ export const routes = {
     description:
       "Creates or updates a credential. Saving one the bot requested answers the request and starts a bot turn with a notice. A new value applies from the next request; the placeholder stays the same.",
     request: { params: credentialParams, body: body(credentialSaveInput) },
-    responses: { 200: json(response.credentialResponse) },
+    responses: { 200: json(credentialResponse) },
   }),
   deleteAgentCredential: define({
     method: "delete",
@@ -1084,7 +1146,7 @@ export const routes = {
     description:
       "Requests sent with the credential's value in the last 90 days, newest first. Page with `before` set to the last use's ID.",
     request: { params: credentialParams, query: credentialUsesInput },
-    responses: { 200: json(z.array(response.credentialUseResponse)) },
+    responses: { 200: json(z.array(credentialUseResponse)) },
   }),
   agentLogins: define({
     method: "get",
@@ -1093,7 +1155,7 @@ export const routes = {
     description:
       "The logins the bot's desktop jobs can fill into web pages, and its requests for logins the owner has not answered. Values are never returned.",
     request: { params: id },
-    responses: { 200: json(response.loginsResponse) },
+    responses: { 200: json(loginsResponse) },
   }),
   saveAgentLogin: define({
     method: "put",
@@ -1102,7 +1164,7 @@ export const routes = {
     description:
       "Creates or updates a login. Saving one the bot requested answers the request and starts a bot turn with a notice. Each field is a value stored in Crumble or a password manager reference; a 1Password `item` fills every field. Every reference is read once to check it, and nothing is saved if one fails.",
     request: { params: credentialParams, body: body(loginSaveInput) },
-    responses: { 200: json(response.loginResponse) },
+    responses: { 200: json(loginResponse) },
   }),
   deleteAgentLogin: define({
     method: "delete",
@@ -1129,7 +1191,7 @@ export const routes = {
     description:
       "Fills of the login's fields in the last 90 days, newest first. Page with `before` set to the last use's ID.",
     request: { params: credentialParams, query: credentialUsesInput },
-    responses: { 200: json(z.array(response.loginUseResponse)) },
+    responses: { 200: json(z.array(loginUseResponse)) },
   }),
   agentHeldActions: define({
     method: "get",
@@ -1138,7 +1200,7 @@ export const routes = {
     description:
       "Desktop job actions an intent check held for the owner, newest first, pending and decided.",
     request: { params: id },
-    responses: { 200: json(z.array(response.heldActionResponse)) },
+    responses: { 200: json(z.array(heldActionResponse)) },
   }),
   approveAgentHeldAction: define({
     method: "post",
@@ -1147,7 +1209,7 @@ export const routes = {
     description:
       "Runs the held action; the job continues where it stopped. Fails with 409 once the action was decided.",
     request: { params: heldActionParams },
-    responses: { 200: json(response.heldActionResponse) },
+    responses: { 200: json(heldActionResponse) },
   }),
   declineAgentHeldAction: define({
     method: "post",
@@ -1156,28 +1218,28 @@ export const routes = {
     description:
       "Refuses the held action with an optional reason; the job reports back. Fails with 409 once the action was decided.",
     request: { params: heldActionParams, body: body(heldActionDeclineInput) },
-    responses: { 200: json(response.heldActionResponse) },
+    responses: { 200: json(heldActionResponse) },
   }),
   agentMemories: define({
     method: "get",
     path: "/v1/agents/{id}/memories",
     operationId: "listAgentMemories",
     request: { params: id },
-    responses: { 200: json(z.array(response.memoryResponse)) },
+    responses: { 200: json(z.array(memoryResponse)) },
   }),
   createAgentMemory: define({
     method: "post",
     path: "/v1/agents/{id}/memories",
     operationId: "createAgentMemory",
     request: { params: id, body: body(memoryInput) },
-    responses: { 201: json(response.memoryResponse) },
+    responses: { 201: json(memoryResponse) },
   }),
   updateAgentMemory: define({
     method: "patch",
     path: "/v1/agents/{id}/memories/{memoryId}",
     operationId: "updateAgentMemory",
     request: { params: memoryParams, body: body(memoryInput) },
-    responses: { 200: json(z.union([response.memoryResponse, z.null()])) },
+    responses: { 200: json(z.union([memoryResponse, z.null()])) },
   }),
   deleteAgentMemory: define({
     method: "delete",
@@ -1190,21 +1252,21 @@ export const routes = {
     method: "get",
     path: "/v1/memories",
     operationId: "listSharedMemories",
-    responses: { 200: json(z.array(response.memoryResponse)) },
+    responses: { 200: json(z.array(memoryResponse)) },
   }),
   createMemory: define({
     method: "post",
     path: "/v1/memories",
     operationId: "createSharedMemory",
     request: { body: body(memoryInput) },
-    responses: { 201: json(response.memoryResponse) },
+    responses: { 201: json(memoryResponse) },
   }),
   updateMemory: define({
     method: "patch",
     path: "/v1/memories/{id}",
     operationId: "updateSharedMemory",
     request: { params: id, body: body(memoryInput) },
-    responses: { 200: json(z.union([response.memoryResponse, z.null()])) },
+    responses: { 200: json(z.union([memoryResponse, z.null()])) },
   }),
   deleteMemory: define({
     method: "delete",
@@ -1220,14 +1282,14 @@ export const routes = {
     description:
       "The bot's own skill packages, including stale and archived ones. The agent's inline `skills` field lists the same skills by name and instructions.",
     request: { params: id },
-    responses: { 200: json(z.array(response.skillPackageResponse)) },
+    responses: { 200: json(z.array(skillPackageResponse)) },
   }),
   createAgentSkill: define({
     method: "post",
     path: "/v1/agents/{id}/skills",
     operationId: "createAgentSkill",
     request: { params: id, body: body(skillInput) },
-    responses: { 201: json(response.skillPackageResponse) },
+    responses: { 201: json(skillPackageResponse) },
   }),
   updateAgentSkill: define({
     method: "patch",
@@ -1240,7 +1302,7 @@ export const routes = {
       body: body(patchInput(skillInput).extend(skillLifecycleInput.shape)),
     },
     responses: {
-      200: json(z.union([response.skillPackageResponse, z.null()])),
+      200: json(z.union([skillPackageResponse, z.null()])),
     },
   }),
   deleteAgentSkill: define({
@@ -1269,7 +1331,7 @@ export const routes = {
     description:
       "What the bot's reviews changed, newest first, one entry per reviewed execution with its changes. Clients show these as notices in the bot chat, also after reconnecting.",
     request: { params: id, query: reviewsInput },
-    responses: { 200: json(z.array(response.reviewResultResponse)) },
+    responses: { 200: json(z.array(reviewResultResponse)) },
   }),
   changes: define({
     method: "get",
@@ -1278,7 +1340,7 @@ export const routes = {
     description:
       "Skill and memory changes by owners, bots, and reviews, newest first, with the state before and after each. Page with `before` set to the last change's ID.",
     request: { query: changesInput },
-    responses: { 200: json(z.array(response.learnedChangeResponse)) },
+    responses: { 200: json(z.array(learnedChangeResponse)) },
   }),
   revertChange: define({
     method: "post",
@@ -1287,13 +1349,13 @@ export const routes = {
     description:
       "Restores the state before the change, whatever happened since, and records the revert as a change of its own.",
     request: { params: id },
-    responses: { 201: json(response.learnedChangeResponse) },
+    responses: { 201: json(learnedChangeResponse) },
   }),
   skills: define({
     method: "get",
     path: "/v1/skills",
     operationId: "listSkills",
-    responses: { 200: json(z.array(response.listedSkillResponse)) },
+    responses: { 200: json(z.array(listedSkillResponse)) },
   }),
   getSkill: define({
     method: "get",
@@ -1302,14 +1364,14 @@ export const routes = {
     description:
       "One shared skill as a full package. GET /v1/skills keeps its earlier item shapes; the full records are here and in the create and update responses.",
     request: { params: id },
-    responses: { 200: json(response.skillPackageResponse) },
+    responses: { 200: json(skillPackageResponse) },
   }),
   createSkill: define({
     method: "post",
     path: "/v1/skills",
     operationId: "createSkill",
     request: { body: body(skillInput) },
-    responses: { 201: json(response.skillResponse) },
+    responses: { 201: json(skillResponse) },
   }),
   updateSkill: define({
     method: "patch",
@@ -1317,7 +1379,7 @@ export const routes = {
     operationId: "updateSkill",
     request: { params: id, body: body(patchInput(skillInput)) },
     responses: {
-      200: json(z.union([response.skillResponse, z.null()])),
+      200: json(z.union([skillResponse, z.null()])),
     },
   }),
   deleteSkill: define({
@@ -1344,7 +1406,7 @@ export const routes = {
       "Installs skills from one commit of a public GitHub repository as read-only shared skills, all or none, and turns them on for `botIds`.",
     request: { body: body(skillInstallInput) },
     responses: {
-      201: json(z.array(response.skillPackageResponse)),
+      201: json(z.array(skillPackageResponse)),
       409: json(error, "A skill is already installed or its name is taken"),
     },
   }),
@@ -1371,14 +1433,14 @@ export const routes = {
     description:
       "Replaces an installed skill with its upstream version, recorded as a change the owner can revert.",
     request: { params: id },
-    responses: { 200: json(response.skillPackageResponse) },
+    responses: { 200: json(skillPackageResponse) },
   }),
   schedules: define({
     method: "get",
     path: "/v1/schedules",
     operationId: "listSchedules",
     request: { query: z.object({ agentId: z.string().optional() }) },
-    responses: { 200: json(z.array(response.scheduleResponse)) },
+    responses: { 200: json(z.array(scheduleResponse)) },
   }),
   previewSchedule: define({
     method: "post",
@@ -1393,7 +1455,7 @@ export const routes = {
     operationId: "createSchedule",
     request: { body: body(scheduleInput) },
     responses: {
-      201: json(response.scheduleResponse),
+      201: json(scheduleResponse),
       403: json(
         error,
         "Script tasks need coding jobs and must stay with their creator",
@@ -1409,7 +1471,7 @@ export const routes = {
       body: body(patchInput(z.object(scheduleInput.shape))),
     },
     responses: {
-      200: json(z.union([response.scheduleResponse, z.null()])),
+      200: json(z.union([scheduleResponse, z.null()])),
       403: json(
         error,
         "Script tasks need coding jobs and must stay with their creator",
@@ -1428,7 +1490,7 @@ export const routes = {
     path: "/v1/schedules/{id}/run",
     operationId: "runSchedule",
     request: { params: id },
-    responses: { 202: json(response.scheduleRunResponse) },
+    responses: { 202: json(scheduleRunResponse) },
   }),
   listScriptRuns: define({
     method: "get",
@@ -1437,14 +1499,14 @@ export const routes = {
     description:
       "Script task runs from the last 90 days, newest first. Page with `before` set to the last run's ID. An unknown ID returns an empty list.",
     request: { params: id, query: scriptRunsInput },
-    responses: { 200: json(z.array(response.scriptRunResponse)) },
+    responses: { 200: json(z.array(scriptRunResponse)) },
   }),
   executions: define({
     method: "get",
     path: "/v1/executions",
     operationId: "listExecutions",
     request: { query: z.object({ agentId: z.string().optional() }) },
-    responses: { 200: json(z.array(response.executionResponse)) },
+    responses: { 200: json(z.array(executionResponse)) },
   }),
   activity: define({
     method: "get",
@@ -1453,13 +1515,13 @@ export const routes = {
     description:
       "Bots' tool calls, tool results, MCP calls, and bot messages, and skill and memory changes, newest first. Page with `cursor` set to the previous page's `nextCursor`. A page may hold fewer than `limit` items while `hasMore` is true.",
     request: { query: activityInput },
-    responses: { 200: json(response.activityFeedResponse) },
+    responses: { 200: json(activityFeedResponse) },
   }),
   providers: define({
     method: "get",
     path: "/v1/providers",
     operationId: "listProviders",
-    responses: { 200: json(z.array(response.providerResponse)) },
+    responses: { 200: json(z.array(providerResponse)) },
   }),
   usage: define({
     method: "get",
@@ -1467,7 +1529,7 @@ export const routes = {
     operationId: "getUsage",
     description:
       "Tokens and cost of each model and tool across all of the account's bots: their chats, jobs, and other conversations, since each started. Most tokens first. A deleted bot's usage is gone with it.",
-    responses: { 200: json(response.usageResponse) },
+    responses: { 200: json(usageResponse) },
   }),
   previewReasoning: define({
     method: "post",
@@ -1481,7 +1543,7 @@ export const routes = {
     path: "/v1/models",
     operationId: "listModels",
     request: { query: z.object({ provider: z.string().optional() }) },
-    responses: { 200: json(z.array(response.modelResponse)) },
+    responses: { 200: json(z.array(modelResponse)) },
   }),
   putProvider: define({
     method: "put",
@@ -1493,7 +1555,7 @@ export const routes = {
       params: z.object({ provider: z.string() }),
       body: body(secretInput),
     },
-    responses: { 200: json(response.providerConfiguredResponse) },
+    responses: { 200: json(providerConfiguredResponse) },
   }),
   deleteProvider: define({
     method: "delete",
@@ -1512,28 +1574,28 @@ export const routes = {
       params: z.object({ provider: z.string() }),
       body: body(providerLoginInput),
     },
-    responses: { 202: json(response.loginSessionResponse) },
+    responses: { 202: json(loginSessionResponse) },
   }),
   getProviderLogin: define({
     method: "get",
     path: "/v1/provider-logins/{id}",
     operationId: "getProviderLogin",
     request: { params: id },
-    responses: { 200: json(response.loginSessionResponse), 410: gone },
+    responses: { 200: json(loginSessionResponse), 410: gone },
   }),
   answerProviderLogin: define({
     method: "post",
     path: "/v1/provider-logins/{id}/responses",
     operationId: "answerProviderLogin",
     request: { params: id, body: body(providerLoginAnswerInput) },
-    responses: { 200: json(response.loginSessionResponse), 410: gone },
+    responses: { 200: json(loginSessionResponse), 410: gone },
   }),
   cancelProviderLogin: define({
     method: "delete",
     path: "/v1/provider-logins/{id}",
     operationId: "cancelProviderLogin",
     request: { params: id },
-    responses: { 200: json(response.loginSessionResponse), 410: gone },
+    responses: { 200: json(loginSessionResponse), 410: gone },
   }),
   passwordManagers: define({
     method: "get",
@@ -1541,7 +1603,7 @@ export const routes = {
     operationId: "listPasswordManagers",
     description:
       "Every password manager this server supports, whether it is connected, and which secrets read from it.",
-    responses: { 200: json(response.passwordManagersResponse) },
+    responses: { 200: json(passwordManagersResponse) },
   }),
   connectPasswordManager: define({
     method: "put",
@@ -1553,7 +1615,7 @@ export const routes = {
       params: passwordManagerParams,
       body: body(passwordManagerTokenInput),
     },
-    responses: { 200: json(response.passwordManagerResponse) },
+    responses: { 200: json(passwordManagerResponse) },
   }),
   disconnectPasswordManager: define({
     method: "delete",
@@ -1570,7 +1632,7 @@ export const routes = {
     operationId: "listPluginSettings",
     description:
       "Each plugin that has settings, and whether each setting has a value. Values are never returned.",
-    responses: { 200: json(response.pluginSettingsResponse) },
+    responses: { 200: json(pluginSettingsResponse) },
   }),
   setPluginSetting: define({
     method: "put",
@@ -1579,7 +1641,7 @@ export const routes = {
     description:
       "Sets a plugin setting to a `value` stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before; send exactly one. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
     request: { params: pluginSettingParams, body: body(secretInput) },
-    responses: { 200: json(response.pluginSettingResponse) },
+    responses: { 200: json(pluginSettingResponse) },
   }),
   deletePluginSetting: define({
     method: "delete",
@@ -1588,48 +1650,48 @@ export const routes = {
     description:
       "Removes a plugin setting's value. 404 for a plugin or key the server doesn't have.",
     request: { params: pluginSettingParams },
-    responses: { 200: json(response.pluginSettingResponse) },
+    responses: { 200: json(pluginSettingResponse) },
   }),
   mcpServers: define({
     method: "get",
     path: "/v1/mcp-servers",
     operationId: "listMcpServers",
-    responses: { 200: json(z.array(response.describedMcpServerResponse)) },
+    responses: { 200: json(z.array(describedMcpServerResponse)) },
   }),
   oauth: define({
     method: "post",
     path: "/v1/mcp-servers/{id}/oauth",
     operationId: "startMcpOAuth",
     request: { params: id, body: body(oauthInput) },
-    responses: { 200: json(response.oauthStartResponse) },
+    responses: { 200: json(oauthStartResponse) },
   }),
   oauthCallback: define({
     method: "post",
     path: "/v1/mcp-servers/{id}/oauth/callback",
     operationId: "finishMcpOAuth",
     request: { params: id, body: body(oauthCallbackInput) },
-    responses: { 200: json(response.describedMcpServerResponse) },
+    responses: { 200: json(describedMcpServerResponse) },
   }),
   deleteOauth: define({
     method: "delete",
     path: "/v1/mcp-servers/{id}/oauth",
     operationId: "signOutMcpOAuth",
     request: { params: id },
-    responses: { 200: json(response.describedMcpServerResponse) },
+    responses: { 200: json(describedMcpServerResponse) },
   }),
   createMcpServer: define({
     method: "post",
     path: "/v1/mcp-servers",
     operationId: "createMcpServer",
     request: { body: body(mcpCreateInput) },
-    responses: { 201: json(response.mcpServerResponse) },
+    responses: { 201: json(mcpServerResponse) },
   }),
   updateMcpServer: define({
     method: "patch",
     path: "/v1/mcp-servers/{id}",
     operationId: "updateMcpServer",
     request: { params: id, body: body(patchInput(mcpInput)) },
-    responses: { 200: json(z.union([response.mcpServerResponse, z.null()])) },
+    responses: { 200: json(z.union([mcpServerResponse, z.null()])) },
   }),
   deleteMcpServer: define({
     method: "delete",
@@ -1666,8 +1728,11 @@ export function contractApp() {
       "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin.",
   });
 
-  for (const { component, schema } of response.eventSchemas)
-    if (component) app.openAPIRegistry.register(component, schema);
+  for (const { component, schema } of eventSchemas) {
+    if (component) {
+      app.openAPIRegistry.register(component, schema);
+    }
+  }
 
   return app;
 }
@@ -1675,8 +1740,9 @@ export function contractApp() {
 export function openAPIDocument() {
   const app = contractApp();
 
-  for (const route of Object.values(routes))
+  for (const route of Object.values(routes)) {
     app.openAPIRegistry.registerPath(route);
+  }
 
   return app.getOpenAPI31Document({
     openapi: "3.1.0",

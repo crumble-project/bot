@@ -1,6 +1,7 @@
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Effect } from "effect";
-import { Context, Layer, type Scope } from "effect";
+import { Context, Layer } from "effect";
+import type { Scope } from "effect";
 import type {
   DesktopOpenError,
   WorkspaceRemoveFailed,
@@ -38,7 +39,7 @@ export interface Workspaces {
   startDesktop(agentId: string): Effect.Effect<void, DesktopOpenError>;
   keepAwake(agentId: string): () => void;
   /** Bots whose running machine has another image than they need now; each switches at its idle stop. */
-  outdated(): string[];
+  outdated(): Array<string>;
   /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */
   sync(agentId: string): Effect.Effect<void, WorkspaceSyncFailed>;
 }

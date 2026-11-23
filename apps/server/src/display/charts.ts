@@ -16,20 +16,24 @@ const MODULE = /^(@tanstack\/charts(\/[\w/-]+)?|d3-scale)$/;
 const transpiler = new Bun.Transpiler({ loader: "ts" });
 
 function importBinding(clause: string, specifier: string): string {
-  if (!MODULE.test(specifier))
+  if (!MODULE.test(specifier)) {
     throw new Error(
       `Cannot import "${specifier}". Only @tanstack/charts and d3-scale are available; put data inline in the code.`,
     );
+  }
 
   const namespace = /^\*\s+as\s+(\w+)$/.exec(clause.trim());
 
-  if (namespace) return `const ${namespace[1]} = __crumbleImport([]);`;
+  if (namespace) {
+    return `const ${namespace[1]} = __crumbleImport([]);`;
+  }
   const named = /^\{([\s\S]*)\}$/.exec(clause.trim());
 
-  if (!named?.[1])
+  if (!named?.[1]) {
     throw new Error(
       `Use named imports from "${specifier}", e.g. import { barY } from "${specifier}".`,
     );
+  }
 
   const names = named[1]
     .split(",")
@@ -46,7 +50,7 @@ function importBinding(clause: string, specifier: string): string {
 
 export function chartFunction(code: string): string {
   const body = code
-    .replace(
+    .replaceAll(
       IMPORT,
       (_line, type: string | undefined, clause: string, specifier: string) =>
         type ? "" : importBinding(clause, specifier),
@@ -78,26 +82,31 @@ export class ChartCompiler {
     try {
       chart = chartFunction(code);
     } catch (error) {
-      throw new Error(`Chart code does not parse: ${errorText(error)}`);
+      throw new Error(`Chart code does not parse: ${errorText(error)}`, {
+        cause: error,
+      });
     }
 
     const script = `${chart}\n${await this.bundle()}\nreturn __crumbleCompileChart(await __chart(), ${JSON.stringify(CHART_WIDTHS)}, ${height});`;
     const result = await this.sandbox.execute(script);
 
-    if (!result.ok)
+    if (!result.ok) {
       throw new Error(`Chart code failed: ${result.error.message}`);
+    }
 
-    if (JSON.stringify(result.value ?? null).length > MAX_BYTES)
+    if (JSON.stringify(result.value ?? null).length > MAX_BYTES) {
       throw new Error(
         "The chart is too detailed to send. Aggregate or sample the data first.",
       );
+    }
 
     const layouts = z.array(chartLayout).min(1).safeParse(result.value);
 
-    if (!layouts.success)
+    if (!layouts.success) {
       throw new Error(
         `The chart compiled to an unsupported scene: ${z.prettifyError(layouts.error)}`,
       );
+    }
 
     return layouts.data;
   }
@@ -115,10 +124,11 @@ export class ChartCompiler {
     }).then(async (build) => {
       const output = build.outputs[0];
 
-      if (!build.success || !output)
+      if (!build.success || !output) {
         throw new Error(
           `Chart runtime failed to build: ${build.logs.map((log) => log.message).join("\n")}`,
         );
+      }
 
       return output.text();
     });

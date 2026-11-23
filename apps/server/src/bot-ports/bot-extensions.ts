@@ -1,10 +1,11 @@
 import type { Extension } from "@earendil-works/pi-durable";
-import { Context, Effect, Layer, Ref, type Scope } from "effect";
+import { Context, Effect, Layer, Ref } from "effect";
+import type { Scope } from "effect";
 import type { Agent } from "../contract/agents";
 
 export type ExtensionSource = (
   agent: Agent,
-) => Extension[] | Promise<Extension[]>;
+) => Array<Extension> | Promise<Array<Extension>>;
 
 export class BotExtensions extends Context.Service<
   BotExtensions,
@@ -14,7 +15,7 @@ export class BotExtensions extends Context.Service<
       position: number,
       source: ExtensionSource,
     ) => Effect.Effect<void, never, Scope.Scope>;
-    readonly forAgent: (agent: Agent) => Promise<Extension[]>;
+    readonly forAgent: (agent: Agent) => Promise<Array<Extension>>;
   }
 >()("crumble/bot-ports/BotExtensions") {
   static readonly layer = Layer.effect(

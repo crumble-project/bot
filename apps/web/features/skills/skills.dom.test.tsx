@@ -1,10 +1,12 @@
+import { skillFixture } from "@/test/skill-fixture";
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { requestPath } from "@/test/request-path";
 
 test("deleting the first same-name skill keeps the second", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -46,14 +48,26 @@ test("deleting the first same-name skill keeps the second", async () => {
   });
 
   let skills = [
-    { id: "first", name: "Duplicate", instructions: "First instructions" },
-    { id: "second", name: "Duplicate", instructions: "Second instructions" },
+    {
+      id: "first",
+      name: "Duplicate",
+      instructions: "First instructions",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+    {
+      id: "second",
+      name: "Duplicate",
+      instructions: "Second instructions",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
   ];
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
         if (init?.method === "DELETE") {
           skills = skills.filter(
@@ -64,18 +78,8 @@ test("deleting the first same-name skill keeps the second", async () => {
         }
 
         const listings = new Map<string, unknown>([
-          ["/v1/agents/bot/skills", skills],
-          [
-            "/v1/agents",
-            [
-              {
-                id: "bot",
-                name: "Bot",
-                avatar: defaultAvatarDefinition("bot"),
-                skills,
-              },
-            ],
-          ],
+          ["/v1/agents/bot/skills", skills.map(skillFixture)],
+          ["/v1/agents", [agentFixture({ id: "bot", name: "Bot", skills })]],
           ["/v1/skills", []],
         ]);
 
@@ -114,7 +118,9 @@ test("deleting the first same-name skill keeps the second", async () => {
 
     const row = firstRow();
 
-    if (!row) throw new Error("Expected the first skill's row");
+    if (!row) {
+      throw new Error("Expected the first skill's row");
+    }
     await act(async () => {
       const button = row.querySelector<HTMLButtonElement>('[title="More"]')!;
       button.dispatchEvent(
@@ -129,7 +135,9 @@ test("deleting the first same-name skill keeps the second", async () => {
       ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ].find((item) => item.textContent?.includes("Delete"));
 
-    if (!menuItem) throw new Error("Expected a Delete menu item");
+    if (!menuItem) {
+      throw new Error("Expected a Delete menu item");
+    }
     await act(async () => {
       menuItem.click();
     });
@@ -138,7 +146,9 @@ test("deleting the first same-name skill keeps the second", async () => {
       (button) => button.textContent === "Delete",
     );
 
-    if (!confirm) throw new Error("Expected a Delete confirmation");
+    if (!confirm) {
+      throw new Error("Expected a Delete confirmation");
+    }
     await act(async () => {
       confirm.click();
     });
@@ -169,8 +179,11 @@ test("deleting the first same-name skill keeps the second", async () => {
       "requestAnimationFrame",
       "cancelAnimationFrame",
     ]) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

@@ -57,8 +57,9 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
 
     yield* checkBotChoices(provider, input, old.id);
 
-    if (!input.enabled && old.enabled)
+    if (!input.enabled && old.enabled) {
       yield* Effect.promise(() => service.stopAgent(old.id));
+    }
 
     const agents = yield* AgentRepository;
 
@@ -68,8 +69,9 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
-    if (options.workspaces && usesDesktop(old) !== usesDesktop(input))
+    if (options.workspaces && usesDesktop(old) !== usesDesktop(input)) {
       yield* options.workspaces.restart(old.id);
+    }
 
     return c.json(updated, 200);
   });

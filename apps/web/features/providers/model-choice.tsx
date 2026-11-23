@@ -21,7 +21,7 @@ export function ModelChoiceRow({
   tile: ReactNode;
   unset: { value: string; label: string };
   chosen: ModelRef | null;
-  choices: (ModelRef & { name: string })[];
+  choices: Array<ModelRef & { name: string }>;
   description: string;
   save: (choice: ModelRef | null) => Promise<void>;
 }) {

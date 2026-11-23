@@ -28,8 +28,9 @@ const activitySender =
   (activity: Activity) => {
     const { event, data } = activityFrame(activity, serverId);
 
-    if (!stream.aborted)
+    if (!stream.aborted) {
       stream.writeSSE({ event, data: JSON.stringify(data) }).catch(close);
+    }
   };
 
 export function registerBotActivityRoutes(options: {
@@ -47,13 +48,14 @@ export function registerBotActivityRoutes(options: {
       onClose(service.onActivity(send));
 
       // Replay current previews on every connection so a sidebar can recover missed events.
-      for (const { agent, lastMessage } of await service.agentPreviews())
+      for (const { agent, lastMessage } of await service.agentPreviews()) {
         send({
           type: "chat-preview",
           agentId: agent.id,
           agentName: agent.name,
           lastMessage,
         });
+      }
     }),
   );
 }

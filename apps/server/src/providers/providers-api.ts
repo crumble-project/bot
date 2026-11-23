@@ -2,10 +2,8 @@ import { z } from "zod";
 import {
   clampThinkingLevel,
   getSupportedThinkingLevels,
-  type Api,
-  type Model,
-  type Models,
 } from "@earendil-works/pi-ai";
+import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { reasoningPreviewInput } from "../contract/reasoning";
 import { THINKING_LEVELS } from "../contract/agents";
 import { routes, providerLoginAnswerInput } from "../contract/api-contract";
@@ -18,7 +16,8 @@ import {
   Unavailable,
 } from "../shared/errors";
 import { readsImages } from "../vision/vision";
-import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
+import { loginMethods } from "./provider-auth";
+import type { ProviderSignInsAccess } from "./provider-auth";
 
 export function previewReasoning(
   model: Model<Api> | undefined,
@@ -98,7 +97,9 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   register.plain(routes.models, async (c) => {
     const name = c.req.query("provider");
 
-    if (name) provider.parse(name);
+    if (name) {
+      provider.parse(name);
+    }
 
     return c.json(
       (await availableModels(models, name)).map((model) => ({
@@ -130,10 +131,11 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
     const name = provider.parse(c.req.param("provider"));
     const external = await options.externalAuth.get(name)?.();
 
-    if (external)
+    if (external) {
       throw new Conflict({
         message: `This provider signs in outside Crumble. Sign out on the server: ${external.signOutCommand ?? "see its documentation"}`,
       });
+    }
 
     await providerAuth.signOut(name);
 
@@ -148,8 +150,9 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
   register.plain(routes.startProviderLogin, (c) => {
     const name = c.req.param("provider");
 
-    if (!models.getProvider(name))
+    if (!models.getProvider(name)) {
       throw new NotFound({ message: "Unknown provider" });
+    }
 
     return c.json(providerAuth.start(name, c.req.valid("json").method), 202);
   });
@@ -162,7 +165,9 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
       const input = providerLoginAnswerInput.safeParse(await c.req.json());
 
       // Answers can be secrets or callback URLs; never echo them in validation details.
-      if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
+      if (!input.success) {
+        throw new InvalidInput({ message: "Invalid answer" });
+      }
 
       return c.json(
         providerAuth.answer(

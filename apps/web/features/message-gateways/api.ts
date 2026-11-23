@@ -13,7 +13,7 @@ export type MessageGateway = z.infer<typeof gatewayResponse>;
 export const messageGatewaysQuery = queryOptions({
   queryKey: ["message-gateways"],
   queryFn: async ({ signal }) =>
-    (await api<"messageGateways">("/v1/message-gateways", { signal })).gateways,
+    (await api("messageGateways", "/v1/message-gateways", { signal })).gateways,
   refetchInterval: 5000,
 });
 

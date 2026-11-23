@@ -85,7 +85,7 @@ test("a bot pages through the body of an event its automation ran for", async ()
     offset: EVENT_BODY_LIMIT,
     bytes: 4,
     totalBytes: EVENT_BODY_LIMIT + 4,
-    encoding: "utf-8",
+    encoding: "utf8",
     data: "tail",
   });
 

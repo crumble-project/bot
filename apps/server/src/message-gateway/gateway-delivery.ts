@@ -6,14 +6,12 @@ import { BotRuntime } from "../bots/runtime";
 import type { Agent } from "../contract/agents";
 import { activeExecution } from "../shared/domain";
 import { backoff } from "../shared/reconnecting";
-import {
-  GatewayTransportError,
-  type ChatAdapter,
-  type GatewayConnection,
-  type GatewayMessage,
-} from "./adapter";
-import { transport, type GatewayConnections } from "./gateway-connections";
-import { GatewayRepository, type GatewayReceipt } from "./gateway-repository";
+import { GatewayTransportError } from "./adapter";
+import type { ChatAdapter, GatewayConnection, GatewayMessage } from "./adapter";
+import { transport } from "./gateway-connections";
+import type { GatewayConnections } from "./gateway-connections";
+import { GatewayRepository } from "./gateway-repository";
+import type { GatewayReceipt } from "./gateway-repository";
 import { authorizedMessage, gatewayChunks } from "./routing";
 
 const MAX_RECEIPT_ATTEMPTS = 10;
@@ -31,8 +29,17 @@ const receiptMessage = (receipt: GatewayReceipt): GatewayMessage => ({
   isDirectMessage: receipt.isDirectMessage,
 });
 
+const transportFailure = (cause: Cause.Cause<unknown>) => {
+  const failure = Cause.findError(cause);
+
+  return Result.isSuccess(failure) &&
+    failure.success instanceof GatewayTransportError
+    ? failure.success
+    : null;
+};
+
 export const receiptDelivery = Effect.fnUntraced(function* (
-  adapters: readonly ChatAdapter[],
+  adapters: ReadonlyArray<ChatAdapter>,
   connections: GatewayConnections,
 ) {
   const agents = yield* AgentRepository;
@@ -49,8 +56,11 @@ export const receiptDelivery = Effect.fnUntraced(function* (
   >();
 
   const cancelWorkers = Effect.fnUntraced(function* (adapterId: string) {
-    for (const worker of workers.values())
-      if (worker.adapterId === adapterId) yield* Fiber.interrupt(worker.fiber);
+    for (const worker of workers.values()) {
+      if (worker.adapterId === adapterId) {
+        yield* Fiber.interrupt(worker.fiber);
+      }
+    }
   });
 
   const receiptExecution = Effect.fnUntraced(function* (
@@ -62,12 +72,17 @@ export const receiptDelivery = Effect.fnUntraced(function* (
       ? yield* executions.get(receipt.executionId)
       : null;
 
-    if (!execution)
+    if (!execution) {
       execution = yield* executions.findByRequest(botId, receipt.requestId);
+    }
 
-    if (execution) return execution;
+    if (execution) {
+      return execution;
+    }
 
-    if (!connections.live(receipt.adapterId, generation)) return null;
+    if (!connections.live(receipt.adapterId, generation)) {
+      return null;
+    }
     execution = yield* bots.sendChat(botId, receipt.text, receipt.requestId);
     receipt.executionId = execution.id;
     yield* receipts.save(receipt);
@@ -80,30 +95,38 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     agent: Agent,
     generation: number,
   ) {
+    if (!receipt.botId) {
+      return null;
+    }
+
     const execution = yield* receiptExecution(
       receipt,
-      receipt.botId!,
+      receipt.botId,
       generation,
     );
 
-    if (!execution) return null;
+    if (!execution) {
+      return null;
+    }
 
-    if (activeExecution(execution)) return null;
+    if (activeExecution(execution)) {
+      return null;
+    }
 
-    if (execution.status !== "done")
+    if (execution.status !== "done") {
       return [
         "The bot could not complete this message. Send a new message to try again.",
       ];
+    }
 
-    if (!execution.submissionId)
+    const submissionId = execution.submissionId;
+
+    if (!submissionId) {
       return ["The bot completed without a response identifier."];
+    }
 
     const response = yield* transport(() =>
-      runtime.response(
-        agent,
-        execution.conversationId,
-        execution.submissionId!,
-      ),
+      runtime.response(agent, execution.conversationId, submissionId),
     );
 
     return [
@@ -116,7 +139,9 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     adapter: ChatAdapter,
     generation: number,
   ) {
-    if (receipt.chunks !== null || !receipt.botId) return true;
+    if (receipt.chunks !== null || !receipt.botId) {
+      return true;
+    }
     const agent = yield* agents.get(receipt.botId);
 
     const chunks =
@@ -126,7 +151,9 @@ export const receiptDelivery = Effect.fnUntraced(function* (
           ]
         : yield* botResponse(receipt, agent, generation);
 
-    if (chunks === null) return false;
+    if (chunks === null) {
+      return false;
+    }
     receipt.chunks = chunks.flatMap((text) =>
       gatewayChunks(text, adapter.maxMessageLength),
     );
@@ -142,8 +169,11 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     generation: number,
   ) {
     const index = receipt.sent.length;
+    const text = receipt.chunks?.[index];
 
-    if (index >= (receipt.chunks?.length ?? 0)) return true;
+    if (text === undefined) {
+      return true;
+    }
 
     const blockedUntil = yield* receipts.cooldown(
       adapter.id,
@@ -155,14 +185,15 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     if (
       blockedUntil > now ||
       !connections.holds(adapter.id, connection, generation)
-    )
+    ) {
       return false;
+    }
 
     const sent = yield* transport(() =>
       connection.send({
         channelId: receipt.channelId,
         replyTo: receipt.messageId,
-        text: receipt.chunks![index]!,
+        text,
         nonce: `${receiptKey(receipt)}:${index}`,
       }),
     );
@@ -184,13 +215,16 @@ export const receiptDelivery = Effect.fnUntraced(function* (
   ) {
     const now = yield* Clock.currentTimeMillis;
 
+    const typing = connection.typing;
+
     if (
-      !connection.typing ||
+      !typing ||
       now - (typingAt.get(key) ?? -Infinity) < adapter.typingRenewalMs
-    )
+    ) {
       return;
+    }
     typingAt.set(key, now);
-    yield* transport(() => connection.typing!(channelId)).pipe(Effect.ignore);
+    yield* transport(() => typing(channelId)).pipe(Effect.ignore);
   });
 
   const processReceipt = Effect.fn("MessageGateway.processReceipt")(function* (
@@ -199,13 +233,19 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     connection: GatewayConnection,
     generation: number,
   ) {
-    if (!connections.live(adapter.id, generation)) return;
+    if (!connections.live(adapter.id, generation)) {
+      return;
+    }
     const prepared = yield* prepareReceipt(receipt, adapter, generation);
 
-    if (!connections.holds(adapter.id, connection, generation)) return;
+    if (!connections.holds(adapter.id, connection, generation)) {
+      return;
+    }
     const current = yield* connections.config(adapter.id);
 
-    if (!authorizedMessage(current, receiptMessage(receipt))) return;
+    if (!authorizedMessage(current, receiptMessage(receipt))) {
+      return;
+    }
 
     const key = receiptKey(receipt);
 
@@ -217,10 +257,13 @@ export const receiptDelivery = Effect.fnUntraced(function* (
 
     typingAt.delete(key);
 
-    if (!(yield* sendReceiptChunk(receipt, adapter, connection, generation)))
+    if (!(yield* sendReceiptChunk(receipt, adapter, connection, generation))) {
       return;
+    }
 
-    if (receipt.sent.length < (receipt.chunks?.length ?? 0)) return;
+    if (receipt.sent.length < (receipt.chunks?.length ?? 0)) {
+      return;
+    }
 
     receipt.state = "done";
     receipt.finishedAt = yield* Clock.currentTimeMillis;
@@ -235,8 +278,9 @@ export const receiptDelivery = Effect.fnUntraced(function* (
       !(
         receipt.expiresAt <= now || receipt.attemptCount >= MAX_RECEIPT_ATTEMPTS
       )
-    )
+    ) {
       return false;
+    }
     receipt.state = "failed";
     receipt.failedAt = now;
     yield* receipts.save(receipt);
@@ -268,10 +312,14 @@ export const receiptDelivery = Effect.fnUntraced(function* (
       .readToken(adapter)
       .pipe(Effect.orElseSucceed(() => {}));
 
-    if (token !== expected) return false;
+    if (token !== expected) {
+      return false;
+    }
     const current = yield* connections.config(adapter.id);
 
-    if (!authorizedMessage(current, receiptMessage(receipt))) return false;
+    if (!authorizedMessage(current, receiptMessage(receipt))) {
+      return false;
+    }
 
     return !((yield* receipts.cooldown(adapter.id, receipt.channelId)) > now);
   });
@@ -284,10 +332,13 @@ export const receiptDelivery = Effect.fnUntraced(function* (
 
     const current = adapter && connections.current(adapter.id);
 
-    if (!adapter || !current) return null;
-
-    if (!(yield* receiptAuthorized(receipt, adapter, current.token, now)))
+    if (!adapter || !current) {
       return null;
+    }
+
+    if (!(yield* receiptAuthorized(receipt, adapter, current.token, now))) {
+      return null;
+    }
 
     const { connection, generation } = current;
 
@@ -296,21 +347,14 @@ export const receiptDelivery = Effect.fnUntraced(function* (
       : null;
   });
 
-  const transportFailure = (cause: Cause.Cause<unknown>) => {
-    const failure = Cause.findError(cause);
-
-    return Result.isSuccess(failure) &&
-      failure.success instanceof GatewayTransportError
-      ? failure.success
-      : null;
-  };
-
   const failReceipt = Effect.fnUntraced(function* (
     receipt: GatewayReceipt,
     adapter: ChatAdapter,
     cause: Cause.Cause<unknown>,
   ) {
-    if (Cause.hasInterruptsOnly(cause)) return;
+    if (Cause.hasInterruptsOnly(cause)) {
+      return;
+    }
     const error = transportFailure(cause);
     const failedAt = yield* Clock.currentTimeMillis;
     receipt.attemptCount++;
@@ -333,11 +377,12 @@ export const receiptDelivery = Effect.fnUntraced(function* (
         adapter.id,
         "Message delivery failed permanently. Check destination permissions and send a new message.",
       );
-    } else
+    } else {
       connections.note(
         adapter.id,
         "Message submission or delivery failed. Retrying automatically after a delay.",
       );
+    }
 
     if (error?.details.rateLimit) {
       yield* receipts.defer(
@@ -385,20 +430,30 @@ export const receiptDelivery = Effect.fnUntraced(function* (
   const dispatchReceipts = Semaphore.withPermit(
     processing,
     Effect.gen(function* () {
-      if (connections.isClosed()) return;
+      if (connections.isClosed()) {
+        return;
+      }
       const now = yield* Clock.currentTimeMillis;
 
       for (const receipt of yield* receipts.pending) {
         const key = receiptKey(receipt);
 
-        if (workers.has(key)) continue;
+        if (workers.has(key)) {
+          continue;
+        }
 
-        if (yield* expireReceipt(receipt, now)) continue;
+        if (yield* expireReceipt(receipt, now)) {
+          continue;
+        }
 
-        if (receiptBlocked(receipt, now)) continue;
+        if (receiptBlocked(receipt, now)) {
+          continue;
+        }
         const target = yield* receiptConnection(receipt, now);
 
-        if (!target) continue;
+        if (!target) {
+          continue;
+        }
         const { adapter, connection, generation } = target;
 
         yield* startWorker(receipt, adapter, connection, generation, key);

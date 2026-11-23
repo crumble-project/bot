@@ -29,10 +29,13 @@ function seal(key: Buffer, value: Buffer) {
 }
 
 function open(key: Buffer, packed: string) {
-  // SAFETY: seal always stores exactly three base64 segments: IV, auth tag, and ciphertext.
   const [iv, tag, data] = packed
     .split(":")
-    .map((part) => Buffer.from(part, "base64")) as [Buffer, Buffer, Buffer];
+    .map((part) => Buffer.from(part, "base64"));
+
+  if (iv === undefined || tag === undefined || data === undefined) {
+    throw new Error("Sealed secret is incomplete");
+  }
 
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
@@ -43,8 +46,9 @@ function open(key: Buffer, packed: string) {
 function parseMasterKey(value: string) {
   const key = Buffer.from(value, "base64");
 
-  if (key.length !== 32 || key.toString("base64") !== value.trim())
+  if (key.length !== 32 || key.toString("base64") !== value.trim()) {
     throw new Error(`${MASTER_KEY_VARIABLE} must be 32 random bytes in base64`);
+  }
 
   return key;
 }
@@ -53,7 +57,9 @@ function unwrap(masterKey: Buffer, path: string) {
   try {
     const key = open(masterKey, readFileSync(path, "utf8").trim());
 
-    if (key.length === 32) return key;
+    if (key.length === 32) {
+      return key;
+    }
   } catch {
     /* reported below */
   }
@@ -73,7 +79,9 @@ function restrict(path: string) {
 
 // A failed sync throws before the plain key is deleted, so it stays recoverable.
 function syncDirectory(path: string) {
-  if (process.platform === "win32") return; // Windows can't open a directory to sync it
+  if (process.platform === "win32") {
+    return;
+  } // Windows can't open a directory to sync it
 
   const fd = openSync(path, "r");
 
@@ -133,10 +141,11 @@ function unwrapExisting(
 ) {
   const unwrapped = unwrap(masterKey, wrappedPath);
 
-  if (plain && !plain.equals(unwrapped))
+  if (plain && !plain.equals(unwrapped)) {
     throw new Error(
       "Credential encryption key differs between .secret.key and .secret.key.wrapped; refusing to start the account",
     );
+  }
 
   return unwrapped;
 }
@@ -149,10 +158,11 @@ function wrapNew(
   const accountKey = plain ?? randomBytes(32);
   writeSecret(wrappedPath, seal(masterKey, accountKey));
 
-  if (!unwrap(masterKey, wrappedPath).equals(accountKey))
+  if (!unwrap(masterKey, wrappedPath).equals(accountKey)) {
     throw new Error(
       "Credential encryption key did not survive wrapping; refusing to start the account",
     );
+  }
 
   return accountKey;
 }
@@ -168,7 +178,9 @@ function wrappedKey(
     ? unwrapExisting(masterKey, files, plain)
     : wrapNew(masterKey, files, plain);
 
-  if (plain) removePlainKey(files);
+  if (plain) {
+    removePlainKey(files);
+  }
 
   return key;
 }
@@ -187,7 +199,7 @@ export class SecretBox extends Context.Service<
 >()("crumble/shared/SecretBox") {
   static layer(
     dataDir: string,
-    encrypted: readonly SQLiteTable[],
+    encrypted: ReadonlyArray<SQLiteTable>,
     masterKeyValue: string | undefined = process.env[MASTER_KEY_VARIABLE],
   ) {
     return Layer.effect(
@@ -204,12 +216,13 @@ export class SecretBox extends Context.Service<
         const keyExists = existsSync(keyPath);
         const wrappedExists = existsSync(wrappedPath);
 
-        if (wrappedExists && !masterKey)
+        if (wrappedExists && !masterKey) {
           return yield* Effect.die(
             new Error(
               `Credential encryption key is wrapped; set ${MASTER_KEY_VARIABLE} to start the account`,
             ),
           );
+        }
 
         if (!keyExists && !wrappedExists) {
           const counts = yield* Effect.forEach(encrypted, (table) =>
@@ -217,12 +230,13 @@ export class SecretBox extends Context.Service<
           ).pipe(Effect.orDie);
 
           // A new key cannot read what an old one encrypted; refusing keeps those values recoverable.
-          if (counts.some(([row]) => (row?.n ?? 0) > 0))
+          if (counts.some(([row]) => (row?.n ?? 0) > 0)) {
             return yield* Effect.die(
               new Error(
                 "Credential encryption key is missing; refusing to overwrite it",
               ),
             );
+          }
         }
 
         const files = { dataDir, keyPath, wrappedPath };
@@ -242,10 +256,11 @@ export class SecretBox extends Context.Service<
         const decrypt = (packed: string) => open(key, packed).toString("utf8");
 
         const decryptStored = (packed: string | null) => {
-          if (packed === null)
+          if (packed === null) {
             throw new Error(
               "This secret comes from a password manager, so it has no stored value",
             );
+          }
 
           return decrypt(packed);
         };

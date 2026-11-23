@@ -44,16 +44,19 @@ const unexpected = (response: Response) =>
 export const createSource = Effect.fnUntraced(function* (access: RelayAccess) {
   const response = yield* request(access, "v1/sources", { method: "POST" });
 
-  if (response.status !== 201) return yield* unexpected(response);
+  if (response.status !== 201) {
+    return yield* unexpected(response);
+  }
 
   const body = createdSource.safeParse(
     yield* Effect.promise(() => response.json().catch(() => {})),
   );
 
-  if (!body.success)
+  if (!body.success) {
     return yield* new InvalidInput({
       message: "The event relay sent an unexpected answer",
     });
+  }
 
   return body.data;
 });
@@ -68,8 +71,9 @@ export const deleteSource = Effect.fnUntraced(function* (
     { method: "DELETE" },
   );
 
-  if (response.status !== 204 && response.status !== 404)
+  if (response.status !== 204 && response.status !== 404) {
     return yield* unexpected(response);
+  }
 });
 
 export const connectUrl = (relayUrl: string) => {

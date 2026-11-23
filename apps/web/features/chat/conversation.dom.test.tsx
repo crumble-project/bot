@@ -1,3 +1,4 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -9,11 +10,12 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { type ReactNode, act } from "react";
+import { act } from "react";
+import type { ReactNode } from "react";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor, waitForIdle } from "@/test/wait-for";
-import type { ChatSnapshot } from "./api";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import type { ChatSnapshot, Message } from "./api";
+import { requestPath } from "@/test/request-path";
 
 const GLOBALS = [
   "window",
@@ -36,13 +38,7 @@ const GLOBALS = [
   "Path2D",
 ];
 
-const bot = {
-  id: "bot",
-  name: "Bot",
-  avatar: defaultAvatarDefinition("bot"),
-  enabled: true,
-  tools: [],
-};
+const bot = agentFixture({ id: "bot", name: "Bot" });
 
 const owner = {
   id: "bot:1:0",
@@ -52,7 +48,25 @@ const owner = {
   replyReferences: [],
 };
 
-const page = { messages: [owner], hasMore: false, oldestEntryId: "bot:1" };
+const page: ChatSnapshot = {
+  messages: [owner],
+  hasMore: false,
+  oldestEntryId: "bot:1",
+  conversationId: "bot:bot",
+  agentId: "bot",
+  conversation: {
+    id: "bot:bot",
+    agentId: "bot",
+    title: "Bot",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  partial: "",
+  status: "idle",
+  working: "idle",
+  updatedAt: 0,
+  error: null,
+};
 
 const silentStream = (signal: AbortSignal | null | undefined) =>
   new Response(
@@ -111,21 +125,25 @@ async function render(
     },
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   window.localStorage.setItem("crumble.details", "off");
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = input instanceof Request ? input.url : input.toString();
+        const url = requestPath(input);
         const answer = answers.get(url);
 
-        if (url.endsWith("/events") && !answer)
+        if (url.endsWith("/events") && !answer) {
           return silentStream(init?.signal);
+        }
 
-        if (answer instanceof Response) return answer.clone();
+        if (answer && typeof answer !== "function") {
+          return answer.clone();
+        }
 
         return answer?.(init) ?? new Response("down", { status: 503 });
       },
@@ -149,7 +167,7 @@ async function render(
       }),
       createRoute({
         getParentRoute: () => rootRoute,
-        path: path,
+        path,
         component: View,
       }),
     ]),
@@ -185,8 +203,11 @@ async function render(
     fetch.mockRestore();
 
     for (const key of GLOBALS) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -198,8 +219,10 @@ const shows = (container: HTMLElement, text: string) => () =>
 
 const loadChat = async () => {
   const { Chat } = await import("@/features/bot-chat/chat");
+  const botId = "bot";
+  const ChatView = () => <Chat botId={botId} />;
 
-  return () => <Chat botId="bot" />;
+  return ChatView;
 };
 
 test("a bot reply being sent shows what it answers", async () => {
@@ -321,7 +344,10 @@ test("a deleted bot's open chat leaves for the home page", async () => {
   );
 });
 
-const chatSnapshot = (status: string, messages: unknown[] = page.messages) => ({
+const chatSnapshot = (
+  status: ChatSnapshot["status"],
+  messages: Array<Message> = page.messages,
+): ChatSnapshot => ({
   ...page,
   messages,
   status,
@@ -331,14 +357,14 @@ const chatSnapshot = (status: string, messages: unknown[] = page.messages) => ({
 });
 
 const recordingStream =
-  (signals: (AbortSignal | null | undefined)[]) => (init?: RequestInit) => {
+  (signals: Array<AbortSignal | null | undefined>) => (init?: RequestInit) => {
     signals.push(init?.signal);
 
     return silentStream(init?.signal);
   };
 
 test("a bot left while it works stays followed until it finishes", async () => {
-  const signals: (AbortSignal | null | undefined)[] = [];
+  const signals: Array<AbortSignal | null | undefined> = [];
 
   await render(
     "/bots/bot",
@@ -359,8 +385,7 @@ test("a bot left while it works stays followed until it finishes", async () => {
       await act(async () => {
         queryClient.setQueryData(
           chatQuery("bot").queryKey,
-          // SAFETY: only working state of this partial snapshot is read.
-          chatSnapshot("idle") as ChatSnapshot,
+          chatSnapshot("idle"),
         );
       });
       await waitFor(() => signals[0]?.aborted === true, "the stream to stop");
@@ -400,13 +425,23 @@ test("job messages refetch the job list, and a card reads its own kind's job", a
           reads++;
 
           return Response.json({
-            jobs: [{ name: "build", status: "working" }],
+            jobs: [
+              {
+                name: "build",
+                conversationId: "coding:build",
+                status: "working",
+              },
+            ],
           });
         },
       ],
       [
         "/v1/agents/bot/desktop-jobs",
-        Response.json({ jobs: [{ name: "build", status: "idle" }] }),
+        Response.json({
+          jobs: [
+            { name: "build", conversationId: "desktop:build", status: "idle" },
+          ],
+        }),
       ],
     ]),
     loadChat,
@@ -421,12 +456,11 @@ test("job messages refetch the job list, and a card reads its own kind's job", a
       await act(async () => {
         queryClient.setQueryData(
           chatQuery("bot").queryKey,
-          // SAFETY: only the messages of this partial snapshot are read.
           chatSnapshot("idle", [
             jobResult(1, "coding"),
             jobResult(2, "desktop"),
             jobResult(3, "coding"),
-          ]) as ChatSnapshot,
+          ]),
         );
       });
       await waitFor(() => reads > before, "the job list to refetch");

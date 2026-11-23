@@ -27,8 +27,9 @@ export function registerLearningRoutes(options: {
   register(routes.changes, function* (c) {
     const query = c.req.valid("query");
 
-    if (query.agentId && query.agentId !== "shared")
+    if (query.agentId && query.agentId !== "shared") {
       service.agent(query.agentId);
+    }
     const changes = yield* LearnedChangeRepository;
 
     return c.json(
@@ -46,8 +47,9 @@ export function registerLearningRoutes(options: {
       actor: "owner",
     });
 
-    if (!reverted)
+    if (!reverted) {
       return yield* Effect.fail(new NotFound({ message: "Change not found" }));
+    }
 
     return c.json(reverted, 201);
   });

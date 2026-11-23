@@ -15,10 +15,8 @@ import {
   targetWindow,
   wantsForeground,
   windowLine,
-  type DriverArgs,
-  type DriverReply,
-  type Window,
 } from "./computer-use-driver";
+import type { DriverArgs, DriverReply, Window } from "./computer-use-driver";
 import { launchApp, listApps } from "./computer-use-launch";
 import { fillLogin } from "./computer-use-login";
 import {
@@ -27,13 +25,10 @@ import {
   chromiumWindow,
   openPage,
   readPage,
-  type RefCallBuilder,
 } from "./computer-use-page";
-import {
-  pageHost,
-  textResult,
-  type ComputerUseState,
-} from "./computer-use-state";
+import type { RefCallBuilder } from "./computer-use-page";
+import { pageHost, textResult } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 import type { Place } from "./intent-check";
 import { runSteps } from "./computer-use-steps";
 import { isTerminal, readTerminal } from "./computer-use-terminal";
@@ -68,8 +63,9 @@ export async function act(
 ): Promise<Acted> {
   const background = (await driverCall(state, tool, args, context)).reply;
 
-  if (!refusalOf(background) || !wantsForeground(background))
+  if (!refusalOf(background) || !wantsForeground(background)) {
     return { reply: background, route: "background" };
+  }
 
   const foreground = (
     await driverCall(
@@ -97,7 +93,7 @@ export function verdict({ reply, route }: Acted) {
   return { text: parts.filter(Boolean).join(" | "), error: Boolean(code) };
 }
 
-function pair(coordinates?: number[]): [number, number] | undefined {
+function pair(coordinates?: Array<number>): [number, number] | undefined {
   const [x, y] = coordinates ?? [];
 
   return x === undefined || y === undefined ? undefined : [x, y];
@@ -108,8 +104,9 @@ function pointer(
   target: Window,
   args: ComputerUseArgs,
 ): Pointer | undefined {
-  if (args.element !== undefined)
+  if (args.element !== undefined) {
     return { element_token: elementToken(state, target, args.element) };
+  }
 
   const [x, y] = args.coordinate ?? [];
 
@@ -133,7 +130,9 @@ function click(
 ) {
   const at = pointer(state, target, args);
 
-  if (!at) return { invalid: `${action} needs element or coordinate` };
+  if (!at) {
+    return { invalid: `${action} needs element or coordinate` };
+  }
 
   return act(state, action, { ...base, ...at }, context);
 }
@@ -142,8 +141,9 @@ function drag(state: ComputerUseState, { args, base, context }: ActionCall) {
   const from = pair(args.from_coordinate);
   const to = pair(args.to_coordinate);
 
-  if (!from || !to)
+  if (!from || !to) {
     return { invalid: "drag needs from_coordinate and to_coordinate" };
+  }
 
   return act(
     state,
@@ -174,7 +174,9 @@ function typeText(
   state: ComputerUseState,
   { args, base, target, context }: ActionCall,
 ) {
-  if (args.text === undefined) return { invalid: "type needs text" };
+  if (args.text === undefined) {
+    return { invalid: "type needs text" };
+  }
 
   return act(
     state,
@@ -194,7 +196,9 @@ function pressKey(
   state: ComputerUseState,
   { args, base, context }: ActionCall,
 ) {
-  if (!args.keys) return { invalid: "key needs keys" };
+  if (!args.keys) {
+    return { invalid: "key needs keys" };
+  }
 
   const keys = comboKeys(args.keys);
 
@@ -207,8 +211,9 @@ function setValue(
   state: ComputerUseState,
   { args, base, target, context }: ActionCall,
 ) {
-  if (args.element === undefined || args.value === undefined)
+  if (args.element === undefined || args.value === undefined) {
     return { invalid: "set_value needs element and value" };
+  }
 
   return act(
     state,
@@ -231,7 +236,9 @@ async function perform(
   const base = { pid: target.pid, window_id: target.window_id };
   const input = ACTIONS.get(args.action)?.input;
 
-  if (!input) return { invalid: `unknown action ${args.action}` };
+  if (!input) {
+    return { invalid: `unknown action ${args.action}` };
+  }
 
   return input(state, { args, base, target, context });
 }
@@ -254,15 +261,20 @@ async function actAndReport(
           context,
         );
 
-  if ("invalid" in acted) return textResult(acted.invalid, true);
+  if ("invalid" in acted) {
+    return textResult(acted.invalid, true);
+  }
 
   const { text: summary, error } = verdict(acted);
 
   const afterOf = async () => {
-    if (!args.capture_after || error) return [];
+    if (!args.capture_after || error) {
+      return [];
+    }
 
-    if (ref !== undefined)
+    if (ref !== undefined) {
       return (await readPage(state, {}, window, context)).content;
+    }
 
     return captureWindow(
       state,
@@ -454,7 +466,7 @@ export const ACTIONS = new Map<string, ActionEntry>([
   ["fill_login", { effect: "act", run: fillLogin, targeted: true }],
 ]);
 
-export const ACTION_NAMES: string[] = [...ACTIONS.keys()];
+export const ACTION_NAMES: Array<string> = [...ACTIONS.keys()];
 
 export const effectOf = (action: string) => ACTIONS.get(action)?.effect;
 
@@ -465,8 +477,9 @@ export function dispatch(
 ) {
   const action = ACTIONS.get(args.action);
 
-  if (args.ref !== undefined && action?.refCall)
+  if (args.ref !== undefined && action?.refCall) {
     return inPage(state, args, context);
+  }
 
   return (action?.run ?? reportedInput)(state, args, context);
 }

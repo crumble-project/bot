@@ -17,7 +17,7 @@ type Totals = { tokens: number; cost: number };
 const amount = ({ tokens, cost }: Totals) =>
   [formatTokens(tokens), formatCost(cost)].filter(Boolean).join(" · ");
 
-const total = (rows: readonly Totals[]) =>
+const total = (rows: ReadonlyArray<Totals>) =>
   rows.reduce(
     (sum, row) => ({
       tokens: sum.tokens + row.tokens,
@@ -38,8 +38,9 @@ function Amount({ totals }: { totals: Totals }) {
 function byProvider(models: Usage["models"]) {
   const groups = new Map<string, Usage["models"]>();
 
-  for (const row of models)
+  for (const row of models) {
     groups.set(row.provider, [...(groups.get(row.provider) ?? []), row]);
+  }
 
   return [...groups];
 }
@@ -76,9 +77,9 @@ function UsageSections({
   providers,
 }: {
   usage: Usage;
-  providers: Provider[];
+  providers: Array<Provider>;
 }) {
-  if (!usage.models.length && !usage.tools.length)
+  if (!usage.models.length && !usage.tools.length) {
     return (
       <Empty className="rounded-xl border">
         <EmptyHeader>
@@ -89,6 +90,7 @@ function UsageSections({
         </EmptyHeader>
       </Empty>
     );
+  }
 
   const all = total([...usage.models, ...usage.tools]);
 
@@ -100,8 +102,8 @@ function UsageSections({
         </p>
         <p className="text-sm text-muted-foreground">
           {formatCost(all.cost) && `${formatTokens(all.tokens)}. `}
-          Every bot's chat and jobs, since each started. Providers that bill by
-          subscription, such as Claude Code, report no cost.
+          Every bot&apos;s chat and jobs, since each started. Providers that
+          bill by subscription, such as Claude Code, report no cost.
         </p>
       </div>
       {byProvider(usage.models).map(([id, models]) => (
@@ -138,11 +140,15 @@ export function UsageView({
   providers,
 }: {
   usage: UseQueryResult<Usage>;
-  providers: Provider[];
+  providers: Array<Provider>;
 }) {
-  if (usage.isPending) return <Skeleton className="h-40 rounded-xl" />;
+  if (usage.isPending) {
+    return <Skeleton className="h-40 rounded-xl" />;
+  }
 
-  if (usage.isError) return <FieldError>{usage.error.message}</FieldError>;
+  if (usage.isError) {
+    return <FieldError>{usage.error.message}</FieldError>;
+  }
 
   return <UsageSections usage={usage.data} providers={providers} />;
 }

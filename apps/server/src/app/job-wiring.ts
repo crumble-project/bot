@@ -7,7 +7,9 @@ import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";
 const whileOpen = (subscribe: () => ReadonlyArray<() => void>) =>
   Effect.acquireRelease(Effect.sync(subscribe), (stops) =>
     Effect.sync(() => {
-      for (const stop of stops) stop();
+      for (const stop of stops) {
+        stop();
+      }
     }),
   );
 
@@ -29,15 +31,16 @@ export const jobAnswers = Layer.effectDiscard(
 
     yield* whileOpen(() =>
       jobKinds.map((kind) =>
-        kind.onAnswer((answer) =>
-          Effect.runPromise(
-            bots.announceJobAnswer(answer).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logError("Job answer announcement failed", cause),
+        kind.onAnswer(
+          (answer) =>
+            void Effect.runPromise(
+              bots.announceJobAnswer(answer).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logError("Job answer announcement failed", cause),
+                ),
+                Effect.asVoid,
               ),
-              Effect.asVoid,
             ),
-          ),
         ),
       ),
     );

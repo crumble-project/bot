@@ -115,22 +115,22 @@ export function clockInstructions(ownerTimezoneOf: () => string | undefined) {
 const sharedSection = (shared: string) =>
   shared ? `Shared memory (other bots see it too):\n${shared}` : "";
 
-function memoryLists(memory: MemoryRecord[]) {
-  const lines = (items: MemoryRecord[]) =>
-    items.map((item) => `- ${item.content}`).join("\n");
+const memoryLines = (items: Array<MemoryRecord>) =>
+  items.map((item) => `- ${item.content}`).join("\n");
 
+function memoryLists(memory: Array<MemoryRecord>) {
   const shared = memory.filter((item) => item.shared);
 
   return {
-    own: lines(memory.filter((item) => !item.shared)),
-    shared: shared.length ? lines(shared) : "",
+    own: memoryLines(memory.filter((item) => !item.shared)),
+    shared: shared.length ? memoryLines(shared) : "",
   };
 }
 
 export function jobKnowledge(
   instructions: string,
-  skills: AvailableSkill[],
-  memory: MemoryRecord[],
+  skills: Array<AvailableSkill>,
+  memory: Array<MemoryRecord>,
 ) {
   const { own, shared } = memoryLists(memory);
 
@@ -143,7 +143,7 @@ export function jobKnowledge(
     own ? `Persistent memory:\n${own}` : "",
     sharedSection(shared),
   ]
-    .filter((part) => part)
+    .filter(Boolean)
     .join("\n\n");
 
   return text || undefined;
@@ -151,15 +151,16 @@ export function jobKnowledge(
 
 export function conversationInstructions(
   agent: Agent,
-  skills: AvailableSkill[],
-  memory: MemoryRecord[],
+  skills: Array<AvailableSkill>,
+  memory: Array<MemoryRecord>,
   prompt: ConversationPrompt,
   clock: string,
 ) {
-  if (prompt.bare)
+  if (prompt.bare) {
     return [...(prompt.standing?.(agent) ?? []), clock]
       .filter((part) => part.trim())
       .join("\n\n");
+  }
 
   const { own, shared } = memoryLists(memory);
 

@@ -17,7 +17,7 @@ export class EventRunRepository extends Context.Service<
       event: { id: string; sourceId: string },
       at: string,
     ) => Effect.Effect<number>;
-    readonly nextPending: Effect.Effect<EventRun[]>;
+    readonly nextPending: Effect.Effect<Array<EventRun>>;
     readonly mark: (
       id: string,
       patch: Pick<EventRun, "status"> &
@@ -62,7 +62,7 @@ export class EventRunRepository extends Context.Service<
             ),
           );
 
-        if (automations.length)
+        if (automations.length) {
           yield* db.insert(eventRuns).values(
             automations.map((automation) => ({
               id: crypto.randomUUID(),
@@ -72,6 +72,7 @@ export class EventRunRepository extends Context.Service<
               createdAt: at,
             })),
           );
+        }
 
         return automations.length;
       }, Effect.orDie);
@@ -86,7 +87,9 @@ export class EventRunRepository extends Context.Service<
         const seen = new Set<string>();
 
         return pending.filter((run) => {
-          if (seen.has(run.scheduleId)) return false;
+          if (seen.has(run.scheduleId)) {
+            return false;
+          }
           seen.add(run.scheduleId);
 
           return true;
@@ -133,7 +136,7 @@ export class EventRunRepository extends Context.Service<
 
 export const automationEventConsumers = Layer.effect(
   EventConsumers,
-  EventRunRepository.use(({ record, sourceUsage }) =>
+  Effect.flatMap(EventRunRepository, ({ record, sourceUsage }) =>
     Effect.succeed(EventConsumers.of({ stored: record, usage: sourceUsage })),
   ),
 );

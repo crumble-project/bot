@@ -12,10 +12,8 @@ import {
   Schema,
   Scope,
 } from "effect";
-import {
-  PasswordManagers,
-  type ConnectedClient,
-} from "../password-managers/password-manager";
+import { PasswordManagers } from "../password-managers/password-manager";
+import type { ConnectedClient } from "../password-managers/password-manager";
 import type { PasswordManagerId } from "../contract/secrets";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 
@@ -27,6 +25,27 @@ export type SecretSource =
     };
 
 /** A read value is used without asking the password manager again for this long. */
+const keyOf = (id: PasswordManagerId, reference: string) =>
+  `${id}\u0000${reference}`;
+
+const readThrough = (client: ConnectedClient, reference: string) =>
+  client.read([reference]).pipe(
+    Effect.mapError(readFailure),
+    Effect.flatMap((reads) => {
+      const read = reads.get(reference);
+
+      if (read && Result.isSuccess(read)) {
+        return Effect.succeed(read.success);
+      }
+
+      return Effect.fail<ReadFailure>({
+        reason: read?.failure.message ?? "didn't answer for this reference",
+        retainCache: false,
+        kind: read?.failure.kind,
+      });
+    }),
+  );
+
 export const FRESH_FOR = Duration.hours(1);
 
 /** A use after this refreshes the value in the background, so requests rarely wait for a read. */
@@ -107,18 +126,21 @@ export class SecretValues extends Context.Service<
           Effect.gen(function* () {
             const token = yield* repository.token(id);
 
-            if (!token)
+            if (!token) {
               return yield* Effect.fail<ReadFailure>({
                 reason: "isn't connected",
                 retainCache: false,
               });
+            }
 
             const connection = yield* Scope.make();
             connections.set(id, connection);
 
             yield* Effect.addFinalizer(() =>
               Effect.suspend(() => {
-                if (connections.get(id) === connection) connections.delete(id);
+                if (connections.get(id) === connection) {
+                  connections.delete(id);
+                }
 
                 return Scope.close(connection, Exit.void);
               }),
@@ -130,27 +152,6 @@ export class SecretValues extends Context.Service<
           }),
         idleTimeToLive: CLIENT_IDLE,
       });
-
-      const keyOf = (id: PasswordManagerId, reference: string) =>
-        `${id}\u0000${reference}`;
-
-      const readThrough = (client: ConnectedClient, reference: string) =>
-        client.read([reference]).pipe(
-          Effect.mapError(readFailure),
-          Effect.flatMap((reads) => {
-            const read = reads.get(reference);
-
-            if (read && Result.isSuccess(read))
-              return Effect.succeed(read.success);
-
-            return Effect.fail<ReadFailure>({
-              reason:
-                read?.failure.message ?? "didn't answer for this reference",
-              retainCache: false,
-              kind: read?.failure.kind,
-            });
-          }),
-        );
 
       // A failed sign-in stays in the RcMap until it is invalidated, so the next read signs in again.
       const fetch = (id: PasswordManagerId, reference: string) =>
@@ -169,18 +170,27 @@ export class SecretValues extends Context.Service<
           return yield* fetch(id, reference).pipe(
             Effect.tap((value) =>
               Clock.currentTimeMillis.pipe(
-                Effect.map((readAt) => {
-                  if (epoch === started && !managers.isVolatile(id, reference))
-                    cache.set(key, { value, readAt, refreshing: false });
-                }),
+                Effect.tap((readAt) =>
+                  Effect.sync(() => {
+                    if (
+                      epoch === started &&
+                      !managers.isVolatile(id, reference)
+                    ) {
+                      cache.set(key, { value, readAt, refreshing: false });
+                    }
+                  }),
+                ),
               ),
             ),
             Effect.tapError((failure) =>
               Effect.sync(() => {
                 const cached = cache.get(key);
 
-                if (!failure.retainCache) cache.delete(key);
-                else if (cached) cached.refreshing = false;
+                if (!failure.retainCache) {
+                  cache.delete(key);
+                } else if (cached) {
+                  cached.refreshing = false;
+                }
               }),
             ),
           );
@@ -218,12 +228,10 @@ export class SecretValues extends Context.Service<
         }
 
         return yield* fetchAndStore(id, reference).pipe(
-          Effect.catch((failure) =>
-            failure.retainCache &&
-            cached &&
-            age < Duration.toMillis(STALE_UNTIL)
+          Effect.catch((error) =>
+            error.retainCache && cached && age < Duration.toMillis(STALE_UNTIL)
               ? Effect.succeed(cached.value)
-              : Effect.fail(unavailable(id, failure)),
+              : Effect.fail(unavailable(id, error)),
           ),
         );
       });
@@ -232,15 +240,20 @@ export class SecretValues extends Context.Service<
         Effect.gen(function* () {
           epoch++;
 
-          for (const key of cache.keys())
-            if (key.startsWith(`${id}\u0000`)) cache.delete(key);
+          for (const key of cache.keys()) {
+            if (key.startsWith(`${id}\u0000`)) {
+              cache.delete(key);
+            }
+          }
 
           yield* RcMap.invalidate(clients, id);
 
           const connection = connections.get(id);
           connections.delete(id);
 
-          if (connection) yield* Scope.close(connection, Exit.void);
+          if (connection) {
+            yield* Scope.close(connection, Exit.void);
+          }
         });
 
       return SecretValues.of({

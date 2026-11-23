@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { jobDetails, reactionDetails } from "../contract/tool-details";
+import { fallingBackTo } from "../shared/fallback-schema";
 import { REACTION_TOOL_NAME } from "../contract/tools";
 
 export const toolMetadata = z.object({
-  toolCallId: z.string().optional().catch(undefined),
-  toolName: z.string().optional().catch(undefined),
-  isError: z.boolean().optional().catch(undefined),
+  toolCallId: fallingBackTo(z.string().optional(), undefined),
+  toolName: fallingBackTo(z.string().optional(), undefined),
+  isError: fallingBackTo(z.boolean().optional(), undefined),
   details: z.unknown().optional(),
 });
 

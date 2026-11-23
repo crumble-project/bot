@@ -1,4 +1,5 @@
-import { Type, type Static, type TSchema } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import type { Static, TSchema } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord";
 import { Effect, Layer, Predicate } from "effect";
@@ -15,7 +16,8 @@ import {
 } from "../shared/limits";
 import { toolOutput } from "../shared/tool-output";
 import { BotSecretRequests } from "./bot-secret-requests";
-import { BotSecretUses, type BotSecretUse } from "./bot-secret-uses";
+import { BotSecretUses } from "./bot-secret-uses";
+import type { BotSecretUse } from "./bot-secret-uses";
 import type { BotSecretKind } from "./schema";
 
 type LifecycleHooks<Saved> = {
@@ -29,12 +31,12 @@ type LifecycleHooks<Saved> = {
 };
 
 type SaveSteps<Saved, E> = {
-  hosts: string[] | undefined;
+  hosts: Array<string> | undefined;
   check: (
     existing: Saved | undefined,
   ) => Effect.Effect<void, InvalidInput | Conflict>;
   store: Effect.Effect<void, E>;
-  write: (hosts: string[]) => Effect.Effect<Saved>;
+  write: (hosts: Array<string>) => Effect.Effect<Saved>;
   notice: (saved: Saved) => string;
 };
 
@@ -46,7 +48,10 @@ export const requestReason = z
   .min(1)
   .max(MAX_REQUEST_REASON_CHARS);
 
-export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
+export const botSecretLifecycle = <
+  Saved extends { hosts: Array<string> },
+  Detail,
+>(
   hooks: LifecycleHooks<Saved>,
   useDetail: z.ZodType<Detail>,
 ) =>
@@ -79,8 +84,9 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
         const existing = yield* hooks.find(agentId, name);
         const found = steps.hosts ?? existing?.hosts ?? pending?.hosts;
 
-        if (!found)
+        if (!found) {
           return yield* new InvalidInput({ message: "Name at least one host" });
+        }
 
         yield* steps.check(existing);
 
@@ -102,7 +108,7 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
       agentId: string,
       input: {
         name: string;
-        hosts: string[];
+        hosts: Array<string>;
         reason: string;
         oneTimeCode?: boolean | undefined;
       },
@@ -117,14 +123,17 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
         existing &&
         input.hosts.every((host) => existing.hosts.includes(host)) &&
         !options.lacks?.(existing)
-      )
+      ) {
         return yield* new Conflict({ message: options.alreadyYours(existing) });
+      }
 
       return yield* requests.ask(agentId, kind, input);
     });
 
     const forget = Effect.fnUntraced(function* (agentId: string, name: string) {
-      if (!(yield* hooks.deleteRecord(agentId, name))) return false;
+      if (!(yield* hooks.deleteRecord(agentId, name))) {
+        return false;
+      }
 
       yield* hooks.deleteSecrets(agentId, name);
       yield* useLog.forget(agentId, kind, name);
@@ -133,20 +142,24 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
     });
 
     const remove = Effect.fnUntraced(function* (agentId: string, name: string) {
-      if (yield* forget(agentId, name)) return;
+      if (yield* forget(agentId, name)) {
+        return;
+      }
 
-      if (!(yield* requests.decline(agentId, kind, name)))
+      if (!(yield* requests.decline(agentId, kind, name))) {
         return yield* new NotFound({ message: `${title} not found` });
+      }
     });
 
     const decline = Effect.fnUntraced(function* (
       agentId: string,
       name: string,
     ) {
-      if (!(yield* requests.decline(agentId, kind, name)))
+      if (!(yield* requests.decline(agentId, kind, name))) {
         return yield* new Conflict({
           message: `${title} request has already been answered`,
         });
+      }
     });
 
     const uses = Effect.fnUntraced(function* (
@@ -154,8 +167,9 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
       name: string,
       options: UseOptions,
     ) {
-      if (!(yield* hooks.find(agentId, name)))
+      if (!(yield* hooks.find(agentId, name))) {
         return yield* new NotFound({ message: `${title} not found` });
+      }
 
       const listed = yield* useLog.list(agentId, kind, name, options);
 
@@ -210,10 +224,10 @@ export const useFailure = (
     ? `${name} could not be read: ${error.message}`
     : error.message;
 
-export const hostsText = (hosts: readonly string[]) => hosts.join(", ");
+export const hostsText = (hosts: ReadonlyArray<string>) => hosts.join(", ");
 
 export const hostLines = (
-  items: readonly { name: string; hosts: readonly string[] }[],
+  items: ReadonlyArray<{ name: string; hosts: ReadonlyArray<string> }>,
 ) => items.map((item) => `- ${item.name}: ${hostsText(item.hosts)}`);
 
 export const requestParameters = {

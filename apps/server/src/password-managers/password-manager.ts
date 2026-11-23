@@ -1,13 +1,6 @@
 import type { Redacted, Result } from "effect";
-import {
-  Context,
-  Deferred,
-  Effect,
-  Layer,
-  Option,
-  Schema,
-  type Scope,
-} from "effect";
+import { Context, Deferred, Effect, Layer, Option, Schema } from "effect";
+import type { Scope } from "effect";
 import type { LoginField, PasswordManagerId } from "../contract/secrets";
 import { InvalidInput } from "../shared/errors";
 
@@ -166,7 +159,9 @@ export class PasswordManagers extends Context.Service<
     const vendorOf = (id: PasswordManagerId) => {
       const vendor = byId.get(id);
 
-      if (!vendor) throw new Error(`No password manager ${id}`);
+      if (!vendor) {
+        throw new Error(`No password manager ${id}`);
+      }
 
       return vendor;
     };
@@ -192,8 +187,9 @@ export class PasswordManagers extends Context.Service<
         itemFields: (id, item) => {
           const vendor = vendorOf(id);
 
-          if (!vendor.itemFields)
+          if (!vendor.itemFields) {
             throw new Error(`${vendor.name} has no login items`);
+          }
 
           return vendor.itemFields(item);
         },

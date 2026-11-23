@@ -39,12 +39,12 @@ export const botSkillsQuery = (botId: string) =>
   queryOptions({
     queryKey: [...botSkillsKey, botId],
     queryFn: ({ signal }) =>
-      api<"agentSkills">(botSkillsPath(botId), { signal }),
+      api("agentSkills", botSkillsPath(botId), { signal }),
   });
 
 export const skillsQuery = queryOptions({
   queryKey: ["skills"],
-  queryFn: ({ signal }) => api<"skills">("/v1/skills", { signal }),
+  queryFn: ({ signal }) => api("skills", "/v1/skills", { signal }),
 });
 
 export const assignSkill = (
@@ -52,10 +52,10 @@ export const assignSkill = (
   botId: string,
   assigned: boolean,
 ) =>
-  call<"assignSkillBot">(`${skillPath(skillId)}/assignment`, "POST", {
+  call("assignSkillBot", `${skillPath(skillId)}/assignment`, "POST", {
     botId,
     assigned,
   });
 
 export const checkSkillUpdates = () =>
-  call<"checkSkillUpdates">("/v1/skills/updates/check", "POST");
+  call("checkSkillUpdates", "/v1/skills/updates/check", "POST");

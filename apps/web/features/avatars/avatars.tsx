@@ -1,18 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  type BotAvatarDefinition,
-  defaultAvatarDefinition,
-} from "@crumble/server/contract/avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { Page } from "@/components/page";
 import { Button } from "@/components/ui/button";
-import {
-  agentPath,
-  type Bot,
-  botsQuery,
-  type BotInput,
-  invalidateBots,
-} from "@/features/bots/api";
+import { agentPath, botsQuery, invalidateBots } from "@/features/bots/api";
+import type { Bot, BotInput } from "@/features/bots/api";
 import { send } from "@/lib/api";
 import { STATES } from "open-bot-avatar";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -37,7 +30,9 @@ function useAvatarDraft() {
 
     setSelected(id);
 
-    if (bot) setValue(bot.avatar);
+    if (bot) {
+      setValue(bot.avatar);
+    }
     save.reset();
   };
 
@@ -75,7 +70,7 @@ function BotToEdit({
   selected,
   onSelect,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   selected: string;
   onSelect: (id: string) => void;
 }) {

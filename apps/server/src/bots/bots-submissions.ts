@@ -1,19 +1,17 @@
 import { Effect } from "effect";
 import type { Agent } from "../contract/agents";
 import { pi } from "../shared/app-errors";
+import { required } from "../shared/required";
 import { MAX_IMAGE_BYTES, attachmentKind } from "../shared/attachment-rules";
 import { fileIdDigest } from "../shared/attachments";
 import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
-import {
-  Conflict,
-  InvalidInput,
-  REQUEST_ID_REUSED,
-  type AppError,
-} from "../shared/errors";
+import { Conflict, InvalidInput, REQUEST_ID_REUSED } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import type { BotsAnnouncements } from "./bots-announcements";
 import type { BotsChat } from "./bots-chat";
-import { isChatTurn, type BotsContext } from "./bots-context";
+import { isChatTurn } from "./bots-context";
+import type { BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 import { OWNER_TIMEZONE, unreadableImages } from "./runtime";
@@ -21,7 +19,7 @@ import { OWNER_TIMEZONE, unreadableImages } from "./runtime";
 export type SendOptions = {
   scheduleId?: string;
   replyTo?: string | undefined;
-  files?: string[] | undefined;
+  files?: Array<string> | undefined;
 };
 
 export type JobAnswerInput = {
@@ -61,7 +59,7 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
   // Refuses before the turn is recorded, so the owner sees one error and the message goes back to the composer.
   const refuseUnreadableImages = Effect.fnUntraced(function* (
     owner: Agent,
-    files: readonly string[],
+    files: ReadonlyArray<string>,
   ) {
     const entries = yield* library.entries(
       { kind: "bot", agentId: owner.id },
@@ -74,10 +72,11 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
         entry.size <= MAX_IMAGE_BYTES,
     );
 
-    if (images && !(yield* pi(() => runtime.acceptsImages(owner))))
+    if (images && !(yield* pi(() => runtime.acceptsImages(owner)))) {
       return yield* Effect.fail(
         new InvalidInput({ message: unreadableImages(owner) }),
       );
+    }
   });
 
   const send = Effect.fn("Bots.send")(function* (
@@ -88,16 +87,21 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
   ) {
     const { agent: owner } = yield* conversation(conversationId);
 
-    if (!owner.enabled)
+    if (!owner.enabled) {
       return yield* conflict("Enable this agent before starting work");
+    }
     const replyTo = options.replyTo ?? null;
     const files = options.files ?? [];
     const attachmentsDigest = fileIdDigest(files);
 
     const existing = yield* executions.getByRequest(conversationId, requestId);
 
-    if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
+    if (
+      existing &&
+      differsFrom(existing, content, replyTo, attachmentsDigest)
+    ) {
       return yield* conflict(REQUEST_ID_REUSED);
+    }
 
     if (!existing && files.length) {
       yield* runtime.validateFiles(owner.id, files);
@@ -123,10 +127,14 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     yield* admit(execution);
     yield* changed(conversationId);
 
-    if (isChatTurn(execution))
+    if (isChatTurn(execution)) {
       yield* forkPreview(execution.agentId, conversationId, execution.id);
+    }
 
-    return (yield* executions.get(execution.id))!;
+    return required(
+      yield* executions.get(execution.id),
+      "The execution was not stored",
+    );
   });
 
   const notice = Effect.fn("Bots.notice")(function* (
@@ -142,11 +150,12 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
     content: string,
     requestId: string,
     replyTo?: string,
-    files: string[] = [],
+    files: Array<string> = [],
     timezone?: string,
   ) {
-    if (timezone && validTimezone(timezone))
+    if (timezone && validTimezone(timezone)) {
       yield* settings.set(OWNER_TIMEZONE, timezone);
+    }
 
     return yield* send((yield* chat(agentId)).id, content, requestId, {
       replyTo,

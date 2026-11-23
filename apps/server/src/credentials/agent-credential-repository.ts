@@ -11,6 +11,7 @@ import type { BotSecretRequest } from "../bot-secrets/bot-secret-requests";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
 import { botSecretKey } from "../secrets/secret-key";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { agentCredentials, credentialAuthorities } from "./schema";
@@ -22,7 +23,7 @@ export type CredentialRequest = Omit<BotSecretRequest, "oneTimeCode">;
 
 export type CredentialGrant = {
   name: string;
-  hosts: string[];
+  hosts: Array<string>;
   placeholder: string;
 };
 
@@ -58,11 +59,14 @@ const metadata = {
   lastError: lastUseError("credential", agentCredentials),
 };
 
+const credential = (agentId: string, name: string) =>
+  and(eq(agentCredentials.agentId, agentId), eq(agentCredentials.name, name));
+
 export class AgentCredentialRepository extends Context.Service<
   AgentCredentialRepository,
   {
     /** Metadata only: listing never decrypts a value. */
-    readonly list: (agentId: string) => Effect.Effect<CredentialRecord[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<CredentialRecord>>;
     readonly get: (
       agentId: string,
       name: string,
@@ -71,13 +75,13 @@ export class AgentCredentialRepository extends Context.Service<
     readonly save: (
       agentId: string,
       name: string,
-      input: { hosts: string[]; github: boolean },
+      input: { hosts: Array<string>; github: boolean },
     ) => Effect.Effect<CredentialRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
     readonly placeholders: (
       agentId: string,
     ) => Effect.Effect<Record<string, string>>;
-    readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    readonly grants: (agentId: string) => Effect.Effect<Array<CredentialGrant>>;
     /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
     readonly getAuthority: (
       agentId: string,
@@ -99,12 +103,6 @@ export class AgentCredentialRepository extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const box = yield* SecretBox;
-
-      const credential = (agentId: string, name: string) =>
-        and(
-          eq(agentCredentials.agentId, agentId),
-          eq(agentCredentials.name, name),
-        );
 
       const list = Effect.fn("AgentCredentialRepository.list")(function* (
         agentId: string,
@@ -133,7 +131,7 @@ export class AgentCredentialRepository extends Context.Service<
       const save = Effect.fn("AgentCredentialRepository.save")(function* (
         agentId: string,
         name: string,
-        input: { hosts: string[]; github: boolean },
+        input: { hosts: Array<string>; github: boolean },
       ) {
         const at = yield* nowIso;
         const hosts = JSON.stringify(input.hosts);
@@ -155,7 +153,10 @@ export class AgentCredentialRepository extends Context.Service<
           });
         }
 
-        return (yield* get(agentId, name))!;
+        return required(
+          yield* get(agentId, name),
+          "The agent credential was not stored",
+        );
       }, Effect.orDie);
 
       const remove = Effect.fn("AgentCredentialRepository.delete")(function* (
@@ -234,7 +235,10 @@ export class AgentCredentialRepository extends Context.Service<
           })
           .onConflictDoNothing({ target: credentialAuthorities.agentId });
 
-        return (yield* getAuthority(agentId))!;
+        return required(
+          yield* getAuthority(agentId),
+          "The credential authority was not stored",
+        );
       }, Effect.orDie);
 
       const touch = Effect.fn("AgentCredentialRepository.touch")(function* (

@@ -5,7 +5,8 @@ import type { LookupFunction } from "node:net";
 import type net from "node:net";
 import { Transform } from "node:stream";
 import tls from "node:tls";
-import { hostMatches, type CredentialTarget } from "../shared/domain";
+import { hostMatches } from "../shared/domain";
+import type { CredentialTarget } from "../shared/domain";
 import type {
   CredentialGrant,
   CredentialUse,
@@ -21,11 +22,11 @@ export type CredentialProxyOptions = {
   agentId: string;
   authorities: TlsAuthorities;
   /** Read for every request, so a changed or deleted credential applies at once. */
-  grants: () => CredentialGrant[];
+  grants: () => Array<CredentialGrant>;
   /** Reads a used credential's value; rejects with the reason the request can't be sent. */
   value: (name: string, target: CredentialTarget) => Promise<string>;
   recordUse: (name: string, use: Omit<CredentialUse, "id">) => void;
-  lookup?: (host: string) => Promise<string[]>;
+  lookup?: (host: string) => Promise<Array<string>>;
   isPublicAddress?: (address: string) => boolean;
   /** Extra certificate authorities upstream servers may use, in PEM; the system's are always trusted. */
   upstreamCa?: string;
@@ -57,7 +58,9 @@ function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
     transform(chunk: Buffer, _encoding, done) {
       let text = pending + chunk.toString("latin1");
 
-      for (const [from, to] of pairs) text = text.replaceAll(from, to);
+      for (const [from, to] of pairs) {
+        text = text.replaceAll(from, to);
+      }
       const cut = Math.max(0, text.length - keep);
 
       pending = text.slice(cut);
@@ -74,29 +77,33 @@ const swappedHeaderValue = (
   value: string,
   swap: (text: string) => string,
 ) => {
-  const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
+  const basic = key === "authorization" ? /^basic\s+(\S+)$/i.exec(value) : null;
+  const encoded = basic?.[1];
 
-  if (!basic) return swap(value);
+  if (!encoded) {
+    return swap(value);
+  }
 
-  const decoded = Buffer.from(basic[1]!, "base64").toString("utf8");
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
 
   return `Basic ${Buffer.from(swap(decoded)).toString("base64")}`;
 };
 
 export const requestHeaders = (
-  rawHeaders: string[],
+  rawHeaders: Array<string>,
   swap: (text: string) => string,
 ) => {
-  const headers: Record<string, string[]> = {};
+  const headers: Record<string, Array<string>> = {};
 
   for (let index = 0; index < rawHeaders.length; index += 2) {
-    const key = rawHeaders[index]!.toLowerCase();
+    const key = rawHeaders[index]?.toLowerCase();
+    const value = rawHeaders[index + 1];
 
-    if (HOP_BY_HOP.has(key)) continue;
+    if (key === undefined || value === undefined || HOP_BY_HOP.has(key)) {
+      continue;
+    }
 
-    (headers[key] ??= []).push(
-      swappedHeaderValue(key, rawHeaders[index + 1]!, swap),
-    );
+    (headers[key] ??= []).push(swappedHeaderValue(key, value, swap));
   }
 
   return headers;
@@ -107,17 +114,24 @@ const forwardable = (key: string, scrubbing: boolean) =>
   !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
 
 export const responseHeaders = (
-  rawHeaders: string[],
+  rawHeaders: Array<string>,
   scrubbing: boolean,
   scrubText: (text: string) => string,
 ) => {
-  const headers: Record<string, string[]> = {};
+  const headers: Record<string, Array<string>> = {};
 
   for (let index = 0; index < rawHeaders.length; index += 2) {
-    const key = rawHeaders[index]!.toLowerCase();
+    const key = rawHeaders[index]?.toLowerCase();
+    const value = rawHeaders[index + 1];
 
-    if (!forwardable(key, scrubbing)) continue;
-    (headers[key] ??= []).push(scrubText(rawHeaders[index + 1]!));
+    if (
+      key === undefined ||
+      value === undefined ||
+      !forwardable(key, scrubbing)
+    ) {
+      continue;
+    }
+    (headers[key] ??= []).push(scrubText(value));
   }
 
   return headers;
@@ -128,14 +142,17 @@ type SwappedValue = { grant: CredentialGrant; value: string };
 type ReadFailure = { name: string; message: string };
 
 const usedGrants = (
-  grants: readonly CredentialGrant[],
+  grants: ReadonlyArray<CredentialGrant>,
   request: http.IncomingMessage,
 ) => {
   const used = new Map<string, CredentialGrant>();
 
   const detect = (text: string) => {
-    for (const grant of grants)
-      if (text.includes(grant.placeholder)) used.set(grant.name, grant);
+    for (const grant of grants) {
+      if (text.includes(grant.placeholder)) {
+        used.set(grant.name, grant);
+      }
+    }
 
     return text;
   };
@@ -146,19 +163,23 @@ const usedGrants = (
 };
 
 const readValues = async (
-  used: readonly CredentialGrant[],
+  used: ReadonlyArray<CredentialGrant>,
   read: (name: string) => Promise<string>,
 ) => {
   const reads = await Promise.allSettled(used.map((grant) => read(grant.name)));
-  const values: SwappedValue[] = [];
-  const failures: ReadFailure[] = [];
+  const values: Array<SwappedValue> = [];
+  const failures: Array<ReadFailure> = [];
 
   reads.forEach((outcome, index) => {
-    const grant = used[index]!;
+    const grant = used[index];
 
-    if (outcome.status === "fulfilled")
+    if (!grant) {
+      return;
+    }
+
+    if (outcome.status === "fulfilled") {
       values.push({ grant, value: outcome.value });
-    else
+    } else {
       failures.push({
         name: grant.name,
         message:
@@ -166,6 +187,7 @@ const readValues = async (
             ? outcome.reason.message
             : String(outcome.reason),
       });
+    }
   });
 
   return { values, failures };
@@ -174,7 +196,7 @@ const readValues = async (
 const refuse = (
   request: http.IncomingMessage,
   response: http.ServerResponse,
-  failures: readonly ReadFailure[],
+  failures: ReadonlyArray<ReadFailure>,
 ) => {
   request.resume();
   response.writeHead(502, { "content-type": "text/plain" });
@@ -209,14 +231,14 @@ export async function answerOverTls(
 }
 
 const swappingPlaceholders =
-  (values: readonly SwappedValue[]) => (text: string) =>
+  (values: ReadonlyArray<SwappedValue>) => (text: string) =>
     values.reduce(
       (current, { grant, value }) =>
         current.replaceAll(grant.placeholder, value),
       text,
     );
 
-const scrubPairs = (values: readonly SwappedValue[]) =>
+const scrubPairs = (values: ReadonlyArray<SwappedValue>) =>
   values.flatMap(({ grant, value }) =>
     value.length >= MIN_SCRUBBED_LENGTH
       ? [[latin1(value), latin1(grant.placeholder)] as const]
@@ -224,7 +246,9 @@ const scrubPairs = (values: readonly SwappedValue[]) =>
   );
 
 function answerUpstreamError(response: http.ServerResponse, error: Error) {
-  if (response.headersSent) return void response.destroy();
+  if (response.headersSent) {
+    return void response.destroy();
+  }
   response.writeHead(502, { "content-type": "text/plain" });
   response.end(`Crumble credential proxy: ${error.message}\n`);
 }
@@ -251,15 +275,16 @@ export function credentialProxy(
       (addresses) => {
         const found = addresses.filter(isPublic);
 
-        if (!found.length)
+        if (!found.length) {
           return callback(
             Object.assign(new Error(`${host} has no public address`), {
               code: "ENOTFOUND",
             }),
             "",
           );
+        }
 
-        if (lookupOptions.all)
+        if (lookupOptions.all) {
           return callback(
             null,
             found.map((address) => ({
@@ -267,10 +292,14 @@ export function credentialProxy(
               family: address.includes(":") ? 6 : 4,
             })),
           );
+        }
 
-        callback(null, found[0]!, found[0]!.includes(":") ? 6 : 4);
+        const address = found[0] ?? "";
+
+        callback(null, address, address.includes(":") ? 6 : 4);
       },
-      (error: Error) => callback(error, ""),
+      (error: unknown) =>
+        callback(error instanceof Error ? error : new Error(String(error)), ""),
     );
   };
 
@@ -281,7 +310,7 @@ export function credentialProxy(
     target: { host: string; port: number },
     request: http.IncomingMessage,
     response: http.ServerResponse,
-    values: readonly SwappedValue[],
+    values: ReadonlyArray<SwappedValue>,
     record: (path: string, status: number | null) => void,
   ) => {
     const headers = requestHeaders(
@@ -321,8 +350,11 @@ export function credentialProxy(
           responseHeaders(reply.rawHeaders, scrub.length > 0, scrubText),
         );
 
-        if (scrub.length) reply.pipe(replacing(scrub)).pipe(response);
-        else reply.pipe(response);
+        if (scrub.length) {
+          reply.pipe(replacing(scrub)).pipe(response);
+        } else {
+          reply.pipe(response);
+        }
       },
     );
 
@@ -352,7 +384,7 @@ export function credentialProxy(
         at: new Date().toISOString(),
         method: request.method ?? "GET",
         host,
-        path: path.split("?")[0]!,
+        path: path.split("?")[0] ?? "",
         status,
         error,
       });
@@ -364,14 +396,17 @@ export function credentialProxy(
     );
 
     if (failures.length) {
-      for (const failure of failures)
+      for (const failure of failures) {
         recordUse(failure.name, request.url ?? "/", null, failure.message);
+      }
 
       return refuse(request, response, failures);
     }
 
     relay({ host, port }, request, response, values, (path, status) => {
-      for (const grant of used) recordUse(grant.name, path, status, null);
+      for (const grant of used) {
+        recordUse(grant.name, path, status, null);
+      }
     });
   };
 

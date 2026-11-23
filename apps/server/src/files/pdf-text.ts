@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { runPdfExtraction, type PdfResult } from "./pdf-extraction";
+import { runPdfExtraction } from "./pdf-extraction";
+import type { PdfResult } from "./pdf-extraction";
 
 export async function samplePdfRss(
   pid: number,
@@ -13,7 +14,9 @@ export async function samplePdfRss(
 
       rss = /^VmRSS:\s*(\d+)\s+kB\s*$/m.exec(status)?.[1];
     } else if (process.platform === "darwin") {
-      if (signal?.aborted) return null;
+      if (signal?.aborted) {
+        return null;
+      }
 
       const ps = Bun.spawn(["ps", "-o", "rss=", "-p", String(pid)], {
         stdout: "pipe",
@@ -30,14 +33,18 @@ export async function samplePdfRss(
           ps.exited,
         ]);
 
-        if (code === 0) rss = output.trim();
+        if (code === 0) {
+          rss = output.trim();
+        }
       } finally {
         signal?.removeEventListener("abort", stop);
         ps.kill();
       }
     }
 
-    if (!rss || !/^\d+$/.test(rss)) return null;
+    if (!rss || !/^\d+$/.test(rss)) {
+      return null;
+    }
     const kib = Number(rss);
 
     return Number.isSafeInteger(kib) && kib > 0 ? kib * 1024 : null;

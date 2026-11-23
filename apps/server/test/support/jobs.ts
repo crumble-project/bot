@@ -3,14 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect } from "effect";
-import { createModels, type Message } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   fauxProvider,
   fauxText,
   fauxToolCall,
-  type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
+import type { FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { defineJobKind } from "../../src/jobs/jobs";
@@ -23,10 +24,12 @@ import { DesktopNotConfigured } from "../../src/workspaces/workspace-errors";
 import { runtimeCallbacks } from "./runtime-callbacks";
 import { until } from "./until";
 
-const cleanups: (() => void | Promise<void>)[] = [];
+const cleanups: Array<() => void | Promise<void>> = [];
 
 afterEach(async () => {
-  while (cleanups.length) await cleanups.pop()!();
+  for (let cleanup = cleanups.pop(); cleanup; cleanup = cleanups.pop()) {
+    await cleanup();
+  }
 });
 
 class DirectoryWorkspaces implements Workspaces {
@@ -97,14 +100,16 @@ const textOf = (message: Message) =>
     .join("");
 
 class Gates {
-  readonly started: string[] = [];
+  readonly started: Array<string> = [];
   private readonly gates = new Map<string, () => void>();
   private readonly waits = new Map<string, Promise<void>>();
 
   wait(name: string) {
     this.started.push(name);
     let open!: () => void;
-    const gate = new Promise<void>((resolve) => (open = resolve));
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
     this.gates.set(name, open);
     this.waits.set(name, gate);
 
@@ -126,7 +131,11 @@ function script(gates: Gates): FauxResponseFactory {
 
     const last = context.messages.findLast(
       (message) => message.role !== "system",
-    )!;
+    );
+
+    if (!last) {
+      throw new Error("The scripted turn has no user message");
+    }
 
     const text = textOf(last);
 
@@ -137,15 +146,16 @@ function script(gates: Gates): FauxResponseFactory {
       return fauxAssistantMessage([fauxText(`${name} done`)]);
     }
 
-    if (text.startsWith("[errand") || last.role === "toolResult")
+    if (text.startsWith("[errand") || last.role === "toolResult") {
       return fauxAssistantMessage([fauxText("Noted.")]);
+    }
 
     const [action, name] = text.split(" ");
 
     return fauxAssistantMessage(
       fauxToolCall("errand", {
-        action: action!,
-        name: name!,
+        action: action ?? "",
+        name: name ?? "",
         ...(action === "start" && { message: `errand ${name}` }),
       }),
       { stopReason: "toolUse" },

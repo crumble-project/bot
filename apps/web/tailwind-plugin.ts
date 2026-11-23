@@ -15,7 +15,9 @@ const tailwind: BunPlugin = {
     build.onLoad({ filter: /\.css$/ }, async ({ path: file }) => {
       const css = await Bun.file(file).text();
 
-      if (!USES_TAILWIND.test(css)) return { contents: css, loader: "css" };
+      if (!USES_TAILWIND.test(css)) {
+        return { contents: css, loader: "css" };
+      }
 
       const base = path.dirname(file);
 

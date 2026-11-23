@@ -3,32 +3,34 @@
 // evals/directsdk_cache_wire.py (MIT, see THIRD_PARTY_NOTICES.md). Run locally, not in CI:
 //   bun tools/claude-code-qualify.ts /absolute/path/to/claude
 // Crumble accepts every version; run this to check a new one before relying on it.
-import {
-  normalizeContext,
-  Type,
-  type AssistantMessage,
-  type Message,
-  type Model,
-  type SimpleStreamOptions,
-  type ToolCall,
+import { normalizeContext, Type } from "@earendil-works/pi-ai";
+import { logInfo } from "../src/shared/process-log";
+import type {
+  AssistantMessage,
+  Message,
+  Model,
+  SimpleStreamOptions,
+  ToolCall,
 } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { copyJson } from "@earendil-works/chord";
 import { z } from "zod";
 import {
   CLAUDE_CODE_API,
   streamClaudeCode,
-  type AdapterOptions,
 } from "../src/providers/claude-code/adapter";
+import type { AdapterOptions } from "../src/providers/claude-code/adapter";
 
 const binary = process.argv[2];
 
-if (!binary)
+if (!binary) {
   throw new Error(
     "Usage: bun tools/claude-code-qualify.ts /absolute/path/to/claude",
   );
+}
 
 const USAGE = {
   input_tokens: 101,
@@ -37,7 +39,7 @@ const USAGE = {
   cache_creation_input_tokens: 313,
 };
 
-const failures: string[] = [];
+const failures: Array<string> = [];
 
 type Row = {
   mode: string;
@@ -46,8 +48,13 @@ type Row = {
   upstream_requests?: number;
 };
 
+/** Replaced by the promise executor below; the initial value only satisfies the type. */
+const noop = () => {};
+
 const check = (ok: boolean, what: string) => {
-  if (!ok) failures.push(what);
+  if (!ok) {
+    failures.push(what);
+  }
 };
 
 const model = (id: string): Model<typeof CLAUDE_CODE_API> => ({
@@ -68,7 +75,7 @@ type Block = {
   [key: string]: z.infer<ReturnType<typeof z.json>>;
 };
 
-const thinkingBlockEvents = (block: Block, index: number): object[] => [
+const thinkingBlockEvents = (block: Block, index: number): Array<object> => [
   {
     type: "content_block_start",
     index,
@@ -86,7 +93,7 @@ const thinkingBlockEvents = (block: Block, index: number): object[] => [
   },
 ];
 
-const toolUseBlockEvents = (block: Block, index: number): object[] => [
+const toolUseBlockEvents = (block: Block, index: number): Array<object> => [
   {
     type: "content_block_start",
     index,
@@ -102,7 +109,7 @@ const toolUseBlockEvents = (block: Block, index: number): object[] => [
   },
 ];
 
-const textBlockEvents = (block: Block, index: number): object[] => [
+const textBlockEvents = (block: Block, index: number): Array<object> => [
   {
     type: "content_block_start",
     index,
@@ -115,21 +122,25 @@ const textBlockEvents = (block: Block, index: number): object[] => [
   },
 ];
 
-const blockEvents = (block: Block, index: number): object[] => {
-  if (block.type === "thinking") return thinkingBlockEvents(block, index);
+const blockEvents = (block: Block, index: number): Array<object> => {
+  if (block.type === "thinking") {
+    return thinkingBlockEvents(block, index);
+  }
 
-  if (block.type === "tool_use") return toolUseBlockEvents(block, index);
+  if (block.type === "tool_use") {
+    return toolUseBlockEvents(block, index);
+  }
 
   return textBlockEvents(block, index);
 };
 
 function sse(
-  blocks: Block[],
+  blocks: Array<Block>,
   stop: string | undefined,
   modelId: string,
   id: string,
 ) {
-  const events: object[] = [
+  const events: Array<object> = [
     {
       type: "message_start",
       message: {
@@ -145,17 +156,21 @@ function sse(
   ];
 
   for (const [index, block] of blocks.entries()) {
-    events.push(...blockEvents(block, index));
-    events.push({ type: "content_block_stop", index });
+    events.push(...blockEvents(block, index), {
+      type: "content_block_stop",
+      index,
+    });
   }
 
   if (stop) {
-    events.push({
-      type: "message_delta",
-      delta: { stop_reason: stop, stop_sequence: null },
-      usage: USAGE,
-    });
-    events.push({ type: "message_stop" });
+    events.push(
+      {
+        type: "message_delta",
+        delta: { stop_reason: stop, stop_sequence: null },
+        usage: USAGE,
+      },
+      { type: "message_stop" },
+    );
   }
 
   return events
@@ -212,7 +227,7 @@ function adapter(upstream: string, home: string): AdapterOptions {
 async function complete(
   options: AdapterOptions,
   modelId: string,
-  messages: Message[],
+  messages: Array<Message>,
   tools = true,
   signal?: AbortSignal,
 ) {
@@ -232,7 +247,9 @@ async function complete(
 
   const stream: SimpleStreamOptions = { maxTokens: 2400 };
 
-  if (signal) stream.signal = signal;
+  if (signal) {
+    stream.signal = signal;
+  }
 
   return streamClaudeCode(options, model(modelId), context, stream).result();
 }
@@ -291,11 +308,11 @@ const TOOL_BLOCKS = new Map<string, Block>([
   ],
 ]);
 
-const BASE_BLOCKS = new Map<string, Block[]>([
+const BASE_BLOCKS = new Map<string, Array<Block>>([
   ["thinking", [THINKING_FIXTURE]],
 ]);
 
-const fixtureBlocks = (mode: string): Block[] => {
+const fixtureBlocks = (mode: string): Array<Block> => {
   const tool = TOOL_BLOCKS.get(mode);
 
   return [...(BASE_BLOCKS.get(mode) ?? [TEXT_BLOCK]), ...(tool ? [tool] : [])];
@@ -339,16 +356,20 @@ const fixtureAnswer = (mode: string): Response =>
   );
 
 const admissionResponse = (mode: string, onClose: () => void): Response => {
-  if (mode === "error") return fixtureError();
+  if (mode === "error") {
+    return fixtureError();
+  }
 
-  if (mode === "cancel") return fixtureCancel(onClose);
+  if (mode === "cancel") {
+    return fixtureCancel(onClose);
+  }
 
   return fixtureAnswer(mode);
 };
 
 type PeerState = { mode: string; closed: boolean };
 
-const replayedToolNames = (bodies: Wire[]): string[] =>
+const replayedToolNames = (bodies: Array<Wire>): Array<string> =>
   (bodies.at(-1)?.messages ?? []).flatMap((item) =>
     Array.isArray(item.content)
       ? item.content
@@ -391,7 +412,7 @@ async function expectUnknownTool(c: AdmissionCase) {
 
 type ContentCheck = (
   c: AdmissionCase,
-  calls: ToolCall[],
+  calls: Array<ToolCall>,
 ) => void | Promise<void>;
 
 const contentChecks = new Map<string, ContentCheck>([
@@ -430,7 +451,9 @@ async function expectCalls(c: AdmissionCase) {
   const calls = c.message.content.filter((item) => item.type === "toolCall");
   const assertion = contentChecks.get(c.mode);
 
-  if (assertion) return await assertion(c, calls);
+  if (assertion) {
+    return await assertion(c, calls);
+  }
 
   return check(textOf(c.message) === "FIRST λ", `${c.mode}: text lost`);
 }
@@ -476,16 +499,20 @@ async function expectCancel(c: AdmissionCase) {
 async function expectOutcome(c: AdmissionCase) {
   const { mode, message } = c;
 
-  if (["error", "disconnect"].includes(mode))
+  if (["error", "disconnect"].includes(mode)) {
     return check(message.stopReason === "error", `${mode}: expected an error`);
+  }
 
-  if (mode === "cancel") return expectCancel(c);
+  if (mode === "cancel") {
+    return expectCancel(c);
+  }
 
-  if (mode === "refusal")
+  if (mode === "refusal") {
     return check(
       message.stopReason === "error",
       "refusal: expected a terminal error",
     );
+  }
 
   await expectContent(c);
 }
@@ -495,15 +522,15 @@ type AdmissionCase = {
   row: Row;
   message: AssistantMessage;
   options: AdapterOptions;
-  bodies: Wire[];
+  bodies: Array<Wire>;
   started: number;
   peer: PeerState;
 };
 
 function admissionPeer(mode: string) {
-  const bodies: Wire[] = [];
+  const bodies: Array<Wire> = [];
   const state: PeerState = { mode, closed: false };
-  let entered: () => void = () => {};
+  let entered: () => void = noop;
 
   const firstRequest = new Promise<void>((resolve) => {
     entered = resolve;
@@ -577,7 +604,9 @@ async function admissionCase(mode: string): Promise<Row> {
 async function admission() {
   const rows = [];
 
-  for (const mode of ADMISSION_MODES) rows.push(await admissionCase(mode));
+  for (const mode of ADMISSION_MODES) {
+    rows.push(await admissionCase(mode));
+  }
 
   return rows;
 }
@@ -585,14 +614,18 @@ async function admission() {
 const digest = (value: Prompt) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 
+type Json = z.infer<ReturnType<typeof z.json>>;
+
 /** Wire content without cache directives, which move to the newest breakpoint and are not cached prompt text. */
-function content(
-  value: z.infer<ReturnType<typeof z.json>>,
-): z.infer<ReturnType<typeof z.json>> {
-  if (Array.isArray(value)) return value.map(content);
+function content(value: Json): Json {
+  if (Array.isArray(value)) {
+    return value.map(content);
+  }
   const object = z.record(z.string(), z.json()).safeParse(value);
 
-  if (!object.success) return value;
+  if (!object.success) {
+    return value;
+  }
 
   return Object.fromEntries(
     Object.entries(object.data).flatMap(([key, item]) =>
@@ -606,12 +639,14 @@ const prompt = (wire: Wire) =>
     .looseObject({ messages: z.array(z.looseObject({ content: z.json() })) })
     .parse(
       content(
-        JSON.parse(
-          JSON.stringify({
+        // As on the wire: the request carries no undefined properties.
+        copyJson(
+          {
             tools: wire.tools,
             system: wire.system,
             messages: wire.messages,
-          }),
+          },
+          { omitUndefinedProperties: true },
         ),
       ),
     );
@@ -624,8 +659,9 @@ function cut(value: Prompt, at: [number, number]): Prompt {
   copy.messages = copy.messages.slice(0, at[0] + 1);
   const last = copy.messages.at(-1);
 
-  if (last && Array.isArray(last.content))
+  if (last && Array.isArray(last.content)) {
     last.content = last.content.slice(0, at[1] + 1);
+  }
 
   return copy;
 }
@@ -635,23 +671,28 @@ const markersOf = (wire: Wire) =>
 
 type WireContent = Wire["messages"][number]["content"];
 
-const markIndexes = (value: WireContent): number[] => {
-  if (!Array.isArray(value)) return [];
+const markIndexes = (value: WireContent): Array<number> => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
 
-  const found: number[] = [];
+  const found: Array<number> = [];
 
-  for (const [index, entry] of value.entries())
-    if ("cache_control" in entry) found.push(index);
+  for (const [index, entry] of value.entries()) {
+    if ("cache_control" in entry) {
+      found.push(index);
+    }
+  }
 
   return found;
 };
 
-const breakpoints = (wire: Wire | undefined): [number, number][] =>
+const breakpoints = (wire: Wire | undefined): Array<[number, number]> =>
   (wire?.messages ?? []).flatMap((item, i) =>
     markIndexes(item.content).map((j): [number, number] => [i, j]),
   );
 
-const cacheContext = (messages: Message[], withTools: boolean) =>
+const cacheContext = (messages: Array<Message>, withTools: boolean) =>
   normalizeContext({
     systemPrompt: "PUBLIC SYNTHETIC SYSTEM\n".repeat(300),
     messages,
@@ -672,7 +713,11 @@ const CACHE_THINKING = {
   signature: "public-fixture-opaque-signature",
 } satisfies Block;
 
-const cacheBlocks = (wire: Wire, number: number, tools: boolean): Block[] =>
+const cacheBlocks = (
+  wire: Wire,
+  number: number,
+  tools: boolean,
+): Array<Block> =>
   tools
     ? [
         CACHE_THINKING,
@@ -714,14 +759,15 @@ const earlierAnswer = (index: number): AssistantMessage => ({
   timestamp: 0,
 });
 
-const cacheHistory = (): Message[] => {
-  const history: Message[] = [];
+const cacheHistory = (): Array<Message> => {
+  const history: Array<Message> = [];
 
-  for (let index = 0; index < 12; index++)
+  for (let index = 0; index < 12; index++) {
     history.push(
       user(`Public earlier question ${index}`),
       earlierAnswer(index),
     );
+  }
 
   history.push(user("Run the public probe."));
 
@@ -731,18 +777,20 @@ const cacheHistory = (): Message[] => {
 type CacheRun = {
   modelId: string;
   options: AdapterOptions;
-  wires: Wire[];
+  wires: Array<Wire>;
   peerTools: { value: boolean };
   written: Set<string>;
-  receipts: { round: number; prefix: string }[];
-  followups: string[];
-  history: Message[];
-  schedule: boolean[];
+  receipts: Array<{ round: number; prefix: string }>;
+  followups: Array<string>;
+  history: Array<Message>;
+  schedule: Array<boolean>;
   previous: { prefix: Prompt; at: [number, number] } | undefined;
 };
 
 const checkPrefix = (run: CacheRun, current: Prompt, round: number) => {
-  if (!run.previous) return;
+  if (!run.previous) {
+    return;
+  }
 
   const candidate = cut(current, run.previous.at);
 
@@ -759,24 +807,26 @@ const findOpening = (wire: Wire, needle: string) =>
       item.role === "user" &&
       Array.isArray(item.content) &&
       JSON.stringify(
-        content(JSON.parse(JSON.stringify(item.content))),
+        content(copyJson(item.content, { omitUndefinedProperties: true })),
       ).includes(needle),
   );
 
 const openingFrame = (run: CacheRun, wire: Wire) =>
   findOpening(wire, run.followups.at(-2) ?? "\0");
 
-const onOpeningFrame = (markers: [number, number][], opening: number) =>
+const onOpeningFrame = (markers: Array<[number, number]>, opening: number) =>
   markers.length === 2 && markers[0]?.[0] === opening;
 
 const checkOpening = (
   run: CacheRun,
   wire: Wire,
   current: Prompt,
-  markers: [number, number][],
+  markers: Array<[number, number]>,
   round: number,
 ) => {
-  if (round !== run.schedule.length - 1) return;
+  if (round !== run.schedule.length - 1) {
+    return;
+  }
 
   const first = markers[0];
 
@@ -785,27 +835,32 @@ const checkOpening = (
     `cache: no breakpoint on the loop's opening frame: ${JSON.stringify(markers)}`,
   );
 
-  if (first)
+  if (first) {
     check(
       run.written.has(digest(cut(current, first))),
       "cache: turn breakpoint not on a written prefix",
     );
+  }
 };
 
 const recordMarkers = (
   run: CacheRun,
   current: Prompt,
-  markers: [number, number][],
+  markers: Array<[number, number]>,
 ) => {
-  for (const at of markers) run.written.add(digest(cut(current, at)));
+  for (const at of markers) {
+    run.written.add(digest(cut(current, at)));
+  }
   const last = markers.at(-1);
 
-  if (last) run.previous = { prefix: cut(current, last), at: last };
+  if (last) {
+    run.previous = { prefix: cut(current, last), at: last };
+  }
 };
 
 const checkBreakpoints = (
   wire: Wire,
-  markers: [number, number][],
+  markers: Array<[number, number]>,
   round: number,
 ) =>
   check(
@@ -814,7 +869,9 @@ const checkBreakpoints = (
   );
 
 const checkSignature = (wire: Wire, round: number) => {
-  if (![1, 2, 5].includes(round)) return;
+  if (![1, 2, 5].includes(round)) {
+    return;
+  }
 
   check(
     JSON.stringify(wire.messages).includes(
@@ -825,7 +882,9 @@ const checkSignature = (wire: Wire, round: number) => {
 };
 
 const appendToolResults = (run: CacheRun, message: AssistantMessage) => {
-  for (const call of message.content.filter((item) => item.type === "toolCall"))
+  for (const call of message.content.filter(
+    (item) => item.type === "toolCall",
+  )) {
     run.history.push({
       role: "toolResult",
       toolCallId: call.id,
@@ -834,6 +893,7 @@ const appendToolResults = (run: CacheRun, message: AssistantMessage) => {
       isError: false,
       timestamp: 0,
     });
+  }
 };
 
 const appendTurn = (
@@ -842,13 +902,15 @@ const appendTurn = (
   withTools: boolean,
   round: number,
 ) => {
-  if (withTools) return appendToolResults(run, message);
+  if (withTools) {
+    return appendToolResults(run, message);
+  }
 
   run.followups.push(`Public followup ${round}`);
   run.history.push(user(run.followups.at(-1) ?? ""));
 };
 
-const streamProbe = (run: CacheRun, messages: Message[]) =>
+const streamProbe = (run: CacheRun, messages: Array<Message>) =>
   streamClaudeCode(
     run.options,
     model(run.modelId),
@@ -875,7 +937,9 @@ async function cacheRound(
   );
   const wire = run.wires.at(-1);
 
-  if (!wire) return false;
+  if (!wire) {
+    return false;
+  }
 
   const markers = breakpoints(wire);
 
@@ -920,7 +984,7 @@ async function checkOneShot(run: CacheRun) {
  */
 async function cacheWire(modelId: string) {
   const home = mkdtempSync(join(tmpdir(), "crumble-qualify-cache-"));
-  const wires: Wire[] = [];
+  const wires: Array<Wire> = [];
   const peerTools = { value: true };
 
   const peer = fixturePeer((wire) => {
@@ -951,8 +1015,11 @@ async function cacheWire(modelId: string) {
   };
 
   try {
-    for (const [round, withTools] of run.schedule.entries())
-      if (!(await cacheRound(run, round, withTools))) break;
+    for (const [round, withTools] of run.schedule.entries()) {
+      if (!(await cacheRound(run, round, withTools))) {
+        break;
+      }
+    }
 
     await checkOneShot(run);
 
@@ -974,6 +1041,6 @@ const report = {
   failures,
 };
 
-console.log(JSON.stringify(report, null, 2));
+logInfo(JSON.stringify(report, null, 2));
 
 process.exit(failures.length === 0 ? 0 : 1);

@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { REACTION_TOOL_NAME } from "../contract/tools";
 import { EMOJI } from "../transcript/tool-results";
@@ -20,7 +20,9 @@ export function reactionExtension() {
     callers: ["model"],
     replay: "safe",
     execute: async ({ emoji }) => {
-      if (!EMOJI.test(emoji)) throw new Error("Use exactly one emoji.");
+      if (!EMOJI.test(emoji)) {
+        throw new Error("Use exactly one emoji.");
+      }
 
       return {
         output: [{ type: "text" as const, text: "Reacted." }],
@@ -34,7 +36,7 @@ export function reactionExtension() {
 }
 
 export const reactionTools = Layer.effectDiscard(
-  BotExtensions.use((extensions) =>
+  Effect.flatMap(BotExtensions, (extensions) =>
     extensions.register(ExtensionPosition.reaction, () => [
       reactionExtension(),
     ]),

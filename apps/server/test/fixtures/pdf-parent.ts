@@ -46,7 +46,9 @@ const result = await runPdfExtraction(
 
       sampleStarted();
 
-      if (!signal) throw new Error("Sampler requires an abort signal");
+      if (!signal) {
+        throw new Error("Sampler requires an abort signal");
+      }
 
       return waitForAbort(signal);
     },

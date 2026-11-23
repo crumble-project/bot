@@ -54,8 +54,8 @@ test("attachment image URLs follow replacement and unmount", async () => {
   const window = new Window();
   const globals = Object.getOwnPropertyDescriptors(globalThis);
   const urlMethods = Object.getOwnPropertyDescriptors(URL);
-  const created: (Blob | MediaSource)[] = [];
-  const revoked: string[] = [];
+  const created: Array<Blob | MediaSource> = [];
+  const revoked: Array<string> = [];
   const first = new Blob(["first"]);
   const second = new Blob(["second"]);
   const client = new QueryClient();
@@ -111,8 +111,11 @@ test("attachment image URLs follow replacement and unmount", async () => {
     Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL);
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -134,12 +137,14 @@ test("discarded initial history does not mark committed history as new", async (
     live,
     suspend,
   }: {
-    live?: Message[];
+    live?: Array<Message>;
     suspend?: boolean;
   }) {
     const arrivals = useArrivals(live);
 
-    if (suspend) throw pending;
+    if (suspend) {
+      throw pending;
+    }
 
     latest = arrivals;
 
@@ -192,8 +197,11 @@ test("discarded initial history does not mark committed history as new", async (
     await act(async () => root.unmount());
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -205,7 +213,7 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
   const globals = Object.getOwnPropertyDescriptors(globalThis);
   const urlMethods = Object.getOwnPropertyDescriptors(URL);
   const client = new QueryClient();
-  const paths: string[] = [];
+  const paths: Array<string> = [];
 
   const screenshot: Message = {
     ...message("bot:7"),
@@ -273,8 +281,11 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
     Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL);
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

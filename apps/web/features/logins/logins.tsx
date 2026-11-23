@@ -1,23 +1,15 @@
 import { IconHistory } from "@tabler/icons-react";
-import {
-  type Login,
-  type LoginUse,
-  type Logins,
-  loginPath,
-  loginsQuery,
-  invalidateLogins,
-} from "./api";
+import { loginPath, loginsQuery, invalidateLogins } from "./api";
+import type { Login, LoginUse, Logins } from "./api";
 import {
   LastUse,
   SecretRowMenu,
   SecretRowName,
   UsesDialog,
-  type Target,
 } from "@/features/bot-secrets/bot-secrets";
-import {
-  SecretPage,
-  type SecretRowProps,
-} from "@/features/bot-secrets/secret-page";
+import type { Target } from "@/features/bot-secrets/bot-secrets";
+import { SecretPage } from "@/features/bot-secrets/secret-page";
+import type { SecretRowProps } from "@/features/bot-secrets/secret-page";
 import { LoginSheet } from "./login-sheet";
 import { api } from "@/lib/api";
 import { BOT_SECRET_USE_RETENTION_DAYS } from "@crumble/server/contract/limits";
@@ -78,7 +70,7 @@ function FillsDialog({
       empty="Not filled yet."
       queryKey={["login-uses", botId, item.name]}
       load={(query, signal) =>
-        api<"agentLoginUses">(`${loginPath(botId, item.name)}/uses?${query}`, {
+        api("agentLoginUses", `${loginPath(botId, item.name)}/uses?${query}`, {
           signal,
         })
       }

@@ -76,9 +76,13 @@ export type ParsedRequest =
   | { kind: "other" };
 
 export function askingBot(request: ParsedRequest) {
-  if (request.kind === "delegate") return request.sourceAgentId;
+  if (request.kind === "delegate") {
+    return request.sourceAgentId;
+  }
 
-  if (request.kind === "job-question") return request.assigneeId;
+  if (request.kind === "job-question") {
+    return request.assigneeId;
+  }
 
   return;
 }
@@ -135,7 +139,9 @@ export function parseRequestId(requestId: string): ParsedRequest {
   const [prefix, subject, ...rest] = requestId.split(":");
   const detail = rest.join(":");
 
-  if (!subject || !prefix) return { kind: "other" };
+  if (!subject || !prefix) {
+    return { kind: "other" };
+  }
 
   return PREFIXES.get(prefix)?.(subject, detail) ?? { kind: "other" };
 }

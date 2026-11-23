@@ -2,11 +2,8 @@ import type { Conversation, EntryRecord } from "@earendil-works/pi-durable";
 import { z } from "zod";
 import type { Agent } from "../contract/agents";
 import { clip } from "../shared/limits";
-import {
-  contentText,
-  inputMetadata,
-  type ModelContent,
-} from "../transcript/entries";
+import { contentText, inputMetadata } from "../transcript/entries";
+import type { ModelContent } from "../transcript/entries";
 import type { AgentRuntime } from "../bots/runtime";
 import { toolMetadata } from "../transcript/tool-results";
 import {
@@ -14,8 +11,8 @@ import {
   isInputEntry,
   record,
   turnEntries,
-  type ModelMessage,
 } from "../transcript/transcript";
+import type { ModelMessage } from "../transcript/transcript";
 import {
   MEMORY_TOOL_NAME,
   MEMORY_WRITE_ACTIONS,
@@ -34,48 +31,58 @@ const CONTEXT_ENTRIES = 40;
 const memoryWriteCall = z.object({ action: z.enum(MEMORY_WRITE_ACTIONS) });
 
 type ToolCall = Extract<
-  Extract<ModelContent, unknown[]>[number],
+  Extract<ModelContent, Array<unknown>>[number],
   { type: "toolCall" }
 >;
 
-function recordToolRound(calls: ToolCall[], counters: TurnReport): void {
+function recordToolRound(calls: Array<ToolCall>, counters: TurnReport): void {
   counters.rounds++;
 
-  if (counters.roundsSinceSkillWrite !== null) counters.roundsSinceSkillWrite++;
+  if (counters.roundsSinceSkillWrite !== null) {
+    counters.roundsSinceSkillWrite++;
+  }
 
-  if (counters.roundsSinceMemoryWrite !== null)
+  if (counters.roundsSinceMemoryWrite !== null) {
     counters.roundsSinceMemoryWrite++;
+  }
 
   for (const call of calls) {
-    if (call.name === SKILL_MANAGE_TOOL_NAME)
+    if (call.name === SKILL_MANAGE_TOOL_NAME) {
       counters.roundsSinceSkillWrite = 0;
+    }
 
     const memoryWrite = memoryWriteCall.safeParse(call.arguments);
 
-    if (call.name === MEMORY_TOOL_NAME && memoryWrite.success)
+    if (call.name === MEMORY_TOOL_NAME && memoryWrite.success) {
       counters.roundsSinceMemoryWrite = 0;
+    }
   }
 }
 
 function assistantLines(
   content: ModelContent,
   counters?: TurnReport,
-): string[] {
-  const lines: string[] = [];
+): Array<string> {
+  const lines: Array<string> = [];
   const text = contentText(content).trim();
 
-  if (text) lines.push(`Assistant:\n${text}`);
+  if (text) {
+    lines.push(`Assistant:\n${text}`);
+  }
 
   const calls = Array.isArray(content)
     ? content.filter((block) => block?.type === "toolCall")
     : [];
 
-  if (calls.length && counters) recordToolRound(calls, counters);
+  if (calls.length && counters) {
+    recordToolRound(calls, counters);
+  }
 
-  for (const call of calls)
+  for (const call of calls) {
     lines.push(
       `Tool call ${String(call.name ?? "unknown")}: ${clip(JSON.stringify(call.arguments ?? {}), 2000)}`,
     );
+  }
 
   return lines;
 }
@@ -89,19 +96,24 @@ function toolResultLine(message: ModelMessage): string {
 function messageLines(
   message: ModelMessage,
   counters: TurnReport | undefined,
-): string[] {
-  if (message.role === "assistant")
+): Array<string> {
+  if (message.role === "assistant") {
     return assistantLines(message.content, counters);
+  }
 
-  if (message.role === "toolResult") return [toolResultLine(message)];
+  if (message.role === "toolResult") {
+    return [toolResultLine(message)];
+  }
 
-  if (message.role !== "user") return [];
+  if (message.role !== "user") {
+    return [];
+  }
   const text = contentText(message.content).trim();
 
   return text ? [`Owner:\n${text}`] : [];
 }
 
-function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
+function entryLines(entry: EntryRecord, counters?: TurnReport): Array<string> {
   if (isInputEntry(entry)) {
     const input = inputMetadata.parse(record(entry.data) ?? {});
 
@@ -114,7 +126,9 @@ function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
 }
 
 function clipTurn(turn: string, maxChars: number) {
-  if (turn.length <= maxChars) return turn;
+  if (turn.length <= maxChars) {
+    return turn;
+  }
 
   const head = Math.floor(maxChars * 0.4);
   const tail = maxChars - head - 24;
@@ -184,8 +198,8 @@ export function reviewBudgetChars(
   agent: Pick<Agent, "review">,
 ) {
   const ceiling = contextWindow
-    ? Math.min(contextWindow * 0.75, 600000)
-    : 120000;
+    ? Math.min(contextWindow * 0.75, 600_000)
+    : 120_000;
 
   return Math.min(agent.review?.maxInputTokens ?? ceiling, ceiling) * 4;
 }
@@ -199,13 +213,14 @@ export async function turnReport(
 ): Promise<TurnReport> {
   const turn = await runtime.settledTurn(agent, conversationId, submissionId);
 
-  if (!turn)
+  if (!turn) {
     return {
       rounds: 0,
       roundsSinceSkillWrite: null,
       roundsSinceMemoryWrite: null,
       digest: "",
     };
+  }
 
   return readTurnReport(turn.conversation, turn.entry, maxChars);
 }

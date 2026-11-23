@@ -16,8 +16,11 @@ export const retryLedger = () => {
     failed: (key: string, at: number) => void failedAt.set(key, at),
     forget: (key: string) => void failedAt.delete(key),
     waiting: (key: string, now: number) => {
-      for (const [each, at] of failedAt)
-        if (now - at >= RETRY_AFTER_MS) failedAt.delete(each);
+      for (const [each, at] of failedAt) {
+        if (now - at >= RETRY_AFTER_MS) {
+          failedAt.delete(each);
+        }
+      }
 
       return failedAt.has(key);
     },
@@ -70,8 +73,9 @@ export class Automations extends Context.Service<
             ? yield* events.eventWithSource(trigger.eventId)
             : undefined;
 
-        if (event === null)
+        if (event === null) {
           return yield* Effect.fail(new Error("The event is gone"));
+        }
 
         const { admitted, run } = yield* scripts.start(schedule, event);
 
@@ -99,7 +103,9 @@ export class Automations extends Context.Service<
         schedule: Schedule,
         trigger: AutomationTrigger,
       ): Effect.fn.Return<AutomationStarted, unknown> {
-        if (inFlight.has(schedule.id)) return { admitted: false };
+        if (inFlight.has(schedule.id)) {
+          return { admitted: false };
+        }
         inFlight.add(schedule.id);
 
         return yield* (

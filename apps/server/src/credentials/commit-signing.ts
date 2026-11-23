@@ -1,7 +1,8 @@
 import type http from "node:http";
 import { GUEST_CA_PATH } from "../../workspace-image/guest";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
-import { answerOverTls, type TlsAuthorities } from "./credential-proxy";
+import { answerOverTls } from "./credential-proxy";
+import type { TlsAuthorities } from "./credential-proxy";
 
 export const GUEST_SIGN_PATH = "/usr/local/bin/crumble-ssh-sign";
 
@@ -42,10 +43,16 @@ async function answerSigning(
   request: http.IncomingMessage,
   response: http.ServerResponse,
 ) {
-  const chunks: Buffer[] = [];
+  const chunks: Array<Buffer> = [];
   let size = 0;
 
   for await (const chunk of request) {
+    if (!Buffer.isBuffer(chunk)) {
+      throw new Error(
+        `Crumble signing: expected a raw body chunk, received ${typeof chunk}`,
+      );
+    }
+
     size += chunk.length;
 
     if (size > MAX_SIGNED_BYTES) {

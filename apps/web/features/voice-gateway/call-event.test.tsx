@@ -28,7 +28,7 @@ const event = (
   call: { callId: "c1", direction },
 });
 
-const text = (markup: string) => markup.replace(/<[^>]+>/gu, " ");
+const text = (markup: string) => markup.replaceAll(/<[^>]+>/gu, " ");
 
 test("a call marker reads Call started, the bot called you with its greeting, or how the call ended", () => {
   const started = renderToStaticMarkup(

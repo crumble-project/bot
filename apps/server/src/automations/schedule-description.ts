@@ -17,8 +17,9 @@ function cronText(cron: string) {
     ((fields.length === 5 || fields.length === 6) &&
       days.every((day) => day !== "*" && day !== "?")) ||
     hasBareWeekdayStep(cron)
-  )
+  ) {
     return cron;
+  }
 
   try {
     return cronstrue.toString(cron, { use24HourTimeFormat: true });
@@ -34,12 +35,17 @@ function timingDescription(
   >,
   sourceName?: string,
 ) {
-  if (schedule.eventSourceId)
+  if (schedule.eventSourceId) {
     return sourceName ? `On event · ${sourceName}` : "On event";
+  }
 
-  if (schedule.cron) return `${cronText(schedule.cron)} (${schedule.timezone})`;
+  if (schedule.cron) {
+    return `${cronText(schedule.cron)} (${schedule.timezone})`;
+  }
 
-  if (!schedule.runAt) return "Once";
+  if (!schedule.runAt) {
+    return "Once";
+  }
 
   const date = new Date(schedule.runAt);
 
@@ -61,7 +67,9 @@ function nextRunLabel(
   schedule: Pick<Schedule, "enabled" | "nextRunAt" | "timezone">,
   now: Date,
 ) {
-  if (!schedule.enabled || !schedule.nextRunAt) return "—";
+  if (!schedule.enabled || !schedule.nextRunAt) {
+    return "—";
+  }
 
   const next = new Date(schedule.nextRunAt);
   const minutes = Math.round((next.getTime() - now.getTime()) / 60_000);
@@ -128,12 +136,17 @@ const previewProblem = (text: string, description = "") => ({
 });
 
 function eventPreview(input: SchedulePreviewInput, sourceName?: string) {
-  if (input.eventSourceId === "")
+  if (input.eventSourceId === "") {
     return previewProblem("Choose an event source.");
+  }
 
-  if (!input.eventSourceId) return null;
+  if (!input.eventSourceId) {
+    return null;
+  }
 
-  if (!sourceName) return previewProblem("Event source not found.");
+  if (!sourceName) {
+    return previewProblem("Event source not found.");
+  }
 
   const description = `On event · ${sourceName}`;
 
@@ -145,21 +158,24 @@ function previewRun(
   now: Date,
   description: string,
 ) {
-  if (!validTimezone(input.timezone))
+  if (!validTimezone(input.timezone)) {
     return { problem: previewProblem("Choose a valid time zone.") };
+  }
 
-  if (!input.cron)
+  if (!input.cron) {
     return input.runAt
       ? { run: new Date(input.runAt) }
       : { problem: previewProblem("This schedule never runs.") };
+  }
 
-  if (hasBareWeekdayStep(input.cron))
+  if (hasBareWeekdayStep(input.cron)) {
     return {
       problem: previewProblem(
         "Weekday steps need * or a range, like 1-5/2.",
         description,
       ),
     };
+  }
 
   try {
     return { run: nextOccurrence(input.cron, input.timezone, now) };
@@ -217,7 +233,9 @@ export function previewSchedule(
 ) {
   const event = eventPreview(input, sourceName);
 
-  if (event) return event;
+  if (event) {
+    return event;
+  }
 
   const cronDescription = input.cron
     ? `${cronText(input.cron)} (${input.timezone})`
@@ -225,16 +243,19 @@ export function previewSchedule(
 
   const result = previewRun(input, now, cronDescription);
 
-  if (result.problem) return result.problem;
+  if (result.problem) {
+    return result.problem;
+  }
   const run = result.run;
 
-  if (input.cron && /(?:^|[,\s])H(?=$|[,(/\s])/.test(input.cron))
+  if (input.cron && /(?:^|[,\s])H(?=$|[,(/\s])/.test(input.cron)) {
     return {
       description: cronDescription,
       text: "Next run available after saving.",
       isProblem: false,
       nextRunAt: null,
     };
+  }
 
   const description = scheduleDescription({
     cron: input.cron ?? null,
@@ -245,7 +266,9 @@ export function previewSchedule(
     enabled: true,
   }).description;
 
-  if (run < now) return previewProblem("This time has passed.", description);
+  if (run < now) {
+    return previewProblem("This time has passed.", description);
+  }
 
   return {
     description,

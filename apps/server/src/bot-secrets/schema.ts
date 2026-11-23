@@ -6,8 +6,8 @@ import {
   primaryKey,
   sqliteTable,
   text,
-  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 import { agents } from "../bot-store/schema";
 

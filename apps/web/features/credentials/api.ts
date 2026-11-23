@@ -22,7 +22,7 @@ export const credentialsQuery = (id: string) =>
   queryOptions({
     queryKey: [...credentialsKey, id],
     queryFn: ({ signal }) =>
-      api<"agentCredentials">(`${agentPath(id)}/credentials`, { signal }),
+      api("agentCredentials", `${agentPath(id)}/credentials`, { signal }),
   });
 
 export const credentialPath = (id: string, name: string) =>

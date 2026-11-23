@@ -74,7 +74,7 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
   const { app, register, voiceGateway, service, runtime } = options;
   const gatewayAccess = accessOf(voiceGateway, noServices);
   const matched = new WeakMap<Request, string>();
-  const hash = (request: Request) => matched.get(request)!;
+  const hash = (request: Request) => matched.get(request) ?? "";
 
   // A callee's message is read only on its line's active outside call, from that call's conversation.
   const spokenOn = Effect.fnUntraced(function* (
@@ -84,29 +84,37 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
   ) {
     const request = parseRequestId(execution.requestId);
 
-    if (request.kind === "voice") return;
+    if (request.kind === "voice") {
+      return;
+    }
 
-    if (request.kind !== "outside-call")
+    if (request.kind !== "outside-call") {
       return yield* Effect.fail(
         new NotFound({ message: "Spoken message not found" }),
       );
+    }
 
     const gateway = yield* VoiceGateway;
     const line = yield* gateway.route(username, current, request.callId);
 
-    if (!line) return yield* Effect.die(tokenChanged());
+    if (!line) {
+      return yield* Effect.die(tokenChanged());
+    }
 
-    if (line.outside?.conversationId !== execution.conversationId)
+    if (line.outside?.conversationId !== execution.conversationId) {
       return yield* Effect.fail(
         new Conflict({ message: "The outside call is not active" }),
       );
+    }
   });
 
   app.use(`${VOICE_GATEWAY_PREFIX}*`, async (c, next) => {
     const token = c.req.header(VOICE_GATEWAY_TOKEN_HEADER);
     const current = token ? voiceGateway.matchToken(token) : null;
 
-    if (!current) return voiceGatewayRefusal();
+    if (!current) {
+      return voiceGatewayRefusal();
+    }
     matched.set(c.req.raw, current);
 
     return next();
@@ -125,7 +133,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
         },
       });
 
-      if (!cleanup) return close();
+      if (!cleanup) {
+        return close();
+      }
       onClose(cleanup);
     }),
   );
@@ -139,7 +149,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
       hash(c.req.raw),
     );
 
-    if (!line) return yield* Effect.die(tokenChanged());
+    if (!line) {
+      return yield* Effect.die(tokenChanged());
+    }
 
     // A callee's words reach only the call's conversation, never the bot chat.
     return c.json(
@@ -166,7 +178,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
 
     const line = yield* gateway.route(username, hash(c.req.raw), callId);
 
-    if (!line) return yield* Effect.die(tokenChanged());
+    if (!line) {
+      return yield* Effect.die(tokenChanged());
+    }
 
     return yield* Effect.promise(() =>
       chatEventStream(c, service, {
@@ -188,21 +202,28 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
     const gateway = yield* VoiceGateway;
     const line = yield* gateway.line(username, hash(c.req.raw));
 
-    if (!line) return yield* Effect.die(tokenChanged());
+    if (!line) {
+      return yield* Effect.die(tokenChanged());
+    }
 
     const executions = yield* ExecutionRepository;
     const execution = yield* executions.get(executionId);
 
-    if (!execution || execution.agentId !== line.botId)
+    if (!execution || execution.agentId !== line.botId) {
       return yield* Effect.fail(
         new NotFound({ message: "Spoken message not found" }),
       );
+    }
     yield* spokenOn(username, execution, hash(c.req.raw));
 
     const replyOf = async () => {
-      if (execution.status !== "done") return null;
+      if (execution.status !== "done") {
+        return null;
+      }
 
-      if (!execution.submissionId) return [];
+      if (!execution.submissionId) {
+        return [];
+      }
 
       return runtime.response(
         service.agent(line.botId),
@@ -220,8 +241,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
     const { username, callId } = c.req.valid("param");
     const gateway = yield* VoiceGateway;
 
-    if (!(yield* gateway.startCall(username, callId, hash(c.req.raw))))
+    if (!(yield* gateway.startCall(username, callId, hash(c.req.raw)))) {
       return yield* Effect.die(tokenChanged());
+    }
 
     return c.body(null, 204);
   });
@@ -234,7 +256,9 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
       hash(c.req.raw),
     );
 
-    if (!reported) return yield* Effect.die(tokenChanged());
+    if (!reported) {
+      return yield* Effect.die(tokenChanged());
+    }
 
     return c.body(null, 204);
   });

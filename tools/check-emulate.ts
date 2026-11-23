@@ -12,17 +12,11 @@ import {
   providerResponse,
 } from "../apps/server/src/contract/api-responses";
 import { EMULATE_MODEL_IDS } from "../apps/server/src/providers/emulate-profile";
-import {
-  Type,
-  type AssistantMessage,
-  type Context,
-} from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import { emulateModels } from "../apps/server/src/providers/emulate";
-import {
-  startEmulate,
-  startLocalApp,
-  type LocalProcess,
-} from "./emulate-process";
+import { startEmulate, startLocalApp } from "./emulate-process";
+import type { LocalProcess } from "./emulate-process";
 import {
   ERROR_TEXT,
   REPLY_TEXT,
@@ -54,10 +48,12 @@ async function transportSmoke() {
       maxRetries: 0,
     });
 
-    const deltas: string[] = [];
+    const deltas: Array<string> = [];
 
     for await (const event of stream) {
-      if (event.type === "text_delta") deltas.push(event.delta);
+      if (event.type === "text_delta") {
+        deltas.push(event.delta);
+      }
     }
 
     const answer = await stream.result();
@@ -113,25 +109,30 @@ async function transportSmoke() {
       final.errorMessage ?? "continuation failed",
     );
     assert.equal(textOf(final), TOOL_REPLY_TEXT);
-    console.log("PASS real Pi streaming and tool-result continuation");
+    process.stdout.write(
+      "PASS real Pi streaming and tool-result continuation\n",
+    );
   } finally {
     await emulator.close();
   }
 }
 
-async function closeChildren(children: readonly LocalProcess[]) {
+async function closeChildren(children: ReadonlyArray<LocalProcess>) {
   const closed = await Promise.allSettled(
     children.toReversed().map((child) => child.close()),
   );
 
-  const failures: unknown[] = [];
+  const failures: Array<unknown> = [];
 
   for (const result of closed) {
-    if (result.status === "rejected") failures.push(result.reason);
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
   }
 
-  if (failures.length)
+  if (failures.length) {
     throw new AggregateError(failures, "Local smoke cleanup failed");
+  }
 }
 
 type Snapshot = z.infer<typeof chatSnapshotResponse>;
@@ -180,7 +181,10 @@ async function until<T>(
     const value = await read();
     last = value;
 
-    if (accept(value)) return value;
+    if (accept(value)) {
+      return value;
+    }
+
     await delay(100);
   } while (Date.now() < deadline);
 
@@ -191,7 +195,7 @@ async function until<T>(
 
 async function applicationSmoke() {
   const dataDir = await mkdtemp(join(tmpdir(), "crumble-emulate-"));
-  const owned: LocalProcess[] = [];
+  const owned: Array<LocalProcess> = [];
   const bots = new Map<string, string>();
   const streams = new Set<AbortController>();
   let app: LocalProcess | undefined;
@@ -335,8 +339,9 @@ async function applicationSmoke() {
 
           if (
             !frame.split("\n").some((line) => line.trim() === "event: snapshot")
-          )
+          ) {
             continue;
+          }
 
           const data = frame
             .split("\n")
@@ -346,7 +351,9 @@ async function applicationSmoke() {
 
           const chat = chatSnapshotResponse.parse(JSON.parse(data));
 
-          if (accept(chat)) return chat;
+          if (accept(chat)) {
+            return chat;
+          }
         }
       }
     } finally {
@@ -404,8 +411,9 @@ async function applicationSmoke() {
     assert(hasReply(await turn(bot("local-reply")), REPLY_TEXT));
     const partials = new Set<string>();
     await observe(bot("local-stream"), (chat) => {
-      if (chat.partial && !hasReply(chat, STREAM_TEXT))
+      if (chat.partial && !hasReply(chat, STREAM_TEXT)) {
         partials.add(chat.partial);
+      }
 
       return chat.status === "idle" && hasReply(chat, STREAM_TEXT);
     });
@@ -575,16 +583,19 @@ async function applicationSmoke() {
       await listener.stop(true);
     }
 
-    console.log(
-      `PASS authenticated app: five models, fixed reply, ${partials.size} streamed partials, history_search, provider error, abort, strict mismatch, no fallback, restart persistence/new endpoint, occupied-port preservation`,
+    process.stdout.write(
+      `PASS authenticated app: five models, fixed reply, ${partials.size} streamed partials, history_search, provider error, abort, strict mismatch, no fallback, restart persistence/new endpoint, occupied-port preservation\n`,
     );
   } finally {
-    for (const stream of streams) stream.abort();
+    for (const stream of streams) {
+      stream.abort();
+    }
 
-    if (app)
+    if (app) {
       await Promise.allSettled(
         [...bots.values()].map((id) => api(`/v1/agents/${id}/abort`, {}, 204)),
       );
+    }
     await closeChildren(owned);
     await rm(dataDir, { recursive: true, force: true });
   }

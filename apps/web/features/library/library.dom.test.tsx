@@ -11,6 +11,11 @@ import {
 import { act } from "react";
 import { queryClient } from "@/lib/api";
 import { waitFor } from "@/test/wait-for";
+import { requestPath } from "@/test/request-path";
+
+/** `createObjectURL` accepts a `MediaSource` too; these tests only upload blobs. */
+const isBlob = (value: Blob | MediaSource): value is Blob =>
+  "arrayBuffer" in value;
 
 test("failed downloads show an error instead of an unhandled rejection", async () => {
   await withLibrary(
@@ -41,8 +46,8 @@ async function withLibrary(
   empty: boolean,
   run: (
     container: HTMLElement,
-    calls: string[],
-    blobs: Blob[],
+    calls: Array<string>,
+    blobs: Array<Blob>,
   ) => Promise<void>,
   many = false,
   failedDownload = false,
@@ -50,8 +55,8 @@ async function withLibrary(
   const window = new Window({ url: "http://localhost" });
   const original = Object.getOwnPropertyDescriptors(globalThis);
   const urlOriginal = Object.getOwnPropertyDescriptors(URL);
-  const calls: string[] = [];
-  const blobs: Blob[] = [];
+  const calls: Array<string> = [];
+  const blobs: Array<Blob> = [];
 
   const values = {
     window,
@@ -70,12 +75,17 @@ async function withLibrary(
     scrollTo: () => {},
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
   window.HTMLAnchorElement.prototype.click = () => {};
 
-  URL.createObjectURL = (blob) => {
-    if (blob instanceof Blob) blobs.push(blob);
+  URL.createObjectURL = (value) => {
+    if (!isBlob(value)) {
+      throw new Error("expected a Blob");
+    }
+
+    blobs.push(value);
 
     return "blob:test";
   };
@@ -87,7 +97,7 @@ async function withLibrary(
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
         calls.push(`${init?.method ?? "GET"} ${path}`);
 
         if (init?.method === "DELETE") {
@@ -100,7 +110,7 @@ async function withLibrary(
           const page = path.includes("before=")
             ? [
                 {
-                  id: "older",
+                  id: "00000000-0000-4000-8000-000000000003",
                   name: "older.zip",
                   mimeType: "application/zip",
                   size: 1,
@@ -108,7 +118,7 @@ async function withLibrary(
                 },
               ]
             : Array.from({ length: 50 }, (_, index) => ({
-                id: `file-${index}`,
+                id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
                 name: `file-${index}.zip`,
                 mimeType: "application/zip",
                 size: 1,
@@ -118,20 +128,20 @@ async function withLibrary(
           return Response.json(page);
         }
 
-        if (path.includes("?"))
+        if (path.includes("?")) {
           return Response.json(
             empty || deleted
               ? []
               : [
                   {
-                    id: "new",
+                    id: "00000000-0000-4000-8000-000000000001",
                     name: "page.html",
                     mimeType: "text/html",
                     size: 10,
                     createdAt: "2026-02-01",
                   },
                   {
-                    id: "old",
+                    id: "00000000-0000-4000-8000-000000000002",
                     name: "archive.zip",
                     mimeType: "application/zip",
                     size: 20,
@@ -139,12 +149,14 @@ async function withLibrary(
                   },
                 ],
           );
+        }
 
-        if (failedDownload)
+        if (failedDownload) {
           return Response.json(
             { error: "Download unavailable" },
             { status: 503 },
           );
+        }
 
         return new Response("<script>bad()</script>", {
           headers: { "Content-Type": "text/html" },
@@ -195,8 +207,11 @@ async function withLibrary(
     Object.defineProperty(URL, "revokeObjectURL", urlOriginal.revokeObjectURL);
 
     for (const key of Object.keys(values)) {
-      if (original[key]) Object.defineProperty(globalThis, key, original[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (original[key]) {
+        Object.defineProperty(globalThis, key, original[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -230,7 +245,11 @@ test("library pages using the last file ID", async () => {
       await waitFor(
         () => container.textContent?.includes("older.zip") === true,
       );
-      expect(calls.some((call) => call.includes("before=file-49"))).toBe(true);
+      expect(
+        calls.some((call) =>
+          call.includes("before=00000000-0000-4000-8000-000000000149"),
+        ),
+      ).toBe(true);
     },
     true,
   );

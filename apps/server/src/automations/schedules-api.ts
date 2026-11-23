@@ -5,7 +5,8 @@ import { EventRepository } from "../event-sources/event-repository";
 import { scheduleDescription, previewSchedule } from "./schedule-description";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { scheduleInput, type Schedule } from "../contract/schedules";
+import { scheduleInput } from "../contract/schedules";
+import type { Schedule } from "../contract/schedules";
 import { NotFound } from "../shared/errors";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler } from "./scheduler";
@@ -36,14 +37,17 @@ type ScheduleRoutesOptions = {
 const assertSchedule = Effect.fnUntraced(function* (id: string) {
   const schedules = yield* ScheduleRepository;
 
-  if (!(yield* schedules.get(id)))
+  if (!(yield* schedules.get(id))) {
     return yield* Effect.fail(new NotFound({ message: "Schedule not found" }));
+  }
 });
 
 const sourceName = Effect.fnUntraced(function* (
   sourceId: string | null | undefined,
 ) {
-  if (!sourceId) return;
+  if (!sourceId) {
+    return;
+  }
   const events = yield* EventRepository;
   const source = yield* events.getSource(sourceId);
 
@@ -103,7 +107,9 @@ const registerScheduleEditRoutes = ({ register }: ScheduleRoutesOptions) => {
       const scheduler = yield* Scheduler;
       const schedule = yield* scheduler.update(id, input);
 
-      if (!schedule) return c.json(null, 200);
+      if (!schedule) {
+        return c.json(null, 200);
+      }
 
       return c.json(yield* scheduleWithDescription(schedule), 200);
     },
@@ -112,10 +118,11 @@ const registerScheduleEditRoutes = ({ register }: ScheduleRoutesOptions) => {
   register(routes.deleteSchedule, function* (c) {
     const schedules = yield* ScheduleRepository;
 
-    if (!(yield* schedules.delete(c.req.param("id"))))
+    if (!(yield* schedules.delete(c.req.param("id")))) {
       return yield* Effect.fail(
         new NotFound({ message: "Schedule not found" }),
       );
+    }
 
     return c.body(null, 204);
   });

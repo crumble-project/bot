@@ -42,12 +42,17 @@ const lineRefusal = (
 ) => {
   const texts = REFUSALS[party];
 
-  if (!switchedOn(line, party, availability)) return texts.switchedOff;
+  if (!switchedOn(line, party, availability)) {
+    return texts.switchedOff;
+  }
 
-  if (!availability.connected)
+  if (!availability.connected) {
     return "No voice gateway that can place calls is connected.";
+  }
 
-  if (availability.active.has(line.username)) return texts.onCall;
+  if (availability.active.has(line.username)) {
+    return texts.onCall;
+  }
 
   return availability.ringing.has(line.username) ? texts.ringing : null;
 };
@@ -60,10 +65,13 @@ export const callLine = (
 ) => {
   const found = current.lines.find((served) => served.botId === botId);
 
-  if (!current.enabled)
+  if (!current.enabled) {
     return { refusal: "The voice gateway is disabled.", line: null };
+  }
 
-  if (!found) return { refusal: REFUSALS[party].noLine, line: null };
+  if (!found) {
+    return { refusal: REFUSALS[party].noLine, line: null };
+  }
   const refusal = lineRefusal(found, party, availability);
 
   return refusal ? { refusal, line: null } : { refusal, line: found };
@@ -75,14 +83,12 @@ export const callTarget = (
   availability: CallAvailability,
 ) => {
   const { refusal, line } = callLine(current, botId, "owner", availability);
+  const owner = current.ownerNumbers[0];
 
-  return line
-    ? {
-        refusal,
-        target: {
-          username: line.username,
-          to: current.ownerNumbers[0]!,
-        },
-      }
-    : { refusal, target: null };
+  return line && owner
+    ? { refusal, target: { username: line.username, to: owner } }
+    : {
+        refusal: refusal ?? "The owner has no number for calls.",
+        target: null,
+      };
 };

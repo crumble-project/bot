@@ -1,4 +1,5 @@
-import { type ComponentType, Fragment, useState } from "react";
+import { Fragment, useState } from "react";
+import type { ComponentType } from "react";
 import type { UseQueryOptions } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NewButton, PageToolbar, Page } from "@/components/page";
@@ -6,15 +7,12 @@ import type { Bot } from "@/features/bots/api";
 import { ALL, useBotQueries } from "@/features/bots/queries";
 import {
   ActionFailure,
-  type BotEntry,
   BotPills,
   DeleteSecretDialog,
-  type Named,
   SecretGroups,
-  type SecretRequest,
-  type Target,
   useSecretActions,
 } from "./bot-secrets";
+import type { BotEntry, Named, SecretRequest, Target } from "./bot-secrets";
 
 export type SecretRowProps<I> = {
   item: I;
@@ -24,7 +22,7 @@ export type SecretRowProps<I> = {
 };
 
 type SheetProps<I, R> = {
-  bots: Bot[];
+  bots: Array<Bot>;
   botId: string | null;
   existing: I | null;
   request: R | undefined;
@@ -47,11 +45,11 @@ type Editing<I, R> = Pick<SheetProps<I, R>, "botId" | "existing" | "request">;
 type SecretPageProps<D, I, R> = {
   text: SecretPageText;
   initialBot: string | undefined;
-  queryOf: (botId: string) => UseQueryOptions<D, Error, D, string[]>;
+  queryOf: (botId: string) => UseQueryOptions<D, Error, D, Array<string>>;
   pathOf: Parameters<typeof useSecretActions>[0];
   refresh: (botId: string) => Promise<void>;
-  itemsOf: (data: D) => I[];
-  requestsOf: (data: D) => R[];
+  itemsOf: (data: D) => Array<I>;
+  requestsOf: (data: D) => Array<R>;
   Row: ComponentType<SecretRowProps<I>>;
   Uses: ComponentType<{ target: Target<I>; onClose: () => void }>;
   Sheet: ComponentType<SheetProps<I, R>>;
@@ -103,8 +101,8 @@ function SecretList<D, I extends Named, R extends SecretRequest>({
   Row,
 }: {
   page: SecretPageState<D, I, R>;
-  itemsOf: (data: D) => I[];
-  requestsOf: (data: D) => R[];
+  itemsOf: (data: D) => Array<I>;
+  requestsOf: (data: D) => Array<R>;
   text: SecretPageText;
   Row: ComponentType<SecretRowProps<I>>;
 }) {
@@ -177,7 +175,7 @@ function SecretOverlays<I extends Named, R extends SecretRequest>({
   Uses,
   Sheet,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   editing: Editing<I, R> | null;
   onCloseEditor: () => void;
   actions: ReturnType<typeof useSecretActions<I>>;

@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import { logged } from "../shared/app-errors";
-import { activeExecution, type Execution } from "../shared/domain";
+import { activeExecution } from "../shared/domain";
+import type { Execution } from "../shared/domain";
 import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import { nowIso } from "../shared/time";
 import type { Activity } from "./bots";
@@ -39,19 +40,24 @@ export const botsNotifications = (context: BotsContext) => {
 
   const emit = (event: Activity) =>
     Effect.sync(() => {
-      for (const listener of activityListeners) listener(event);
+      for (const listener of activityListeners) {
+        listener(event);
+      }
     });
 
   const settled = Effect.fnUntraced(function* (executionId: string) {
     const execution = yield* executions.get(executionId);
 
-    if (!execution || activeExecution(execution)) return;
+    if (!execution || activeExecution(execution)) {
+      return;
+    }
 
-    for (const listener of settledListeners)
+    for (const listener of settledListeners) {
       yield* Effect.tryPromise(async () => listener(execution)).pipe(
         logged("Settled execution handler failed", executionId),
         Effect.forkIn(scope),
       );
+    }
   });
 
   const record = Effect.fnUntraced(function* (
@@ -60,8 +66,13 @@ export const botsNotifications = (context: BotsContext) => {
   ) {
     const current = yield* executions.get(execution.id);
 
-    if (!current || current.status === "cancelled" || current.status === "done")
+    if (
+      !current ||
+      current.status === "cancelled" ||
+      current.status === "done"
+    ) {
       return false;
+    }
 
     yield* executions.update(execution.id, patch);
 
@@ -72,7 +83,9 @@ export const botsNotifications = (context: BotsContext) => {
     execution: Execution,
     patch: Parameters<typeof record>[1],
   ) {
-    if (!(yield* record(execution, patch))) return false;
+    if (!(yield* record(execution, patch))) {
+      return false;
+    }
 
     yield* changed(execution.conversationId);
     yield* settled(execution.id);
@@ -86,7 +99,9 @@ export const botsNotifications = (context: BotsContext) => {
     const owner = yield* agents.get(answer.agentId);
 
     // Bots of another server in the same process are not this account's.
-    if (!owner) return;
+    if (!owner) {
+      return;
+    }
 
     const entryId = formatEntryId(owner.id, Number(answer.entryId));
 
@@ -111,7 +126,9 @@ export const botsNotifications = (context: BotsContext) => {
     });
     const [chat] = yield* context.conversations.list(owner.id, true);
 
-    if (chat) yield* changed(chat.id);
+    if (chat) {
+      yield* changed(chat.id);
+    }
   });
 
   return {

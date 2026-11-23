@@ -1,10 +1,12 @@
-import { play, sounds, themes, type ThemeName } from "cuelume";
+import { play, sounds, themes } from "cuelume";
+import type { ThemeName } from "cuelume";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Section, SettingRow, Page } from "@/components/page";
-import { type NoticeKind, playNotice, showNotice } from "@/lib/notifications";
+import { playNotice, showNotice } from "@/lib/notifications";
+import type { NoticeKind } from "@/lib/notifications";
 
-const NOTICES: { kind: NoticeKind; label: string }[] = [
+const NOTICES: Array<{ kind: NoticeKind; label: string }> = [
   { kind: "reply", label: "Reply" },
   { kind: "approval", label: "Approval" },
   { kind: "credential", label: "Credential or login" },

@@ -21,7 +21,9 @@ function useReadsImages(bot: ImageBot) {
   const vision = useQuery(visionModelQuery);
   const model = models.data?.find((each) => each.id === bot.model);
 
-  if (!model || !vision.data) return true;
+  if (!model || !vision.data) {
+    return true;
+  }
 
   return model.images || vision.data.visionModel !== null;
 }
@@ -32,22 +34,24 @@ export function ImageWarning({
   uploads,
 }: {
   bot: ImageBot;
-  uploads: Upload[];
+  uploads: Array<Upload>;
 }) {
   const reads = useReadsImages(bot);
 
-  if (reads || !uploads.some(sentAsImage)) return null;
+  if (reads || !uploads.some(sentAsImage)) {
+    return null;
+  }
 
   return (
     <p role="alert" className="text-xs text-destructive">
-      {bot.name}'s model ({bot.model}) can't read images. Choose a model that
-      accepts images in{" "}
+      {bot.name}&apos;s model ({bot.model}) can&apos;t read images. Choose a
+      model that accepts images in{" "}
       <Link
         to="/bots/$botId/edit"
         params={{ botId: bot.id }}
         className="underline"
       >
-        {bot.name}'s profile
+        {bot.name}&apos;s profile
       </Link>
       , or set a{" "}
       <Link to="/settings/vision-model" className="underline">

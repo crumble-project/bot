@@ -1,9 +1,7 @@
-import { type ReactNode, useState } from "react";
-import {
-  type UseQueryResult,
-  useInfiniteQuery,
-  useMutation,
-} from "@tanstack/react-query";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { IconBell, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -29,7 +27,8 @@ import {
   ErrorAlert,
 } from "@/components/page";
 import type { Bot } from "@/features/bots/api";
-import { send, type RoutePath } from "@/lib/api";
+import { send } from "@/lib/api";
+import type { RoutePath } from "@/lib/api";
 import { ALL } from "@/features/bots/queries";
 import { ago, when } from "@/lib/time";
 import { BotAvatar } from "@/components/bot-avatar";
@@ -39,7 +38,7 @@ const USES_PAGE = 50;
 
 export type Target<T> = { botId: string; item: T };
 
-export type Named = { name: string; hosts: string[] };
+export type Named = { name: string; hosts: Array<string> };
 
 export type SecretRequest = Named & { reason: string };
 
@@ -57,10 +56,10 @@ export const matches = (item: Named, needle: string) =>
   item.hosts.some((host) => host.includes(needle));
 
 function scopedEntries<D>(
-  entries: BotEntry<D>[],
+  entries: Array<BotEntry<D>>,
   scope: string,
   needle: string,
-  itemsOf: (data: D) => Named[],
+  itemsOf: (data: D) => Array<Named>,
 ) {
   const inScope = entries.filter(
     (entry) => scope === ALL || entry.bot.id === scope,
@@ -86,7 +85,7 @@ export function BotPills<D>({
   countOf,
 }: {
   label: string;
-  entries: BotEntry<D>[];
+  entries: Array<BotEntry<D>>;
   scope: string;
   onScope: (scope: string) => void;
   countOf: (entry: BotEntry<D>) => number;
@@ -151,9 +150,9 @@ function WaitingRequests<D, R extends SecretRequest>({
   onAdd,
   onDecline,
 }: {
-  entries: BotEntry<D>[];
+  entries: Array<BotEntry<D>>;
   needle: string;
-  requestsOf: (data: D) => R[];
+  requestsOf: (data: D) => Array<R>;
   onAdd: (botId: string, request: R) => void;
   onDecline: (botId: string, name: string) => void;
 }) {
@@ -163,7 +162,9 @@ function WaitingRequests<D, R extends SecretRequest>({
     ),
   );
 
-  if (!requests.length) return null;
+  if (!requests.length) {
+    return null;
+  }
 
   return (
     <Section title="Waiting for you" icon={<IconBell className="size-4" />}>
@@ -215,7 +216,7 @@ export function SecretRowName({
   onEdit,
 }: {
   name: string;
-  hosts: string[];
+  hosts: Array<string>;
   mono?: boolean;
   onEdit?: (() => void) | undefined;
 }) {
@@ -232,10 +233,11 @@ export function SecretRowName({
     </>
   );
 
-  if (!onEdit)
+  if (!onEdit) {
     return (
       <div className="flex min-w-0 flex-1 items-baseline gap-2">{label}</div>
     );
+  }
 
   return (
     <button
@@ -259,7 +261,7 @@ export function LastUse({
   used: string;
   never: string;
 }) {
-  if (lastError)
+  if (lastError) {
     return (
       <span
         className="hidden max-w-64 shrink truncate text-xs text-destructive sm:block"
@@ -268,6 +270,7 @@ export function LastUse({
         {lastError}
       </span>
     );
+  }
 
   return (
     <span
@@ -312,7 +315,7 @@ export function SecretRowMenu({
   );
 }
 
-export const defaultOwner = (botId: string | null, bots: Bot[]) =>
+export const defaultOwner = (botId: string | null, bots: Array<Bot>) =>
   botId ?? bots[0]?.id ?? "";
 
 export function SecretSheet({
@@ -334,7 +337,7 @@ export function SecretSheet({
   reason?: string | undefined;
   error: string | undefined;
   ready: boolean;
-  bots: Bot[];
+  bots: Array<Bot>;
   botId: string | null;
   owner: string;
   onOwner: (owner: string) => void;
@@ -369,8 +372,8 @@ export function SecretSheet({
 type SecretUse = { id: string; at: string };
 
 function useSecretUses<U extends SecretUse>(
-  queryKey: readonly unknown[],
-  load: (query: string, signal: AbortSignal) => Promise<U[]>,
+  queryKey: ReadonlyArray<unknown>,
+  load: (query: string, signal: AbortSignal) => Promise<Array<U>>,
 ) {
   return useInfiniteQuery({
     queryKey,
@@ -389,7 +392,7 @@ function UseRows<U extends SecretUse>({
   rows,
   children,
 }: {
-  rows: U[];
+  rows: Array<U>;
   children: (use: U) => ReactNode;
 }) {
   return (
@@ -418,8 +421,8 @@ export function UsesDialog<U extends SecretUse>({
   title: string;
   description: string;
   empty: string;
-  queryKey: readonly unknown[];
-  load: (query: string, signal: AbortSignal) => Promise<U[]>;
+  queryKey: ReadonlyArray<unknown>;
+  load: (query: string, signal: AbortSignal) => Promise<Array<U>>;
   children: (use: U) => ReactNode;
   onClose: () => void;
 }) {
@@ -428,12 +431,17 @@ export function UsesDialog<U extends SecretUse>({
   const rows = uses.data?.pages.flat() ?? [];
 
   const contentOf = () => {
-    if (uses.isPending) return <Skeleton className="h-32" />;
+    if (uses.isPending) {
+      return <Skeleton className="h-32" />;
+    }
 
-    if (uses.isError) return <ErrorAlert>{uses.error.message}</ErrorAlert>;
+    if (uses.isError) {
+      return <ErrorAlert>{uses.error.message}</ErrorAlert>;
+    }
 
-    if (rows.length === 0)
+    if (rows.length === 0) {
       return <p className="text-sm text-muted-foreground">{empty}</p>;
+    }
 
     return <UseRows rows={rows}>{children}</UseRows>;
   };
@@ -450,7 +458,9 @@ export function UsesDialog<U extends SecretUse>({
           <Button
             variant="outline"
             disabled={uses.isFetchingNextPage}
-            onClick={() => uses.fetchNextPage()}
+            onClick={() => {
+              void uses.fetchNextPage();
+            }}
           >
             Load More
           </Button>
@@ -473,11 +483,11 @@ export function SecretGroups<D, I extends Named, R extends SecretRequest>({
   note,
   children,
 }: {
-  entries: BotEntry<D>[];
+  entries: Array<BotEntry<D>>;
   scope: string;
   needle: string;
-  itemsOf: (data: D) => I[];
-  requestsOf: (data: D) => R[];
+  itemsOf: (data: D) => Array<I>;
+  requestsOf: (data: D) => Array<R>;
   onAdd: (botId: string, request: R) => void;
   onDecline: (botId: string, name: string) => void;
   empty: string;
@@ -557,7 +567,9 @@ export function ActionFailure({
 }) {
   const failed = actions.remove.error ?? actions.decline.error;
 
-  if (!failed) return null;
+  if (!failed) {
+    return null;
+  }
 
   return <ErrorAlert>{failed.message}</ErrorAlert>;
 }

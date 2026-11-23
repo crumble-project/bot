@@ -1,6 +1,7 @@
 import type { Context } from "@earendil-works/chord";
 import { hostMatches } from "../shared/domain";
-import { loginFieldInput, type LoginField } from "../contract/secrets";
+import { loginFieldInput } from "../contract/secrets";
+import type { LoginField } from "../contract/secrets";
 import type { LoginFill, LoginSummary } from "../logins/login-fill";
 import type { ComputerUseArgs } from "./computer-use-args";
 import type { ComputerUseResult } from "./computer-use";
@@ -20,8 +21,8 @@ import {
   refOf,
   scrubText,
   textResult,
-  type ComputerUseState,
 } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 export type DesktopFill = {
   value: string;
@@ -30,7 +31,7 @@ export type DesktopFill = {
 };
 
 export type DesktopFills = {
-  list(): Promise<DesktopFill[]>;
+  list(): Promise<Array<DesktopFill>>;
   add(fill: DesktopFill): Promise<void>;
 };
 
@@ -60,24 +61,28 @@ function pageOf(
   const latest = state.lastRead;
   const url = currentPage(state);
 
-  if (!latest || url === undefined)
+  if (!latest || url === undefined) {
     return {
       refused: "read the sign-in page, then fill_login with a ref from it",
     };
+  }
 
   const element = refOf(state, ref);
 
-  if (!element)
+  if (!element) {
     return { refused: `${ref} is not in the latest read; read the page again` };
+  }
 
-  if (element.frame !== "main")
+  if (element.frame !== "main") {
     return {
       refused:
         "fill_login fills fields of the page itself, not of embedded frames",
     };
+  }
 
-  if (element.role !== "textbox")
+  if (element.role !== "textbox") {
     return { refused: `${ref} is not a text field` };
+  }
 
   return { latest, url };
 }
@@ -86,25 +91,30 @@ function hostOf(url: string): { host: string } | Refusal {
   const host = pageHost(url);
   const secure = URL.canParse(url) && new URL(url).protocol === "https:";
 
-  if (!secure || !host)
+  if (!secure || !host) {
     return {
       refused: `fill_login fills https pages only, and this page is ${url}`,
     };
+  }
 
   return { host };
 }
 
 function loginFor(
-  logins: LoginSummary[],
+  logins: Array<LoginSummary>,
   name: string,
   host: string,
 ): LoginSummary | Refusal {
   const login = logins.find((each) => each.name === name);
   const covering = logins.filter((each) => hostMatches(each.hosts, host));
 
-  if (login && hostMatches(login.hosts, host)) return login;
+  if (login && hostMatches(login.hosts, host)) {
+    return login;
+  }
 
-  if (!covering.length) return { refused: noLoginFor(host) };
+  if (!covering.length) {
+    return { refused: noLoginFor(host) };
+  }
 
   const names = covering.map((each) => each.name).join(", ");
 
@@ -122,23 +132,30 @@ async function targetOf(
 ): Promise<Target | Refusal> {
   const field = loginFieldInput.safeParse(args.field);
 
-  if (!args.login || !field.success || !args.ref)
+  if (!args.login || !field.success || !args.ref) {
     return {
       refused:
         "fill_login needs login, field (username, password, or one_time_code), and ref",
     };
+  }
 
   const page = pageOf(state, args.ref);
 
-  if ("refused" in page) return page;
+  if ("refused" in page) {
+    return page;
+  }
 
   const host = hostOf(page.url);
 
-  if ("refused" in host) return host;
+  if ("refused" in host) {
+    return host;
+  }
 
   const login = loginFor(await logins.list(), args.login, host.host);
 
-  if ("refused" in login) return login;
+  if ("refused" in login) {
+    return login;
+  }
 
   return {
     login,
@@ -157,7 +174,9 @@ const label = (name: string, field: LoginField) => `[login ${name} ${field}]`;
 async function readValue(logins: LoginFill, target: Target) {
   const read = await logins.read(target.login.name, target.field);
 
-  if ("missing" in read) return { refused: read.missing };
+  if ("missing" in read) {
+    return { refused: read.missing };
+  }
 
   const at = new Date().toISOString();
   const error = "unreadable" in read ? read.unreadable : null;
@@ -176,7 +195,9 @@ async function readValue(logins: LoginFill, target: Target) {
 
 // Stored before typing: once typed, the password is on the desktop even if this job ends right after.
 async function remember(state: ComputerUseState, fill: DesktopFill) {
-  if (state.filled.has(fill.value) && state.browsers.has(fill.browser)) return;
+  if (state.filled.has(fill.value) && state.browsers.has(fill.browser)) {
+    return;
+  }
 
   await state.fills?.add(fill);
   state.filled.set(fill.value, fill.label);
@@ -188,7 +209,9 @@ const UNKNOWN_CHROMIUM = "unknown";
 async function chromiumInstance(state: ComputerUseState, context: Context) {
   const browser = (await listWindows(state, context)).find(isChromium);
 
-  if (!browser) return;
+  if (!browser) {
+    return;
+  }
 
   const started = (
     await sh(state.shell, `ps -o lstart= -p ${browser.pid}`, context)
@@ -201,9 +224,13 @@ export async function passwordMayShow(
   state: ComputerUseState,
   context: Context,
 ) {
-  if (!state.browsers.size) return false;
+  if (!state.browsers.size) {
+    return false;
+  }
 
-  if (state.browsers.has(UNKNOWN_CHROMIUM)) return true;
+  if (state.browsers.has(UNKNOWN_CHROMIUM)) {
+    return true;
+  }
 
   const current = await chromiumInstance(state, context);
 
@@ -218,23 +245,30 @@ export async function fillLogin(
   args: ComputerUseArgs,
   context: Context,
 ): Promise<ComputerUseResult> {
-  if (!state.logins) return refused("this bot has no logins here");
+  if (!state.logins) {
+    return refused("this bot has no logins here");
+  }
 
   const target = await targetOf(state, state.logins, args);
 
-  if ("refused" in target) return refused(target.refused);
+  if ("refused" in target) {
+    return refused(target.refused);
+  }
 
   const read = await readValue(state.logins, target);
 
-  if ("refused" in read) return refused(read.refused);
+  if ("refused" in read) {
+    return refused(read.refused);
+  }
 
   // Only a password is a secret here; usernames and one-time codes may reach the model.
-  if (target.field === "password")
+  if (target.field === "password") {
     await remember(state, {
       value: read.value,
       label: label(target.login.name, target.field),
       browser: (await chromiumInstance(state, context)) ?? UNKNOWN_CHROMIUM,
     });
+  }
 
   const { reply } = await driverCall(
     state,
@@ -243,7 +277,7 @@ export async function fillLogin(
     context,
   );
 
-  if (refusalOf(reply))
+  if (refusalOf(reply)) {
     return textResult(
       scrubText(
         state,
@@ -251,6 +285,7 @@ export async function fillLogin(
       ),
       true,
     );
+  }
 
   return textResult(
     `filled ${target.field.replaceAll("_", " ")} of login ${target.login.name} on ${target.host}`,
@@ -261,7 +296,9 @@ export function scrubFilled(
   state: ComputerUseState,
   result: ComputerUseResult,
 ): ComputerUseResult {
-  if (!state.filled.size) return result;
+  if (!state.filled.size) {
+    return result;
+  }
 
   return {
     ...result,

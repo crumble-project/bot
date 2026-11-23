@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
@@ -12,7 +12,8 @@ import { GitHubApps } from "./github-apps";
 const github = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.mapError((error) =>
-      error instanceof GitHubUnavailable
+      Predicate.isTagged(error, "GitHubUnavailable") &&
+      Schema.is(GitHubUnavailable)(error)
         ? new Unavailable({ message: error.message })
         : error,
     ),
@@ -20,7 +21,7 @@ const github = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 type GitHubRoutes = {
   register: Register<Env, GitHubApps | GitHubAppUsers | GitHubAccounts>;
-  botIdsOf: (botIds: readonly string[]) => string[];
+  botIdsOf: (botIds: ReadonlyArray<string>) => Array<string>;
 };
 
 function registerAppRoutes(routeSet: GitHubRoutes) {
@@ -181,8 +182,10 @@ export function registerGitHubAppRoutes(options: {
 }) {
   const { register, service } = options;
 
-  const botIdsOf = (botIds: readonly string[]) => {
-    for (const botId of botIds) service.agent(botId);
+  const botIdsOf = (botIds: ReadonlyArray<string>) => {
+    for (const botId of botIds) {
+      service.agent(botId);
+    }
 
     return [...new Set(botIds)];
   };

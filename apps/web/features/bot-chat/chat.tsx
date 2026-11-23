@@ -4,24 +4,16 @@ import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
-import {
-  type Bot,
-  agentPath,
-  botsQuery,
-  invalidateBots,
-} from "@/features/bots/api";
-import {
-  type ChatSnapshot,
-  type Message,
-  chatQuery,
-} from "@/features/chat/api";
+import { agentPath, botsQuery, invalidateBots } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
+import { chatQuery } from "@/features/chat/api";
+import type { ChatSnapshot, Message } from "@/features/chat/api";
 import { useChatJobs } from "@/features/jobs/chat-jobs";
 import { send } from "@/lib/api";
 import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
 import { LiveBotAvatar } from "./avatar";
 import { isBusy, workingAvatar, workingLabel, useWorking } from "./working";
 import {
-  type Conversation,
   ConversationEmpty,
   ConversationError,
   ConversationLoading,
@@ -30,6 +22,7 @@ import {
   SendError,
   useConversation,
 } from "@/features/chat/conversation";
+import type { Conversation } from "@/features/chat/conversation";
 import type { ConversationTarget } from "@/features/chat/conversation-target";
 import { DetailsPanel, DetailsSheet } from "./details";
 import { ImageWarning } from "./image-warning";
@@ -46,7 +39,9 @@ import { MobileSidebarTrigger } from "@/components/page";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 
 const replyToOf = (replyTo: Message | null, botName: string) => {
-  if (!replyTo) return;
+  if (!replyTo) {
+    return;
+  }
 
   return replyTo.role === "user" ? "You" : botName;
 };
@@ -85,13 +80,19 @@ function useDetails() {
   };
 
   const showDetails = () => {
-    if (!matchMedia(WIDE).matches) return setSheet(true);
+    if (!matchMedia(WIDE).matches) {
+      return setSheet(true);
+    }
 
-    if (!job && !call) return toggleDetails();
+    if (!job && !call) {
+      return toggleDetails();
+    }
 
     setJob(null);
 
-    if (!details) toggleDetails();
+    if (!details) {
+      toggleDetails();
+    }
   };
 
   return {
@@ -126,8 +127,10 @@ const botConversation = (id: string): ConversationTarget<ChatSnapshot> => {
   };
 };
 
-function mentionableBots(bot: Bot, bots: Bot[]) {
-  if (!bot.tools.includes(BOT_TOOL.delegate)) return [];
+function mentionableBots(bot: Bot, bots: Array<Bot>) {
+  if (!bot.tools.includes(BOT_TOOL.delegate)) {
+    return [];
+  }
 
   return bots.filter((other) => other.enabled && other.id !== bot.id);
 }
@@ -187,11 +190,13 @@ function ChatMessage({
   chat: CardChat;
   onReply: (message: Message) => void;
 }) {
-  if (message.role === "assistant")
+  if (message.role === "assistant") {
     return <BotMessage message={message} onReply={onReply} />;
+  }
 
-  if (message.role === "event")
+  if (message.role === "event") {
     return <EventMessage message={message} chat={chat} />;
+  }
 
   return <ToolResultRow message={message} chat={chat} />;
 }
@@ -200,7 +205,7 @@ function ChatFailure({ error }: { error: string }) {
   return (
     <MessageScrollerItem messageId="failure">
       <Alert variant="destructive">
-        <AlertTitle>The bot couldn't finish</AlertTitle>
+        <AlertTitle>The bot couldn&apos;t finish</AlertTitle>
         <AlertDescription className="flex flex-col items-start gap-2">
           {error}
           <Button
@@ -302,7 +307,7 @@ function ChatComposer({
   onStop,
 }: {
   bot: Bot;
-  bots: Bot[];
+  bots: Array<Bot>;
   draftKey: string;
   sending: Conversation["sending"];
   running: boolean;
@@ -353,7 +358,7 @@ function SidePanel({
   onCloseCall: () => void;
   onCloseDetails: () => void;
 }) {
-  if (job)
+  if (job) {
     return (
       <JobPanel
         key={`${job.kind}:${job.name}`}
@@ -362,8 +367,9 @@ function SidePanel({
         onClose={onCloseJob}
       />
     );
+  }
 
-  if (call)
+  if (call) {
     return (
       <CallPanel
         key={call}
@@ -373,6 +379,7 @@ function SidePanel({
         onClose={onCloseCall}
       />
     );
+  }
 
   return details ? <DetailsPanel bot={bot} onClose={onCloseDetails} /> : null;
 }
@@ -397,11 +404,17 @@ export function Chat({ botId }: { botId: string }) {
 
   const jobStatus = useChatJobs(botId, conversation.messages);
 
-  if (snapshot.isError) return <ConversationError error={snapshot.error} />;
+  if (snapshot.isError) {
+    return <ConversationError error={snapshot.error} />;
+  }
 
-  if (bots.isSuccess && !bot) return <BotNotFound />;
+  if (bots.isSuccess && !bot) {
+    return <BotNotFound />;
+  }
 
-  if (!snapshot.data || !bot) return <ConversationLoading />;
+  if (!snapshot.data || !bot) {
+    return <ConversationLoading />;
+  }
 
   const { status, error } = snapshot.data;
   const running = status === "running";

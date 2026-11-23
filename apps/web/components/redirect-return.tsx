@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Link,
-  useNavigate,
-  type UseNavigateResult,
-} from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert } from "@/components/page";
 import { Spinner } from "@/components/ui/spinner";

@@ -60,7 +60,7 @@ const publicSigningKey = (privateKey: string, login: string) =>
 export class GitHubAccounts extends Context.Service<
   GitHubAccounts,
   {
-    readonly list: Effect.Effect<GitHubAccount[]>;
+    readonly list: Effect.Effect<Array<GitHubAccount>>;
     readonly get: (id: string) => Effect.Effect<GitHubAccount, NotFound>;
     readonly add: (
       token: SecretInput,
@@ -92,7 +92,9 @@ export class GitHubAccounts extends Context.Service<
       ) {
         const key = yield* serverSecrets.get(signingKeyKey(id));
 
-        if (!key) return yield* Effect.die(`Account ${id} has no signing key`);
+        if (!key) {
+          return yield* Effect.die(`Account ${id} has no signing key`);
+        }
 
         return key;
       });
@@ -138,8 +140,9 @@ export class GitHubAccounts extends Context.Service<
       const get = Effect.fn("GitHubAccounts.get")(function* (id: string) {
         const found = yield* row(id);
 
-        if (!found)
+        if (!found) {
           return yield* new NotFound({ message: "Machine account not found" });
+        }
 
         return yield* accountOf(found);
       });
@@ -164,10 +167,11 @@ export class GitHubAccounts extends Context.Service<
           .where(eq(githubAccounts.userId, found.id))
           .pipe(Effect.orDie);
 
-        if (existing)
+        if (existing) {
           return yield* new Conflict({
             message: `${found.login} is already added; replace its token instead`,
           });
+        }
       });
 
       const add = Effect.fn("GitHubAccounts.add")(function* (
@@ -200,8 +204,9 @@ export class GitHubAccounts extends Context.Service<
       ) {
         const found = yield* row(id);
 
-        if (!found)
+        if (!found) {
           return yield* new NotFound({ message: "Machine account not found" });
+        }
 
         const owner = yield* secrets.save(tokenKey(id), token, (value) =>
           userOf(value).pipe(
@@ -238,7 +243,9 @@ export class GitHubAccounts extends Context.Service<
           .where(eq(githubAccountBots.agentId, agentId))
           .pipe(Effect.orDie);
 
-        if (!found) return;
+        if (!found) {
+          return;
+        }
         const key = yield* privateKey(found.account.id);
 
         return {
@@ -283,7 +290,7 @@ export const accountMembership = Effect.gen(function* () {
 
   const assign = Effect.fn("accountMembership.assign")(function* (
     id: string,
-    botIds: readonly string[],
+    botIds: ReadonlyArray<string>,
   ) {
     const current = yield* accounts.get(id);
     const { added, removed } = assignmentChange(current.botIds, botIds);
@@ -301,23 +308,25 @@ export const accountMembership = Effect.gen(function* () {
           .pipe(Effect.orDie)
       : [];
 
-    if (clashing.length)
+    if (clashing.length) {
       return yield* new Conflict({
         message:
           "A bot already acts as another machine account; take it off that account first",
       });
+    }
 
     const at = yield* nowIso;
 
     yield* db
       .transaction(() =>
         Effect.gen(function* () {
-          if (removed.length)
+          if (removed.length) {
             yield* db
               .delete(githubAccountBots)
               .where(inArray(githubAccountBots.agentId, removed));
+          }
 
-          if (added.length)
+          if (added.length) {
             yield* db.insert(githubAccountBots).values(
               added.map((agentId) => ({
                 agentId,
@@ -325,6 +334,7 @@ export const accountMembership = Effect.gen(function* () {
                 assignedAt: at,
               })),
             );
+          }
         }),
       )
       .pipe(Effect.orDie);

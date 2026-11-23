@@ -1,12 +1,12 @@
 import {
   createContext,
-  type ReactNode,
   useCallback,
   useContext,
   useId,
   useMemo,
   useState,
 } from "react";
+import type { ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -18,17 +18,16 @@ import type { Bot } from "@/features/bots/api";
 import { cn } from "@/lib/utils";
 import { BotToggles, toggled } from "./skill-assignment";
 import { invalidateSkills } from "./skill-cache";
-import {
-  applyBulkAction,
-  skillLabel,
-  type BulkAction,
-  type BulkMessage,
-  type SelectableSkill,
+import { applyBulkAction, skillLabel } from "./bulk-skill-actions";
+import type {
+  BulkAction,
+  BulkMessage,
+  SelectableSkill,
 } from "./bulk-skill-actions";
 
 type Selection = {
   selected: Set<string>;
-  change: (ids: string[], on: boolean) => void;
+  change: (ids: Array<string>, on: boolean) => void;
   busy: boolean;
 };
 
@@ -47,14 +46,16 @@ export function SelectSkills({
   label,
   place = "row",
 }: {
-  ids: string[];
+  ids: Array<string>;
   label: string;
   place?: keyof typeof SHOWN;
 }) {
   const selection = useContext(SelectionContext);
   const id = useId();
 
-  if (!selection || !ids.length) return null;
+  if (!selection || !ids.length) {
+    return null;
+  }
   const count = ids.filter((id) => selection.selected.has(id)).length;
 
   const box = (
@@ -67,7 +68,9 @@ export function SelectSkills({
         count && count < ids.length ? "mixed" : count === ids.length
       }
       ref={(node) => {
-        if (node) node.indeterminate = count > 0 && count < ids.length;
+        if (node) {
+          node.indeterminate = count > 0 && count < ids.length;
+        }
       }}
       checked={count === ids.length}
       disabled={selection.busy}
@@ -75,7 +78,9 @@ export function SelectSkills({
     />
   );
 
-  if (place === "row") return box;
+  if (place === "row") {
+    return box;
+  }
 
   return (
     <label
@@ -91,7 +96,7 @@ export function SelectSkills({
   );
 }
 
-const ACTIONS: { action: BulkAction; label: string }[] = [
+const ACTIONS: Array<{ action: BulkAction; label: string }> = [
   { action: "update", label: "Update" },
   { action: "assign", label: "Assign to bots" },
   { action: "remove", label: "Remove from bots" },
@@ -151,7 +156,7 @@ function BulkActionBar({
   onAction,
   onClear,
 }: {
-  picked: SelectableSkill[];
+  picked: Array<SelectableSkill>;
   busy: boolean;
   hasBots: boolean;
   onAction: (action: BulkAction) => void;
@@ -160,7 +165,9 @@ function BulkActionBar({
   const notInstalled = picked.filter((skill) => !skill.installed);
   const disabled = new Set<BulkAction>();
 
-  if (notInstalled.length === picked.length) disabled.add("update");
+  if (notInstalled.length === picked.length) {
+    disabled.add("update");
+  }
 
   if (!hasBots) {
     disabled.add("assign");
@@ -205,8 +212,8 @@ function BotTargetsSheet({
   onClose,
 }: {
   action: "assign" | "remove";
-  bots: Bot[];
-  picked: SelectableSkill[];
+  bots: Array<Bot>;
+  picked: Array<SelectableSkill>;
   targets: Set<string>;
   busy: boolean;
   onTargets: (targets: Set<string>) => void;
@@ -242,13 +249,16 @@ function BotTargetsSheet({
 function useCheckedSkills() {
   const [selected, setSelected] = useState(new Set<string>());
 
-  const change = useCallback((ids: string[], on: boolean) => {
+  const change = useCallback((ids: Array<string>, on: boolean) => {
     setSelected((old) => {
       const next = new Set(old);
 
       for (const id of ids) {
-        if (on) next.add(id);
-        else next.delete(id);
+        if (on) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
       }
 
       return next;
@@ -258,11 +268,11 @@ function useCheckedSkills() {
   return { selected, setSelected, change };
 }
 
-function useBulkSkills(bots: Bot[], skills: SelectableSkill[]) {
+function useBulkSkills(bots: Array<Bot>, skills: Array<SelectableSkill>) {
   const { selected, setSelected, change } = useCheckedSkills();
   const [dialog, setDialog] = useState<BulkAction | null>(null);
   const [targets, setTargets] = useState(new Set<string>());
-  const [report, setReport] = useState<BulkMessage[]>([]);
+  const [report, setReport] = useState<Array<BulkMessage>>([]);
   const picked = skills.filter((skill) => selected.has(skill.id));
 
   const bulk = useMutation({
@@ -291,8 +301,9 @@ function useBulkSkills(bots: Bot[], skills: SelectableSkill[]) {
   };
 
   const start = (action: BulkAction) => {
-    if (action === "update") run(action);
-    else {
+    if (action === "update") {
+      run(action);
+    } else {
       setTargets(new Set());
       setDialog(action);
     }
@@ -313,8 +324,10 @@ function useBulkSkills(bots: Bot[], skills: SelectableSkill[]) {
   };
 }
 
-function BulkReport({ report }: { report: BulkMessage[] }) {
-  if (!report.length) return null;
+function BulkReport({ report }: { report: Array<BulkMessage> }) {
+  if (!report.length) {
+    return null;
+  }
 
   return (
     <Alert>
@@ -333,7 +346,7 @@ function BulkDialogs({
   bots,
   bulk: { picked, busy, dialog, setDialog, targets, setTargets, run },
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   bulk: ReturnType<typeof useBulkSkills>;
 }) {
   return (
@@ -341,7 +354,9 @@ function BulkDialogs({
       <AlertDialog
         open={dialog === "delete"}
         onOpenChange={(open) => {
-          if (!open) setDialog(null);
+          if (!open) {
+            setDialog(null);
+          }
         }}
       >
         <ConfirmDeleteContent
@@ -372,9 +387,9 @@ export function BulkSkills({
   visibleIds,
   children,
 }: {
-  bots: Bot[];
-  skills: SelectableSkill[];
-  visibleIds: string[];
+  bots: Array<Bot>;
+  skills: Array<SelectableSkill>;
+  visibleIds: Array<string>;
   children: ReactNode;
 }) {
   const bulk = useBulkSkills(bots, skills);

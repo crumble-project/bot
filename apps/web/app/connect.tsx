@@ -60,18 +60,23 @@ function usePasskeySignIn(mode: Mode) {
   });
 
   useEffect(() => {
-    if (mode !== "sign-in" || !passkeysAvailable) return;
+    if (mode !== "sign-in" || !passkeysAvailable) {
+      return;
+    }
     let cancelled = false;
 
     void (async () => {
       const available =
         await PublicKeyCredential.isConditionalMediationAvailable?.();
 
-      if (!available || cancelled) return;
+      if (!available || cancelled) {
+        return;
+      }
 
       try {
-        if (passkeyDone(await authClient.signIn.passkey({ autoFill: true })))
+        if (passkeyDone(await authClient.signIn.passkey({ autoFill: true }))) {
           enter();
+        }
       } catch {
         // A failed autofill sign-in leaves the form for another try.
       }
@@ -103,7 +108,9 @@ function useConnect(mode: Mode, credentials: Credentials) {
               }),
             });
 
-      if (result.error) throw new Error(result.error.message);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
     },
     onSuccess: enter,
   });
@@ -152,7 +159,9 @@ function PasskeyAction({
     mode === "sign-in" ||
     Boolean(credentials.email.trim() && credentials.name.trim());
 
-  if (!passkeysAvailable) return null;
+  if (!passkeysAvailable) {
+    return null;
+  }
 
   return (
     <>

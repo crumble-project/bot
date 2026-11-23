@@ -4,7 +4,8 @@ import type { BotDeletion } from "../bot-ports/bot-deletion";
 import type { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
 import type { Runner } from "../shared/runner";
-import { McpIntegrations, type IntegrationsOptions } from "./integrations";
+import { McpIntegrations } from "./integrations";
+import type { IntegrationsOptions } from "./integrations";
 import type { McpServerRepository } from "./mcp-server-repository";
 import { McpServers } from "./mcp-servers";
 
@@ -29,7 +30,9 @@ export function standaloneIntegrations(
   );
 
   return {
-    integrations: runtime.runSync(McpIntegrations.use(Effect.succeed)),
+    integrations: runtime.runSync(
+      Effect.flatMap(McpIntegrations, Effect.succeed),
+    ),
     close: () => runtime.dispose(),
   };
 }

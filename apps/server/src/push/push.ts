@@ -12,16 +12,14 @@ import {
 import { REPLY_ORIGIN } from "../contract/reply-event";
 import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
-import {
-  canonicalReplyEvent,
-  replyEvent,
-  type ReplyActivity,
-  type ReplyEvent,
-} from "../contract/reply-event";
+import { canonicalReplyEvent, replyEvent } from "../contract/reply-event";
+import type { ReplyActivity, ReplyEvent } from "../contract/reply-event";
 import { ChatAttention } from "./chat-attention";
 import type { PushDevice, PushDeviceInput } from "./push-model";
-import { PushRepository, type PendingDelivery } from "./push-repository";
-import { PushTransports, type PushTransport } from "./push-transports";
+import { PushRepository } from "./push-repository";
+import type { PendingDelivery } from "./push-repository";
+import { PushTransports } from "./push-transports";
+import type { PushTransport } from "./push-transports";
 
 export type PushRegistration = {
   readonly serverId: string;
@@ -44,18 +42,20 @@ const settleRejectedDelivery = Effect.fnUntraced(function* (
 ) {
   const current = yield* repository.getDevice(device.installationId);
 
-  if (Option.isNone(current))
+  if (Option.isNone(current)) {
     return yield* repository.removeDelivery(
       row.outboxId,
       device.installationId,
     );
+  }
 
   // A token that rotated since the send gets the delivery again; the old one is disabled.
-  if (current.value.token !== device.token)
+  if (current.value.token !== device.token) {
     return yield* repository.requeueDelivery(
       row.outboxId,
       device.installationId,
     );
+  }
 
   yield* repository.disableIfToken(device.installationId, device.token);
   yield* repository.removeDelivery(row.outboxId, device.installationId);
@@ -68,11 +68,12 @@ const retryDelivery = Effect.fnUntraced(function* (
 ) {
   const now = yield* Clock.currentTimeMillis;
 
-  if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now)
+  if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now) {
     return yield* repository.removeDelivery(
       row.outboxId,
       device.installationId,
     );
+  }
 
   yield* repository.markRetry(
     row.outboxId,
@@ -139,7 +140,9 @@ export class Push extends Context.Service<
         for (const row of yield* repository.pending()) {
           const found = yield* repository.getDevice(row.installationId);
 
-          if (Option.isNone(found)) continue;
+          if (Option.isNone(found)) {
+            continue;
+          }
           const device = found.value;
 
           if (row.expiresAt <= (yield* Clock.currentTimeMillis)) {
@@ -202,7 +205,9 @@ export class Push extends Context.Service<
       ) {
         const chat = { kind: "bot" as const, id: activity.agentId };
 
-        if (!(yield* attention.exists(chat))) return;
+        if (!(yield* attention.exists(chat))) {
+          return;
+        }
 
         const createdAt =
           activity.createdAt ?? DateTime.formatIso(yield* DateTime.now);
@@ -252,8 +257,9 @@ export const PushDelivery = Layer.effectDiscard(
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         activity.subscribe((event) => {
-          if (event.type === "reply" && event.origin !== REPLY_ORIGIN.bot)
+          if (event.type === "reply" && event.origin !== REPLY_ORIGIN.bot) {
             Queue.offerUnsafe(replies, event);
+          }
         }),
       ),
       (unsubscribe) => Effect.sync(unsubscribe),

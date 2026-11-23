@@ -3,7 +3,8 @@ import type { AgentRepository } from "../bot-store/agent-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";
-import { DefaultSkills, type DefaultSkill } from "./default-skills";
+import { DefaultSkills } from "./default-skills";
+import type { DefaultSkill } from "./default-skills";
 import { OwnerSkills } from "./owner-skills";
 import type { SkillInstaller } from "./skill-installer";
 import type { SkillRepository } from "./skill-repository";
@@ -13,7 +14,7 @@ export const standaloneSkills = (
   store: {
     runtime: Runner<SkillRepository | ProductDatabase | ExecutionRepository>;
   },
-  defaultSkills: DefaultSkill[] = [],
+  defaultSkills: Array<DefaultSkill> = [],
 ) =>
   ManagedRuntime.make(
     BotSkills.layer.pipe(
@@ -28,7 +29,7 @@ export const standaloneSkills = (
         ),
       ),
     ),
-  ).runSync(BotSkills.use(Effect.succeed));
+  ).runSync(Effect.flatMap(BotSkills, Effect.succeed));
 
 type OwnerServices =
   | AgentRepository
@@ -38,7 +39,7 @@ type OwnerServices =
 
 export const standaloneOwnerSkills = (
   store: { runtime: Runner<OwnerServices> },
-  defaultSkills: DefaultSkill[] = [],
+  defaultSkills: Array<DefaultSkill> = [],
 ) =>
   ManagedRuntime.make(
     OwnerSkills.layer.pipe(
@@ -49,4 +50,4 @@ export const standaloneOwnerSkills = (
         ),
       ),
     ),
-  ).runSync(OwnerSkills.use(Effect.succeed));
+  ).runSync(Effect.flatMap(OwnerSkills, Effect.succeed));

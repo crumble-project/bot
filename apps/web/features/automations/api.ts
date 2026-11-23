@@ -19,7 +19,7 @@ export const schedulePath = (id: string) =>
 export const schedulesQuery = queryOptions({
   queryKey: ["schedules"],
   refetchInterval: 60_000,
-  queryFn: ({ signal }) => api<"schedules">("/v1/schedules", { signal }),
+  queryFn: ({ signal }) => api("schedules", "/v1/schedules", { signal }),
 });
 
 export const invalidateSchedules = () =>
@@ -33,17 +33,19 @@ export const toggleScheduleOptions = (id: string) =>
       await queryClient.cancelQueries({ queryKey: schedulesQuery.queryKey });
       const previous = queryClient.getQueryData(schedulesQuery.queryKey);
 
-      queryClient.setQueryData(schedulesQuery.queryKey, (list?: Schedule[]) =>
-        list?.map((each) =>
-          each.id === id
-            ? {
-                ...each,
-                enabled,
-                nextRunLabel: "—",
-                timing: `${enabled ? "" : "Paused · "}${each.description}`,
-              }
-            : each,
-        ),
+      queryClient.setQueryData(
+        schedulesQuery.queryKey,
+        (list?: Array<Schedule>) =>
+          list?.map((each) =>
+            each.id === id
+              ? {
+                  ...each,
+                  enabled,
+                  nextRunLabel: "—",
+                  timing: `${enabled ? "" : "Paused · "}${each.description}`,
+                }
+              : each,
+          ),
       );
 
       return previous;
@@ -55,12 +57,12 @@ export const toggleScheduleOptions = (id: string) =>
 
 export const executionsQuery = queryOptions({
   queryKey: ["executions"],
-  queryFn: ({ signal }) => api<"executions">("/v1/executions", { signal }),
+  queryFn: ({ signal }) => api("executions", "/v1/executions", { signal }),
 });
 
 export const scriptRunsQuery = (id: string) =>
   queryOptions({
     queryKey: ["script-runs", id],
     queryFn: ({ signal }) =>
-      api<"listScriptRuns">(`${schedulePath(id)}/runs?limit=20`, { signal }),
+      api("listScriptRuns", `${schedulePath(id)}/runs?limit=20`, { signal }),
   });

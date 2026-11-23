@@ -1,14 +1,11 @@
-import {
-  type ChangeEvent,
-  type ClipboardEvent,
-  type DragEvent,
-  type KeyboardEvent,
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  KeyboardEvent,
+  ReactNode,
+  RefObject,
 } from "react";
 import {
   IconArrowUp,
@@ -53,7 +50,10 @@ const uploadKeys = new WeakMap<Upload, string>();
 export type Mentionable = Pick<Bot, "id" | "name">;
 
 function useAttachments(path: string) {
-  const [state, setState] = useState<{ uploads: Upload[]; errors: string[] }>({
+  const [state, setState] = useState<{
+    uploads: Array<Upload>;
+    errors: Array<string>;
+  }>({
     uploads: [],
     errors: [],
   });
@@ -64,22 +64,22 @@ function useAttachments(path: string) {
     uploadsRef.current = state.uploads;
   }, [state.uploads]);
 
-  const setUploads = (update: (uploads: Upload[]) => Upload[]) =>
+  const setUploads = (update: (uploads: Array<Upload>) => Array<Upload>) =>
     setState((current) => ({ ...current, uploads: update(current.uploads) }));
 
-  const setErrors = (errors: string[]) =>
+  const setErrors = (errors: Array<string>) =>
     setState((current) => ({ ...current, errors }));
 
-  const restore = (pending: Upload[]) => {
+  const restore = (pending: Array<Upload>) => {
     setUploads((current) => [...pending, ...current]);
   };
 
-  const add = (files: File[]) => {
+  const add = (files: Array<File>) => {
     {
       const room = Math.max(0, MAX_ATTACHMENTS - uploadsRef.current.length);
       const selected = files.slice(0, room);
 
-      const added: Upload[] = selected.map((file) => {
+      const added: Array<Upload> = selected.map((file) => {
         const upload: Upload = {
           name: file.name,
           mimeType: file.type,
@@ -94,14 +94,20 @@ function useAttachments(path: string) {
       });
 
       for (const [index, file] of selected.entries()) {
-        const upload = added[index]!;
-        const key = uploadKeys.get(upload)!;
+        const upload = added.at(index);
+        const key = upload ? uploadKeys.get(upload) : undefined;
+
+        if (!upload || key === undefined) {
+          continue;
+        }
 
         const finish = (update: Partial<Upload>) =>
           setState((state) => ({
             ...state,
             uploads: state.uploads.map((item) => {
-              if (uploadKeys.get(item) !== key) return item;
+              if (uploadKeys.get(item) !== key) {
+                return item;
+              }
 
               const next = { ...item, ...update };
 
@@ -137,7 +143,7 @@ function useAttachments(path: string) {
 function useMentions(
   draft: string,
   setDraft: (draft: string) => void,
-  mentionable: Mentionable[],
+  mentionable: Array<Mentionable>,
 ) {
   const [selected, setSelected] = useState(0);
   const mention = /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1];
@@ -152,7 +158,9 @@ function useMentions(
   const suggestion = suggestions[selected % Math.max(suggestions.length, 1)];
 
   const accept = () => {
-    if (!suggestion || mention === undefined) return;
+    if (!suggestion || mention === undefined) {
+      return;
+    }
 
     setDraft(
       `${draft.slice(0, draft.length - mention.length)}${suggestion.name} `,
@@ -168,13 +176,19 @@ function useMentions(
   };
 
   const navigate = (event: KeyboardEvent) => {
-    if (!suggestions.length) return false;
+    if (!suggestions.length) {
+      return false;
+    }
 
-    if (event.key === "Tab") accept();
-    else if (event.key === "ArrowDown") setSelected((current) => current + 1);
-    else if (event.key === "ArrowUp")
+    if (event.key === "Tab") {
+      accept();
+    } else if (event.key === "ArrowDown") {
+      setSelected((current) => current + 1);
+    } else if (event.key === "ArrowUp") {
       setSelected((current) => current + suggestions.length - 1);
-    else return false;
+    } else {
+      return false;
+    }
 
     event.preventDefault();
 
@@ -201,14 +215,16 @@ function isSubmitKey(event: KeyboardEvent) {
 
 function useDropTarget(
   disabled: boolean | undefined,
-  add: (files: File[]) => void,
+  add: (files: Array<File>) => void,
 ) {
   const [dragging, setDragging] = useState(false);
 
   return {
     dragging,
     onDragOver: (event: DragEvent) => {
-      if (disabled) return;
+      if (disabled) {
+        return;
+      }
 
       event.preventDefault();
       setDragging(true);
@@ -218,7 +234,9 @@ function useDropTarget(
       event.preventDefault();
       setDragging(false);
 
-      if (!disabled) add([...event.dataTransfer.files]);
+      if (!disabled) {
+        add([...event.dataTransfer.files]);
+      }
     },
   };
 }
@@ -230,7 +248,9 @@ function ReplyBanner({
   replyingTo: string | undefined;
   onCancel?: (() => void) | undefined;
 }) {
-  if (!replyingTo) return null;
+  if (!replyingTo) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -253,10 +273,12 @@ export function UploadChips({
   uploads,
   onRemove,
 }: {
-  uploads: Upload[];
+  uploads: Array<Upload>;
   onRemove: (index: number) => void;
 }) {
-  if (uploads.length === 0) return null;
+  if (uploads.length === 0) {
+    return null;
+  }
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -302,11 +324,13 @@ function MentionSuggestions({
   suggestion,
   onPick,
 }: {
-  suggestions: Mentionable[];
+  suggestions: Array<Mentionable>;
   suggestion: Mentionable | undefined;
   onPick: (bot: Mentionable, index: number) => void;
 }) {
-  if (suggestions.length === 0) return null;
+  if (suggestions.length === 0) {
+    return null;
+  }
 
   return (
     <div className="flex flex-wrap gap-1 text-xs">
@@ -333,7 +357,7 @@ function AttachControl({
 }: {
   disabled: boolean | undefined;
   full: boolean;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: Array<File>) => void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
 
@@ -422,7 +446,7 @@ function SendControls({
   );
 }
 
-function pasteFiles(event: ClipboardEvent, add: (files: File[]) => void) {
+function pasteFiles(event: ClipboardEvent, add: (files: Array<File>) => void) {
   const files = [...event.clipboardData.files];
 
   if (files.length) {
@@ -435,7 +459,7 @@ function canSendDraft(
   disabled: boolean | undefined,
   sending: boolean,
   draft: string,
-  uploads: Upload[],
+  uploads: Array<Upload>,
 ) {
   return (
     !disabled &&
@@ -451,7 +475,7 @@ function ComposerErrors({
   errors,
 }: {
   uploads: number;
-  errors: string[];
+  errors: Array<string>;
 }) {
   return (
     <>
@@ -473,16 +497,18 @@ function ComposerErrors({
 const submitOnEnter =
   (navigate: (event: KeyboardEvent) => boolean, submit: () => Promise<void>) =>
   (event: KeyboardEvent) => {
-    if (navigate(event) || !isSubmitKey(event)) return;
+    if (navigate(event) || !isSubmitKey(event)) {
+      return;
+    }
 
     event.preventDefault();
     void submit();
   };
 
 async function sendDraft(
-  onSend: (content: string, uploads: Upload[]) => Promise<boolean>,
+  onSend: (content: string, uploads: Array<Upload>) => Promise<boolean>,
   content: string,
-  uploads: Upload[],
+  uploads: Array<Upload>,
 ) {
   try {
     return await onSend(content, uploads);
@@ -533,21 +559,26 @@ const ONE_ROW_PX = 36;
 function useExpanded(draft: string) {
   const [wrapped, setWrapped] = useState(false);
 
-  if (wrapped && !draft) setWrapped(false);
+  if (wrapped && !draft) {
+    setWrapped(false);
+  }
 
   const expanded = draft.includes("\n") || (wrapped && draft !== "");
 
   // Measured while the field is still one row, before this change re-renders it.
   const measure = (element: HTMLTextAreaElement | null) => {
-    if (element?.value && !expanded && element.scrollHeight > ONE_ROW_PX)
+    if (element?.value && !expanded && element.scrollHeight > ONE_ROW_PX) {
       setWrapped(true);
+    }
   };
 
   return { expanded, measure };
 }
 
 function focusAtEnd(field: HTMLTextAreaElement | null) {
-  if (!field) return;
+  if (!field) {
+    return;
+  }
 
   field.focus();
   field.setSelectionRange(field.value.length, field.value.length);
@@ -584,11 +615,11 @@ type ComposerProps = {
   running: boolean;
   replyingTo?: string | undefined;
   onCancelReply?: () => void;
-  mentionable?: Mentionable[];
+  mentionable?: Array<Mentionable>;
   actions?: ReactNode;
   /** Shown above the composer for the files attached so far. */
-  notice?: (uploads: Upload[]) => ReactNode;
-  onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
+  notice?: (uploads: Array<Upload>) => ReactNode;
+  onSend: (content: string, uploads: Array<Upload>) => Promise<boolean>;
   onStop: () => void;
 };
 
@@ -596,7 +627,7 @@ function useComposer(
   draftKey: string,
   uploadPath: string,
   disabled: boolean | undefined,
-  mentionable: Mentionable[],
+  mentionable: Array<Mentionable>,
   onSend: ComposerProps["onSend"],
 ) {
   const { draft, setDraft, field, expanded, measure } =
@@ -612,7 +643,9 @@ function useComposer(
   const canSend = canSendDraft(disabled, sending, draft, uploads);
 
   const submit = async () => {
-    if (!canSend) return;
+    if (!canSend) {
+      return;
+    }
 
     setSending(true);
     const content = draft.trim();
@@ -626,7 +659,9 @@ function useComposer(
 
     setSending(false);
 
-    if (sent) return;
+    if (sent) {
+      return;
+    }
 
     setDraft((current) => [draft, current].filter(Boolean).join("\n"));
     restore(pending);

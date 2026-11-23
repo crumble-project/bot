@@ -13,7 +13,7 @@ import { displayResult } from "@/features/chat/display";
 import type { MessageCard, CardChat } from "@/features/chat/message-card";
 import { EventRow, hasContent, hasText } from "@/features/chat/transcript";
 
-const TOOL_RESULTS: MessageCard[] = [
+const TOOL_RESULTS: Array<MessageCard> = [
   displayResult,
   desktopScreenshotResult,
   credentialRequestResult,
@@ -23,7 +23,7 @@ const TOOL_RESULTS: MessageCard[] = [
   jobResult,
 ];
 
-const EVENTS: MessageCard[] = [
+const EVENTS: Array<MessageCard> = [
   jobQuestionEvent,
   heldActionEvent,
   jobFailureEvent,
@@ -34,7 +34,9 @@ function cardOf(message: Message, cards = TOOL_RESULTS) {
   for (const parse of cards) {
     const card = parse(message);
 
-    if (card) return card;
+    if (card) {
+      return card;
+    }
   }
 
   return null;

@@ -1,13 +1,11 @@
-import { and, asc, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import { memorySource, type ChangeBy, type Memory } from "../shared/domain";
-import {
-  SKILL_STATES,
-  skillInput,
-  type LearnedChange,
-  type Skill,
-} from "../contract/skills";
+import { memorySource } from "../shared/domain";
+import type { ChangeBy, Memory } from "../shared/domain";
+import { SKILL_STATES, skillInput } from "../contract/skills";
+import type { LearnedChange, Skill } from "../contract/skills";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { learnedChanges, reviewResults } from "./schema";
@@ -26,7 +24,7 @@ const memorySchema = z.object({
   updatedAt: z.string(),
 });
 
-const skillOriginSchema = z.object({
+export const skillOriginSchema = z.object({
   repository: z.string(),
   branch: z.string(),
   path: z.string(),
@@ -51,6 +49,20 @@ const skillSchema = skillInput.extend({
 
 const snapshotSchema = z.union([skillSchema, memorySchema]);
 
+/** Which of `snapshotSchema`'s shapes a change's before or after state holds. */
+export const isSkillSnapshot = (
+  snapshot: Skill | Memory | null,
+): snapshot is Skill =>
+  snapshot !== null && skillSchema.safeParse(snapshot).success;
+
+export const isMemorySnapshot = (
+  snapshot: Skill | Memory | null,
+): snapshot is Memory =>
+  snapshot !== null && memorySchema.safeParse(snapshot).success;
+
+/** The change IDs `addReviewResult` writes as a JSON array. */
+const reviewChangeIds = z.array(z.string());
+
 const changeOf = (row: typeof learnedChanges.$inferSelect): LearnedChange => ({
   id: row.id,
   agentId: row.agentId ?? null,
@@ -73,7 +85,7 @@ export type ReviewResult = {
   executionId: string;
   agentId: string;
   createdAt: string;
-  changes: LearnedChange[];
+  changes: Array<LearnedChange>;
 };
 
 export class LearnedChangeRepository extends Context.Service<
@@ -96,22 +108,22 @@ export class LearnedChangeRepository extends Context.Service<
     readonly list: (
       agentId: string | null | undefined,
       options?: { limit?: number | undefined; before?: string | undefined },
-    ) => Effect.Effect<LearnedChange[]>;
+    ) => Effect.Effect<Array<LearnedChange>>;
     readonly get: (changeId: string) => Effect.Effect<LearnedChange | null>;
     /** The changes one execution's review made, oldest first. */
     readonly listOfExecution: (
       executionId: string,
       actor: LearnedChange["actor"],
-    ) => Effect.Effect<LearnedChange[]>;
+    ) => Effect.Effect<Array<LearnedChange>>;
     readonly addReviewResult: (
       executionId: string,
       agentId: string,
-      changeIds: string[],
+      changeIds: Array<string>,
     ) => Effect.Effect<void>;
     readonly listReviewResults: (
       agentId: string,
       limit?: number,
-    ) => Effect.Effect<ReviewResult[]>;
+    ) => Effect.Effect<Array<ReviewResult>>;
   }
 >()("crumble/learned-changes/LearnedChangeRepository") {
   static readonly layer = Layer.effect(
@@ -139,13 +151,19 @@ export class LearnedChangeRepository extends Context.Service<
         after: Skill | Memory | null,
         revertsId: string | null = null,
       ) {
-        if (!by) return null;
+        if (!by) {
+          return null;
+        }
         const changeId = crypto.randomUUID();
 
         const actionOf = (): LearnedChange["action"] => {
-          if (revertsId) return "revert";
+          if (revertsId) {
+            return "revert";
+          }
 
-          if (before === null) return "create";
+          if (before === null) {
+            return "create";
+          }
 
           return after === null ? "delete" : "update";
         };
@@ -189,22 +207,27 @@ export class LearnedChangeRepository extends Context.Service<
       ) {
         const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
         const cursor = options.before ? yield* get(options.before) : null;
-        const clauses: SQL[] = [];
+        const clauses: Array<SQL> = [];
 
-        if (agentId === null) clauses.push(isNull(learnedChanges.agentId));
-        else if (agentId !== undefined)
+        if (agentId === null) {
+          clauses.push(isNull(learnedChanges.agentId));
+        } else if (agentId !== undefined) {
           clauses.push(eq(learnedChanges.agentId, agentId));
+        }
 
-        if (cursor)
-          clauses.push(
-            or(
-              lt(learnedChanges.createdAt, cursor.createdAt),
-              and(
-                eq(learnedChanges.createdAt, cursor.createdAt),
-                sql`rowid < (SELECT rowid FROM learned_changes WHERE id = ${cursor.id})`,
-              ),
-            )!,
+        if (cursor) {
+          const clause = or(
+            lt(learnedChanges.createdAt, cursor.createdAt),
+            and(
+              eq(learnedChanges.createdAt, cursor.createdAt),
+              sql`rowid < (SELECT rowid FROM learned_changes WHERE id = ${cursor.id})`,
+            ),
           );
+
+          if (clause) {
+            clauses.push(clause);
+          }
+        }
 
         const rows = yield* db
           .select()
@@ -235,7 +258,11 @@ export class LearnedChangeRepository extends Context.Service<
 
       const addReviewResult = Effect.fn(
         "LearnedChangeRepository.addReviewResult",
-      )(function* (executionId: string, agentId: string, changeIds: string[]) {
+      )(function* (
+        executionId: string,
+        agentId: string,
+        changeIds: Array<string>,
+      ) {
         const row = {
           agentId,
           changeIds: JSON.stringify(changeIds),
@@ -264,8 +291,7 @@ export class LearnedChangeRepository extends Context.Service<
 
         return yield* Effect.forEach(rows, (row) =>
           Effect.gen(function* () {
-            // SAFETY: change_ids holds the JSON array `addReviewResult` wrote.
-            const changeIds = JSON.parse(row.changeIds) as string[];
+            const changeIds = reviewChangeIds.parse(JSON.parse(row.changeIds));
 
             const changes = yield* Effect.forEach(changeIds, get);
 

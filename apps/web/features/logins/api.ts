@@ -20,7 +20,7 @@ export const loginsQuery = (id: string) =>
   queryOptions({
     queryKey: ["logins", id],
     queryFn: ({ signal }) =>
-      api<"agentLogins">(`${agentPath(id)}/logins`, { signal }),
+      api("agentLogins", `${agentPath(id)}/logins`, { signal }),
   });
 
 export const loginPath = (id: string, name: string) =>

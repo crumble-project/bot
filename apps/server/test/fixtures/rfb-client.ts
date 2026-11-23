@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 type RfbRead = (n: number) => Promise<Uint8Array>;
 
 function rfbInbox(ws: WebSocket) {
@@ -6,7 +8,9 @@ function rfbInbox(ws: WebSocket) {
   let closed = false;
 
   ws.addEventListener("message", (event) => {
-    if (!(event.data instanceof ArrayBuffer)) return;
+    if (!types.isAnyArrayBuffer(event.data)) {
+      return;
+    }
 
     const next = new Uint8Array(buffer.length + event.data.byteLength);
 
@@ -16,19 +20,23 @@ function rfbInbox(ws: WebSocket) {
     wake?.();
   });
 
-  const ended = new Promise<number>((resolve) =>
+  const ended = new Promise<number>((resolve) => {
     ws.addEventListener("close", (event) => {
       closed = true;
       wake?.();
       resolve(event.code);
-    }),
-  );
+    });
+  });
 
   const read: RfbRead = async (n) => {
     while (buffer.length < n) {
-      if (closed) throw new Error("The viewer connection closed");
+      if (closed) {
+        throw new Error("The viewer connection closed");
+      }
 
-      await new Promise<void>((resolve) => (wake = resolve));
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
     }
 
     const out = buffer.slice(0, n);
@@ -67,7 +75,8 @@ async function rfbHandshake(ws: WebSocket, read: RfbRead) {
 }
 
 function rfbMessages(ws: WebSocket, read: RfbRead) {
-  const send = (bytes: number[] | Uint8Array) => ws.send(new Uint8Array(bytes));
+  const send = (bytes: Array<number> | Uint8Array) =>
+    ws.send(new Uint8Array(bytes));
 
   return {
     pointer(x: number, y: number, mask = 0) {
@@ -106,10 +115,14 @@ function rfbMessages(ws: WebSocket, read: RfbRead) {
 
       const header = await Promise.race([
         read(4),
-        new Promise<undefined>((resolve) => setTimeout(resolve, 5000)),
+        new Promise<undefined>((resolve) => {
+          setTimeout(resolve, 5000);
+        }),
       ]);
 
-      if (!header) return false;
+      if (!header) {
+        return false;
+      }
 
       const rects = new DataView(header.buffer).getUint16(2);
 

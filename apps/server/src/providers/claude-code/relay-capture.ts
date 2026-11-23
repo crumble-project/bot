@@ -105,7 +105,7 @@ export class Capture {
   private pending = "";
   private readonly decoder = new TextDecoder();
   private readonly arguments = new Map<number, string>();
-  private readonly unparsed: number[] = [];
+  private readonly unparsed: Array<number> = [];
 
   get dropped() {
     return this.unparsed.length;
@@ -126,13 +126,17 @@ export class Capture {
         .map((line) => line.slice(5).trimStart())
         .join("\n");
 
-      if (data) this.event(JSON.parse(data));
+      if (data) {
+        this.event(eventType.parse(JSON.parse(data)));
+      }
       match = /\r?\n\r?\n/.exec(this.pending);
     }
   }
 
   private event(raw: z.input<typeof eventType>) {
-    if (!knownEvents.has(eventType.parse(raw).type)) return;
+    if (!knownEvents.has(eventType.parse(raw).type)) {
+      return;
+    }
     const event = streamEvent.parse(raw);
 
     switch (event.type) {
@@ -159,7 +163,9 @@ export class Capture {
   }
 
   private applyMessageDelta({ delta, usage }: MessageDelta) {
-    if (!this.message) return;
+    if (!this.message) {
+      return;
+    }
     Object.assign(this.message, delta);
     Object.assign(this.message.usage, usage ?? {});
   }
@@ -167,11 +173,16 @@ export class Capture {
   private applyDelta({ delta, index }: ContentDelta) {
     const target = this.message?.content[index];
 
-    if (!target) throw new Error("Delta for an unknown content block");
+    if (!target) {
+      throw new Error("Delta for an unknown content block");
+    }
     const field = TEXT_DELTA_FIELDS.get(delta.type);
 
-    if (field) target[field] = (target[field] ?? "") + (delta[field] ?? "");
-    else this.applyStructuredDelta(target, index, delta);
+    if (field) {
+      target[field] = (target[field] ?? "") + (delta[field] ?? "");
+    } else {
+      this.applyStructuredDelta(target, index, delta);
+    }
   }
 
   private applyStructuredDelta(
@@ -179,19 +190,25 @@ export class Capture {
     index: number,
     delta: ContentDelta["delta"],
   ) {
-    if (delta.type === "input_json_delta")
+    if (delta.type === "input_json_delta") {
       this.arguments.set(
         index,
         (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
       );
-    else if (delta.type === "citations_delta" && delta.citation !== undefined)
+    } else if (
+      delta.type === "citations_delta" &&
+      delta.citation !== undefined
+    ) {
       (target.citations ??= []).push(structuredClone(delta.citation));
+    }
   }
 
   private finishArguments(index: number) {
     const raw = this.arguments.get(index);
 
-    if (raw === undefined) return;
+    if (raw === undefined) {
+      return;
+    }
     this.arguments.delete(index);
     const target = this.message?.content[index];
 
@@ -199,7 +216,9 @@ export class Capture {
       // A no-argument tool call streams one empty partial_json.
       const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
 
-      if (target) target.input = input;
+      if (target) {
+        target.input = input;
+      }
     } catch {
       // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
       // dropped at message_stop, never run with guessed arguments.
@@ -208,8 +227,9 @@ export class Capture {
   }
 
   private finishMessage() {
-    for (const index of this.unparsed.toSorted((a, b) => b - a))
+    for (const index of this.unparsed.toSorted((a, b) => b - a)) {
       this.message?.content.splice(index, 1);
+    }
     this.complete = Boolean(
       this.message?.stop_reason && this.arguments.size === 0,
     );

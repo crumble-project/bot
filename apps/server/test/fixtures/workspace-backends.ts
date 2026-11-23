@@ -80,17 +80,20 @@ const destroyRecordedSandboxes = async () => {
   for (const file of files) {
     const id = railwaySandboxId(path.basename(file, ".json"));
 
-    if (id)
+    if (id) {
       await RailwaySandbox.connect(id)
         .then((sandbox) => sandbox.destroy())
         .catch(() => {});
+    }
   }
 };
 
 const deleteRunCheckpoints = async (namePrefix: string) => {
-  for (const checkpoint of await RailwaySandbox.checkpoints())
-    if (checkpoint.key.startsWith(`${namePrefix}-`))
+  for (const checkpoint of await RailwaySandbox.checkpoints()) {
+    if (checkpoint.key.startsWith(`${namePrefix}-`)) {
       await RailwaySandbox.deleteCheckpoint(checkpoint.id);
+    }
+  }
 };
 
 const railway: WorkspaceBackend = {
@@ -134,7 +137,9 @@ export async function eventually(
   const deadline = Date.now() + timeoutMs;
 
   while (!(await check())) {
-    if (Date.now() > deadline) return false;
+    if (Date.now() > deadline) {
+      return false;
+    }
 
     await Bun.sleep(500);
   }

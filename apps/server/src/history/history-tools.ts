@@ -4,12 +4,10 @@ import { Effect, Layer } from "effect";
 import type { Agent } from "../contract/agents";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
-import { BotRuntime, type AgentRuntime } from "../bots/runtime";
-import {
-  HistorySearch,
-  type HistoryContext,
-  type HistorySource,
-} from "./history-search";
+import { BotRuntime } from "../bots/runtime";
+import type { AgentRuntime } from "../bots/runtime";
+import { HistorySearch } from "./history-search";
+import type { HistoryContext, HistorySource } from "./history-search";
 import {
   HISTORY_READ_TOOL_NAME,
   HISTORY_SEARCH_TOOL_NAME,
@@ -79,11 +77,15 @@ export function historySource(
     },
 
     async page(context, chat, before) {
-      if (chat.id !== context.agentId) throw new Error("Bot chat not found");
+      if (chat.id !== context.agentId) {
+        throw new Error("Bot chat not found");
+      }
 
       const agent = agentOf(context.agentId);
 
-      if (!agent) throw new Error("Bot chat not found");
+      if (!agent) {
+        throw new Error("Bot chat not found");
+      }
 
       return runtime.history(agent, { before, includeActiveAssistant: true });
     },

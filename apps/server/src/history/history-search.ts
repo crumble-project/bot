@@ -1,13 +1,16 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { z } from "zod";
-import { ASSISTANT_ENTRY, type MessageOrigin } from "../transcript/entries";
+import { ASSISTANT_ENTRY } from "../transcript/entries";
+import type { MessageOrigin } from "../transcript/entries";
 import {
   isConversational,
   isOwnerInput,
   textOf,
   toolCalls,
-  type TranscriptMessage,
-  type TranscriptPage,
+} from "../transcript/transcript";
+import type {
+  TranscriptMessage,
+  TranscriptPage,
 } from "../transcript/transcript";
 import {
   formatEntryId,
@@ -16,9 +19,9 @@ import {
 } from "../shared/entry-ids";
 
 const WINDOW_MESSAGES = 30;
-const WINDOW_CHARACTERS = 20000;
+const WINDOW_CHARACTERS = 20_000;
 const OLDER_MESSAGES = 14;
-const OLDER_CHARACTERS = 10000;
+const OLDER_CHARACTERS = 10_000;
 
 const RESULT_MATCHES = 20;
 const EXCERPT_POINTS = 500;
@@ -29,7 +32,7 @@ export type HistoryContext = { agentId: string };
 export type HistoryChat = { id: string; kind: "bot"; name: string };
 
 export type HistorySource = {
-  chats(context: HistoryContext): Promise<HistoryChat[]>;
+  chats(context: HistoryContext): Promise<Array<HistoryChat>>;
   page(
     context: HistoryContext,
     chat: HistoryChat,
@@ -56,7 +59,7 @@ export type HistorySearchMatch = {
 };
 
 export type HistorySearchResult = {
-  matches: HistorySearchMatch[];
+  matches: Array<HistorySearchMatch>;
   cursor: string | null;
 };
 
@@ -73,7 +76,7 @@ export type HistoryReadMessage = {
 
 export type HistoryReadResult = {
   chat: HistoryChat;
-  messages: HistoryReadMessage[];
+  messages: Array<HistoryReadMessage>;
   before: string | null;
   after: string | null;
   beginning: boolean;
@@ -155,13 +158,15 @@ type Row = {
 type Candidate = { snapshot: Snapshot; row: Row; key: MatchKey };
 
 type Window = {
-  messages: HistoryReadMessage[];
+  messages: Array<HistoryReadMessage>;
   start: Position;
   finish: Position;
 };
 
 function ordinal(a: string, b: string): number {
-  if (a < b) return -1;
+  if (a < b) {
+    return -1;
+  }
 
   return a > b ? 1 : 0;
 }
@@ -169,8 +174,9 @@ function ordinal(a: string, b: string): number {
 function entryNumber(chat: HistoryChat, entryId: string): number {
   const entry = parseEntryId(entryId, chat.id);
 
-  if (entry === "foreign" || entry === "malformed")
+  if (entry === "foreign" || entry === "malformed") {
     throw new Error("History source returned an invalid entry identifier");
+  }
 
   return entry;
 }
@@ -178,8 +184,9 @@ function entryNumber(chat: HistoryChat, entryId: string): number {
 function messageIndex(entryId: string, messageId: string): number {
   const index = parseMessageIndex(entryId, messageId);
 
-  if (index === undefined)
+  if (index === undefined) {
     throw new Error("History source returned an invalid message identifier");
+  }
 
   return index;
 }
@@ -188,16 +195,22 @@ function toolActivityOf(
   chat: HistoryChat,
   message: TranscriptMessage,
 ): boolean {
-  if (chat.kind !== "bot") return false;
+  if (chat.kind !== "bot") {
+    return false;
+  }
 
-  if (message.role === "toolResult") return true;
+  if (message.role === "toolResult") {
+    return true;
+  }
 
   return message.kind === ASSISTANT_ENTRY && toolCalls(message).length > 0;
 }
 
 function bodyOf(message: TranscriptMessage): string | null {
   // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
-  if (isOwnerInput(message)) return message.content;
+  if (isOwnerInput(message)) {
+    return message.content;
+  }
 
   return isConversational(message) ? textOf(message) : null;
 }
@@ -238,11 +251,15 @@ function sender(chat: HistoryChat, message: TranscriptMessage): HistorySender {
     name: senderName(chat, message),
   };
 
-  if (origin?.agentId) result.agentId = origin.agentId;
-  else if (chat.kind === "bot" && message.role === "assistant")
+  if (origin?.agentId) {
+    result.agentId = origin.agentId;
+  } else if (chat.kind === "bot" && message.role === "assistant") {
     result.agentId = chat.id;
+  }
 
-  if (origin) result.origin = origin;
+  if (origin) {
+    result.origin = origin;
+  }
 
   return result;
 }
@@ -258,11 +275,17 @@ function keyOf(chat: HistoryChat, row: Row): MatchKey {
 }
 
 function compareTimestamps(a: MatchKey, b: MatchKey): number {
-  if (a.timestamp === b.timestamp) return 0;
+  if (a.timestamp === b.timestamp) {
+    return 0;
+  }
 
-  if (a.timestamp === null) return 1;
+  if (a.timestamp === null) {
+    return 1;
+  }
 
-  if (b.timestamp === null) return -1;
+  if (b.timestamp === null) {
+    return -1;
+  }
 
   return b.timestamp - a.timestamp;
 }
@@ -284,7 +307,7 @@ function excerpt(body: string, query: string) {
   let lowered = 0;
 
   while (offset < points.length && lowered < match) {
-    lowered += points[offset]!.toLowerCase().length;
+    lowered += (points[offset] ?? "").toLowerCase().length;
     offset += 1;
   }
 
@@ -299,7 +322,7 @@ function excerpt(body: string, query: string) {
 function messagePart(
   chat: HistoryChat,
   row: Row,
-  points: string[],
+  points: Array<string>,
   start: number,
   finish: number,
 ): HistoryReadMessage {
@@ -315,13 +338,26 @@ function messagePart(
   };
 }
 
-function positionIndex(rows: Row[], position: Position): number {
-  const index = rows.findIndex((row) => row.original.id === position.messageId);
+const MISSING_MESSAGE =
+  "History message is no longer available; start a new search";
 
-  if (index < 0 || position.offset > Array.from(rows[index]!.body ?? "").length)
-    throw new Error(
-      "History message is no longer available; start a new search",
-    );
+function rowAt(rows: Array<Row>, index: number): Row {
+  const row = rows[index];
+
+  if (!row) {
+    throw new Error(MISSING_MESSAGE);
+  }
+
+  return row;
+}
+
+function positionIndex(rows: Array<Row>, position: Position): number {
+  const index = rows.findIndex((row) => row.original.id === position.messageId);
+  const row = rows[index];
+
+  if (!row || position.offset > Array.from(row.body ?? "").length) {
+    throw new Error(MISSING_MESSAGE);
+  }
 
   return index;
 }
@@ -331,10 +367,11 @@ function validQuery(query: string | undefined): string {
     query === undefined ||
     !query.trim() ||
     Array.from(query).length > MAX_QUERY_POINTS
-  )
+  ) {
     throw new Error(
       `History query must contain non-whitespace text and at most ${MAX_QUERY_POINTS} Unicode code points`,
     );
+  }
 
   return query;
 }
@@ -343,16 +380,21 @@ function pageCutoff(chat: HistoryChat, page: TranscriptPage): number {
   let cutoff =
     page.oldestEntryId === null ? 0 : entryNumber(chat, page.oldestEntryId);
 
-  for (const message of page.messages)
+  for (const message of page.messages) {
     cutoff = Math.max(cutoff, entryNumber(chat, message.entryId));
+  }
 
-  if (page.hasMore && page.oldestEntryId === null)
+  if (page.hasMore && page.oldestEntryId === null) {
     throw new Error("History source did not provide a complete page cursor");
+  }
 
   return cutoff;
 }
 
-function isAvailable(available: HistoryChat[], chat: HistoryChat): boolean {
+function isAvailable(
+  available: Array<HistoryChat>,
+  chat: HistoryChat,
+): boolean {
   return available.some(
     (candidate) => candidate.id === chat.id && candidate.kind === chat.kind,
   );
@@ -360,20 +402,23 @@ function isAvailable(available: HistoryChat[], chat: HistoryChat): boolean {
 
 function matchesIn(
   snapshot: Snapshot,
-  rows: Row[],
+  rows: Array<Row>,
   query: string,
   last: MatchKey | undefined,
-): Candidate[] {
+): Array<Candidate> {
   const lowered = query.toLowerCase();
-  const candidates: Candidate[] = [];
+  const candidates: Array<Candidate> = [];
 
   for (const row of rows) {
-    if (!row.body || !row.body.toLowerCase().includes(lowered)) continue;
+    if (!row.body || !row.body.toLowerCase().includes(lowered)) {
+      continue;
+    }
 
     const key = keyOf(snapshot.chat, row);
 
-    if (!last || compareKeys(key, last) > 0)
+    if (!last || compareKeys(key, last) > 0) {
       candidates.push({ snapshot, row, key });
+    }
   }
 
   return candidates;
@@ -390,11 +435,13 @@ function readRequest(args: {
   cursor?: string;
   direction?: Direction;
 }) {
-  if ((args.match === undefined) === (args.cursor === undefined))
+  if ((args.match === undefined) === (args.cursor === undefined)) {
     throw new Error("Provide exactly one history match or read cursor");
+  }
 
-  if (invalidDirection(args.direction))
+  if (invalidDirection(args.direction)) {
     throw new Error("Invalid history read direction");
+  }
 
   return {
     token: args.match ?? args.cursor ?? "",
@@ -407,14 +454,17 @@ function narrowToken(
   token: Token,
   request: { match: string | undefined; cursor: string | undefined },
 ): MatchToken | ReadToken {
-  if (token.type === "search")
+  if (token.type === "search") {
     throw new Error("Expected a history match or read cursor");
+  }
 
-  if (request.match !== undefined && token.type !== "match")
+  if (request.match !== undefined && token.type !== "match") {
     throw new Error("Expected a history match or read cursor");
+  }
 
-  if (request.cursor !== undefined && token.type !== "read")
+  if (request.cursor !== undefined && token.type !== "read") {
     throw new Error("Expected a history match or read cursor");
+  }
 
   return token;
 }
@@ -430,15 +480,18 @@ function addPageRows(
   page: TranscriptPage,
   cutoff: number,
   seen: Set<string>,
-  rows: Row[],
+  rows: Array<Row>,
 ): void {
   const pageRows = page.messages.map((message) => rowOf(chat, message));
 
   for (const row of pageRows) {
-    if (row.entry > cutoff) continue;
+    if (row.entry > cutoff) {
+      continue;
+    }
 
-    if (seen.has(row.original.id))
+    if (seen.has(row.original.id)) {
       throw new Error("History source returned overlapping pages");
+    }
 
     seen.add(row.original.id);
     rows.push(row);
@@ -454,46 +507,53 @@ function nextCursor(
   if (
     oldest === null ||
     (before !== undefined && oldest >= entryNumber(chat, before))
-  )
+  ) {
     throw new Error("History source did not provide a complete page cursor");
+  }
 
   return oldestEntryId ?? undefined;
 }
 
 function walkRows(
-  rows: Row[],
+  rows: Array<Row>,
   position: Position,
   step: 1 | -1,
-  visit: (row: Row, points: string[], offset: number) => boolean,
+  visit: (row: Row, points: Array<string>, offset: number) => boolean,
 ) {
   let index = positionIndex(rows, position);
   let offset = position.offset;
 
   while (index >= 0 && index < rows.length) {
-    const row = rows[index]!;
+    const row = rows[index];
 
-    if (!visit(row, Array.from(row.body ?? ""), offset)) return;
+    if (!row || !visit(row, Array.from(row.body ?? ""), offset)) {
+      return;
+    }
 
     index += step;
     offset =
-      step === 1 || index < 0 ? 0 : Array.from(rows[index]!.body ?? "").length;
+      step === 1 || index < 0 ? 0 : Array.from(rows[index]?.body ?? "").length;
   }
 }
 
 function windowAfter(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   position: Position,
   count: number,
   budget: number,
 ): Window {
   let boundary = position;
-  const messages: HistoryReadMessage[] = [];
+  const messages: Array<HistoryReadMessage> = [];
 
   walkRows(rows, position, 1, (row, points, offset) => {
-    if (messages.length >= count || budget <= 0) return false;
+    if (messages.length >= count || budget <= 0) {
+      return false;
+    }
 
-    if (offset >= points.length) return true;
+    if (offset >= points.length) {
+      return true;
+    }
 
     const finish = Math.min(points.length, offset + budget);
 
@@ -509,18 +569,22 @@ function windowAfter(
 
 function windowBefore(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   position: Position,
   count: number,
   budget: number,
 ): Window {
   let boundary = position;
-  const messages: HistoryReadMessage[] = [];
+  const messages: Array<HistoryReadMessage> = [];
 
   walkRows(rows, position, -1, (row, points, offset) => {
-    if (messages.length >= count || budget <= 0) return false;
+    if (messages.length >= count || budget <= 0) {
+      return false;
+    }
 
-    if (offset <= 0) return true;
+    if (offset <= 0) {
+      return true;
+    }
 
     const start = Math.max(0, offset - budget);
 
@@ -536,7 +600,7 @@ function windowBefore(
 
 function windowFrom(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   position: Position,
   direction: Direction,
   count: number,
@@ -549,7 +613,7 @@ function windowFrom(
 
 function readWindow(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   token: ReadToken,
   direction: Direction | undefined,
 ): Window {
@@ -565,7 +629,7 @@ function readWindow(
 
 function aroundWindow(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   position: Position,
 ): Window {
   const older = windowFrom(
@@ -600,23 +664,27 @@ function aroundWindow(
 
 function matchWindow(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   messageId: string,
   direction: Direction | undefined,
 ): Window {
   const anchor = rows.find((row) => row.original.id === messageId);
 
-  if (!anchor)
+  if (!anchor) {
     throw new Error(
       "History message is no longer available; start a new search",
     );
+  }
 
   const position: Position = { messageId, offset: 0 };
 
-  if (direction === undefined) return aroundWindow(chat, rows, position);
+  if (direction === undefined) {
+    return aroundWindow(chat, rows, position);
+  }
 
-  if (direction === "after")
+  if (direction === "after") {
     position.offset = Array.from(anchor.body ?? "").length;
+  }
 
   return windowFrom(
     chat,
@@ -632,10 +700,10 @@ function atBeginning(index: number, position: Position): boolean {
   return index === 0 && position.offset === 0;
 }
 
-function atEnd(rows: Row[], index: number, position: Position): boolean {
+function atEnd(rows: Array<Row>, index: number, position: Position): boolean {
   return (
     index === rows.length - 1 &&
-    position.offset === Array.from(rows[index]!.body ?? "").length
+    position.offset === Array.from(rows[index]?.body ?? "").length
   );
 }
 
@@ -661,7 +729,7 @@ function withinWindow(
 
 function omitsToolActivity(
   chat: HistoryChat,
-  rows: Row[],
+  rows: Array<Row>,
   first: Row,
   final: Row,
   beginning: boolean,
@@ -695,10 +763,14 @@ export class HistorySearch {
 
   private open(context: HistoryContext, token: string): Token {
     try {
-      if (!/^hs1\.[A-Za-z0-9_-]+$/.test(token)) throw new Error();
+      if (!/^hs1\.[A-Za-z0-9_-]+$/.test(token)) {
+        throw new Error();
+      }
       const bytes = Buffer.from(token.slice(4), "base64url");
 
-      if (bytes.length < 29) throw new Error();
+      if (bytes.length < 29) {
+        throw new Error();
+      }
 
       const decipher = createDecipheriv(
         "aes-256-gcm",
@@ -715,7 +787,9 @@ export class HistorySearch {
 
       const payload = tokenSchema.parse(JSON.parse(plaintext));
 
-      if (payload.agentId !== context.agentId) throw new Error();
+      if (payload.agentId !== context.agentId) {
+        throw new Error();
+      }
 
       return payload;
     } catch {
@@ -723,13 +797,14 @@ export class HistorySearch {
     }
   }
 
-  private async chats(context: HistoryContext): Promise<HistoryChat[]> {
+  private async chats(context: HistoryContext): Promise<Array<HistoryChat>> {
     const available = await this.source.chats(context);
     const seen = new Set<string>();
 
     return available.filter((chat) => {
-      if (seen.has(chat.id))
+      if (seen.has(chat.id)) {
         throw new Error("History source returned duplicate chats");
+      }
       seen.add(chat.id);
 
       return chat.id === context.agentId;
@@ -740,11 +815,13 @@ export class HistorySearch {
     context: HistoryContext,
     chat: HistoryChat,
     cutoff: number,
-  ): Promise<{ snapshot: Snapshot; rows: Row[] }> {
-    const rows: Row[] = [];
+  ): Promise<{ snapshot: Snapshot; rows: Array<Row> }> {
+    const rows: Array<Row> = [];
     const seen = new Set<string>();
 
-    if (cutoff === 0) return { snapshot: { chat, cutoff }, rows };
+    if (cutoff === 0) {
+      return { snapshot: { chat, cutoff }, rows };
+    }
 
     let before =
       cutoff < Number.MAX_SAFE_INTEGER
@@ -757,7 +834,9 @@ export class HistorySearch {
 
       addPageRows(chat, page, cutoff, seen, rows);
 
-      if (!page.hasMore) break;
+      if (!page.hasMore) {
+        break;
+      }
 
       before = nextCursor(chat, before, oldest, page.oldestEntryId);
     }
@@ -770,10 +849,10 @@ export class HistorySearch {
   private async searchScope(
     context: HistoryContext,
     args: { query?: string; chatId?: string; cursor?: string },
-    available: HistoryChat[],
+    available: Array<HistoryChat>,
   ): Promise<{
     query: string;
-    snapshots: Snapshot[];
+    snapshots: Array<Snapshot>;
     last: MatchKey | undefined;
   }> {
     return args.cursor !== undefined
@@ -786,13 +865,15 @@ export class HistorySearch {
     cursor: string,
     args: { query?: string; chatId?: string },
   ) {
-    if (args.query !== undefined || args.chatId !== undefined)
+    if (args.query !== undefined || args.chatId !== undefined) {
       throw new Error("Use only cursor when continuing a history search");
+    }
 
     const token = this.open(context, cursor);
 
-    if (token.type !== "search")
+    if (token.type !== "search") {
       throw new Error("Expected a history search cursor");
+    }
 
     return { query: token.query, snapshots: token.snapshots, last: token.last };
   }
@@ -800,10 +881,10 @@ export class HistorySearch {
   private async freshScope(
     context: HistoryContext,
     args: { query?: string; chatId?: string },
-    available: HistoryChat[],
+    available: Array<HistoryChat>,
   ): Promise<{
     query: string;
-    snapshots: Snapshot[];
+    snapshots: Array<Snapshot>;
     last: MatchKey | undefined;
   }> {
     const query = validQuery(args.query);
@@ -812,8 +893,9 @@ export class HistorySearch {
       (chat) => args.chatId === undefined || chat.id === args.chatId,
     );
 
-    if (args.chatId !== undefined && chats.length === 0)
+    if (args.chatId !== undefined && chats.length === 0) {
       throw new Error("History chat is unavailable or access is denied");
+    }
 
     return {
       query,
@@ -824,8 +906,8 @@ export class HistorySearch {
 
   private async freshSnapshots(
     context: HistoryContext,
-    chats: HistoryChat[],
-  ): Promise<Snapshot[]> {
+    chats: Array<HistoryChat>,
+  ): Promise<Array<Snapshot>> {
     return Promise.all(
       chats.map(async (chat) => ({
         chat,
@@ -836,13 +918,13 @@ export class HistorySearch {
 
   private async collectCandidates(
     context: HistoryContext,
-    available: HistoryChat[],
-    snapshots: Snapshot[],
+    available: Array<HistoryChat>,
+    snapshots: Array<Snapshot>,
     query: string,
     last: MatchKey | undefined,
-  ): Promise<{ candidates: Candidate[]; frozen: Snapshot[] }> {
-    const candidates: Candidate[] = [];
-    const frozen: Snapshot[] = [];
+  ): Promise<{ candidates: Array<Candidate>; frozen: Array<Snapshot> }> {
+    const candidates: Array<Candidate> = [];
+    const frozen: Array<Snapshot> = [];
 
     for (const snapshot of snapshots) {
       if (!isAvailable(available, snapshot.chat)) {
@@ -860,8 +942,9 @@ export class HistorySearch {
         scanned.rows,
         query,
         last,
-      ))
+      )) {
         candidates.push(candidate);
+      }
     }
 
     return { candidates, frozen };
@@ -946,8 +1029,9 @@ export class HistorySearch {
     const { snapshot } = token;
     const available = await this.chats(context);
 
-    if (!isAvailable(available, snapshot.chat))
+    if (!isAvailable(available, snapshot.chat)) {
       throw new Error("History chat is unavailable or access is denied");
+    }
 
     const scanned = await this.scan(context, snapshot.chat, snapshot.cutoff);
 
@@ -991,8 +1075,8 @@ export class HistorySearch {
       omittedToolActivity: omitsToolActivity(
         snapshot.chat,
         scanned.rows,
-        rows[startIndex]!,
-        rows[finishIndex]!,
+        rowAt(rows, startIndex),
+        rowAt(rows, finishIndex),
         beginning,
         end,
       ),

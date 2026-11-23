@@ -2,7 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { CONNECTION_STATUSES } from "../shared/domain";
 import { MAX_MESSAGE_CHARS } from "../shared/limits";
 
-const unique = (values: readonly string[]) =>
+const unique = (values: ReadonlyArray<string>) =>
   new Set(values).size === values.length;
 
 const ownerNumber = z.string().regex(/^\+?[0-9*#]{1,32}$/u);

@@ -14,6 +14,7 @@ import type {
 import type { AttachmentInfo } from "../shared/attachment-rules";
 import type { MessageFile } from "../files/message-files";
 import {
+  entryIdOf,
   formatEntryId,
   formatMessageId,
   parseEntryRef,
@@ -36,10 +37,8 @@ import {
   MESSAGE_ENTRY,
   messageOrigin,
   USER_ENTRY,
-  type CallEventData,
-  type MessageOrigin,
-  type ModelContent,
 } from "./entries";
+import type { CallEventData, MessageOrigin, ModelContent } from "./entries";
 import { isBotOrigin } from "./origins";
 import {
   isToolResult,
@@ -54,10 +53,8 @@ import {
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
 import type { WaitingFor } from "../contract/reply-event";
-import {
-  transcriptBlock,
-  type BotCommunication,
-} from "../contract/api-responses";
+import { transcriptBlock } from "../contract/api-responses";
+import type { BotCommunication } from "../contract/api-responses";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import { JOB_FAILURE_EVENT } from "../contract/tools";
 
@@ -89,7 +86,7 @@ export type TranscriptMessage = {
   requestId?: string | undefined;
   role: string;
   content: string;
-  blocks?: z.infer<typeof transcriptBlock>[];
+  blocks?: Array<z.infer<typeof transcriptBlock>>;
   stopReason?: string;
   timestamp?: number | undefined;
   kind?: string;
@@ -101,7 +98,7 @@ export type TranscriptMessage = {
     id: string;
     kind: string;
     job: string;
-    options?: string[];
+    options?: Array<string>;
     multiple?: boolean;
   };
   heldAction?: { id: string; job: string };
@@ -110,19 +107,19 @@ export type TranscriptMessage = {
     direction: CallEventData["direction"];
     callee?: string;
   };
-  files?: MessageFile[];
+  files?: Array<MessageFile>;
   toolCallId?: string;
   toolName?: string | undefined;
   isError?: boolean | undefined;
   toolDetails?: unknown;
   presentation?: {
     text: string;
-    citations: { href: string; title: string; site: string }[];
+    citations: Array<{ href: string; title: string; site: string }>;
   };
 };
 
 export type TranscriptPage = {
-  messages: TranscriptMessage[];
+  messages: Array<TranscriptMessage>;
   hasMore: boolean;
   oldestEntryId: string | null;
 };
@@ -136,12 +133,16 @@ function hasTextBlock(message: TranscriptMessage) {
 function eventLabel(message: TranscriptMessage): string {
   const reaction = reactionOf(message);
 
-  if (reaction) return `Reacted ${reaction}`;
+  if (reaction) {
+    return `Reacted ${reaction}`;
+  }
 
   for (const kind of Object.values(JOB_KINDS)) {
     const job = jobCardName(kind.toolName, message);
 
-    if (job) return `${jobKindTitle(kind)} ${job}`;
+    if (job) {
+      return `${jobKindTitle(kind)} ${job}`;
+    }
   }
 
   return isToolResult(message, DESKTOP_SCREENSHOT_TOOL_NAME)
@@ -150,14 +151,19 @@ function eventLabel(message: TranscriptMessage): string {
 }
 
 function conversationPreview(message: TranscriptMessage): string {
-  if (message.role !== "user" && message.role !== "assistant") return "";
+  if (message.role !== "user" && message.role !== "assistant") {
+    return "";
+  }
   const text = message.content.trim();
 
-  if (text && hasTextBlock(message))
+  if (text && hasTextBlock(message)) {
     return text.slice(0, MESSAGE_PREVIEW_CHARS);
+  }
   const file = message.files?.[0];
 
-  if (!file) return "";
+  if (!file) {
+    return "";
+  }
 
   return "deleted" in file ? "File deleted" : `File: ${file.name}`;
 }
@@ -171,11 +177,15 @@ function previewOf(message: TranscriptMessage): string {
   return botText || eventLabel(message) || conversationPreview(message);
 }
 
-export function latestMessagePreview(messages: TranscriptMessage[]): string {
+export function latestMessagePreview(
+  messages: Array<TranscriptMessage>,
+): string {
   for (const message of [...messages].reverse()) {
     const preview = previewOf(message);
 
-    if (preview) return preview;
+    if (preview) {
+      return preview;
+    }
   }
 
   return "";
@@ -187,7 +197,7 @@ const OWNER_REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
   [REQUEST_CALL_TOOL_NAME, "approval"],
 ]);
 
-export function latestReply(messages: TranscriptMessage[]) {
+export function latestReply(messages: Array<TranscriptMessage>) {
   const input = messages.findLastIndex((message) => message.role === "user");
   const output = messages.slice(input + 1);
 
@@ -222,7 +232,7 @@ const blocksOf = (message: TranscriptMessage) =>
 export function textOf(message: TranscriptMessage): string | null {
   const blocks = blocksOf(message);
 
-  if (blocks)
+  if (blocks) {
     return blocks
       .flatMap((block) => {
         const parsed = textBlock.safeParse(block);
@@ -230,8 +240,11 @@ export function textOf(message: TranscriptMessage): string | null {
         return parsed.success ? [parsed.data.text] : [];
       })
       .join("\n");
+  }
 
-  if (message.role !== "user") return null;
+  if (message.role !== "user") {
+    return null;
+  }
 
   return z.string().safeParse(message.blocks).data ?? null;
 }
@@ -252,11 +265,11 @@ export type ToolBlock =
       isError: boolean | undefined;
     };
 
-export function toolBlocks(message: TranscriptMessage): ToolBlock[] {
-  return (blocksOf(message) ?? []).flatMap((raw, index): ToolBlock[] => {
+export function toolBlocks(message: TranscriptMessage): Array<ToolBlock> {
+  return (blocksOf(message) ?? []).flatMap((raw, index): Array<ToolBlock> => {
     const block = toolBlock.safeParse(raw).data;
 
-    if (block?.type === "toolCall")
+    if (block?.type === "toolCall") {
       return [
         {
           type: "toolCall",
@@ -266,8 +279,9 @@ export function toolBlocks(message: TranscriptMessage): ToolBlock[] {
           arguments: z.json().safeParse(block.arguments).data,
         },
       ];
+    }
 
-    if (block?.type === "toolResult")
+    if (block?.type === "toolResult") {
       return [
         {
           type: "toolResult",
@@ -277,6 +291,7 @@ export function toolBlocks(message: TranscriptMessage): ToolBlock[] {
           isError: z.boolean().safeParse(block.isError).data,
         },
       ];
+    }
 
     return [];
   });
@@ -293,14 +308,19 @@ const INPUT_KINDS = new Set<string>([MESSAGE_ENTRY, USER_ENTRY]);
 export const isInputEntry = (entry: EntryRecord) => INPUT_KINDS.has(entry.kind);
 
 function blockHint(content: ModelContent): string {
-  if (!Array.isArray(content)) return "";
+  if (!Array.isArray(content)) {
+    return "";
+  }
 
   return content
     .map((block) => {
-      if (block?.type === "toolCall")
+      if (block?.type === "toolCall") {
         return `Tool call: ${String(block.name ?? "unknown")}`;
+      }
 
-      if (block?.type === "thinking") return "Thinking";
+      if (block?.type === "thinking") {
+        return "Thinking";
+      }
 
       return "";
     })
@@ -320,8 +340,10 @@ function originOf(value: JsonValue | undefined): MessageOrigin | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-function attachmentsOf(value: JsonValue | undefined): AttachmentInfo[] {
-  if (!Array.isArray(value)) return [];
+function attachmentsOf(value: JsonValue | undefined): Array<AttachmentInfo> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
 
   return value.flatMap((item) => {
     const parsed = attachmentInfo.safeParse(item);
@@ -333,8 +355,10 @@ function attachmentsOf(value: JsonValue | undefined): AttachmentInfo[] {
 /** Image bytes stay out of snapshots and pages; clients fetch them by attachment index instead. */
 function withoutImageData(
   content: ModelContent,
-): z.infer<typeof transcriptBlock>[] {
-  if (!Array.isArray(content)) return [{ type: "text", text: content }];
+): Array<z.infer<typeof transcriptBlock>> {
+  if (!Array.isArray(content)) {
+    return [{ type: "text", text: content }];
+  }
 
   return content.flatMap((block) => {
     const parsed = transcriptBlock.safeParse(block);
@@ -346,7 +370,7 @@ function withoutImageData(
 function normalizeBoundary(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const message = entry.model?.[0];
 
   return [
@@ -368,10 +392,12 @@ function normalizeBoundary(
 function normalizeBotMessage(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const parsed = botMessage.safeParse(entry.data);
 
-  if (!parsed.success) return [];
+  if (!parsed.success) {
+    return [];
+  }
 
   return [
     {
@@ -389,10 +415,12 @@ function normalizeBotMessage(
 function normalizeJobQuestion(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const parsed = jobQuestionData.safeParse(entry.data);
 
-  if (!parsed.success) return [];
+  if (!parsed.success) {
+    return [];
+  }
   const { id, kind, job, text, timestamp, options, multiple } = parsed.data;
 
   return [
@@ -417,10 +445,12 @@ function normalizeJobQuestion(
 function normalizeHeldAction(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const parsed = heldActionData.safeParse(entry.data);
 
-  if (!parsed.success) return [];
+  if (!parsed.success) {
+    return [];
+  }
 
   return [
     {
@@ -438,10 +468,12 @@ function normalizeHeldAction(
 function normalizeCallEvent(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const parsed = callEventData.safeParse(entry.data);
 
-  if (!parsed.success) return [];
+  if (!parsed.success) {
+    return [];
+  }
 
   const { callId, phase, direction, callee, greeting, text, timestamp } =
     parsed.data;
@@ -469,7 +501,7 @@ type ToolMetadata = ReturnType<typeof toolMetadata.parse>;
 function emptyMessage(
   message: ModelMessage,
   content: string,
-  attached: AttachmentInfo[],
+  attached: Array<AttachmentInfo>,
   metadata: ToolMetadata,
 ) {
   return (
@@ -482,33 +514,45 @@ function emptyMessage(
 }
 
 function applyToolMetadata(result: TranscriptMessage, metadata: ToolMetadata) {
-  if (metadata.toolCallId !== undefined)
+  if (metadata.toolCallId !== undefined) {
     result.toolCallId = metadata.toolCallId;
+  }
 
-  if (metadata.toolName !== undefined) result.toolName = metadata.toolName;
+  if (metadata.toolName !== undefined) {
+    result.toolName = metadata.toolName;
+  }
 
-  if (metadata.isError !== undefined) result.isError = metadata.isError;
+  if (metadata.isError !== undefined) {
+    result.isError = metadata.isError;
+  }
 
-  if (metadata.details !== undefined) result.toolDetails = metadata.details;
+  if (metadata.details !== undefined) {
+    result.toolDetails = metadata.details;
+  }
 }
 
 function applyInputMetadata(
   result: TranscriptMessage,
   input: ReturnType<typeof inputMetadata.parse>,
 ) {
-  if (input.requestId) result.requestId = input.requestId;
+  if (input.requestId) {
+    result.requestId = input.requestId;
+  }
 
-  if (!input.replyTo) return;
+  if (!input.replyTo) {
+    return;
+  }
   result.replyTo = input.replyTo;
 
-  if (input.replyPreview !== undefined)
+  if (input.replyPreview !== undefined) {
     result.replyPreview = input.replyPreview;
+  }
 }
 
 function normalizeModelEntry(
   entryId: string,
   entry: EntryRecord,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const data = record(entry.data);
   const input = inputMetadata.parse(data ?? {});
   const origin = originOf(data?.["origin"]);
@@ -528,15 +572,16 @@ function normalizeModelEntry(
     )
     .safeParse(data?.["files"]);
 
-  const files: MessageFile[] = parsedFiles.success
+  const files: Array<MessageFile> = parsedFiles.success
     ? parsedFiles.data
     : attachments.map((_, index) => ({
         id: `legacy:${entryId}:${index}`,
         deleted: true,
       }));
 
-  if (data?.["jobFailed"] === true && origin && input.text)
+  if (data?.["jobFailed"] === true && origin && input.text) {
     return normalizeJobFailure(entryId, entry, origin, input.text);
+  }
 
   return (entry.model ?? []).flatMap((message, index) => {
     const content =
@@ -550,8 +595,9 @@ function normalizeModelEntry(
     if (
       emptyMessage(message, content, attached, metadata) &&
       !(message.role === "user" && files.length)
-    )
+    ) {
       return [];
+    }
 
     const result: TranscriptMessage = {
       id: formatMessageId(entryId, index),
@@ -563,12 +609,18 @@ function normalizeModelEntry(
       kind: entry.kind,
     };
 
-    if (message.role === "assistant") result.stopReason = message.stopReason;
+    if (message.role === "assistant") {
+      result.stopReason = message.stopReason;
+    }
     applyInputMetadata(result, input);
 
-    if (origin) result.origin = origin;
+    if (origin) {
+      result.origin = origin;
+    }
 
-    if (message.role === "user" && files.length) result.files = files;
+    if (message.role === "user" && files.length) {
+      result.files = files;
+    }
     applyToolMetadata(result, metadata);
 
     return [result];
@@ -581,7 +633,7 @@ function normalizeJobFailure(
   entry: EntryRecord,
   origin: MessageOrigin,
   text: string,
-): TranscriptMessage[] {
+): Array<TranscriptMessage> {
   const timestamp = entry.model?.[0]?.timestamp;
 
   return [
@@ -597,22 +649,31 @@ function normalizeJobFailure(
   ];
 }
 
-function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
+function normalize(
+  agentId: string,
+  entry: EntryRecord,
+): Array<TranscriptMessage> {
   const entryId = formatEntryId(agentId, Number(entry.id));
 
-  if (entry.kind === "pi.compaction" || entry.kind === "pi.reset")
+  if (entry.kind === "pi.compaction" || entry.kind === "pi.reset") {
     return normalizeBoundary(entryId, entry);
+  }
 
-  if (entry.kind === BOT_MESSAGE_ENTRY)
+  if (entry.kind === BOT_MESSAGE_ENTRY) {
     return normalizeBotMessage(entryId, entry);
+  }
 
-  if (entry.kind === HELD_ACTION_ENTRY)
+  if (entry.kind === HELD_ACTION_ENTRY) {
     return normalizeHeldAction(entryId, entry);
+  }
 
-  if (entry.kind === JOB_QUESTION_ENTRY)
+  if (entry.kind === JOB_QUESTION_ENTRY) {
     return normalizeJobQuestion(entryId, entry);
+  }
 
-  if (entry.kind === CALL_ENTRY) return normalizeCallEvent(entryId, entry);
+  if (entry.kind === CALL_ENTRY) {
+    return normalizeCallEvent(entryId, entry);
+  }
 
   return normalizeModelEntry(entryId, entry);
 }
@@ -630,14 +691,15 @@ async function collectEntries(
   limit: number,
   before: number | undefined,
 ) {
-  if (!conversation) return { entries: [], truncated: false };
+  if (!conversation) {
+    return { entries: [], truncated: false };
+  }
 
   const query: TranscriptEntryQuery = { order: "descending" };
 
   if (before !== undefined) {
-    // SAFETY: parseEntryRef validated a positive safe integer; subtracting one
-    // gives the inclusive entry bound immediately before that cursor.
-    query.maxEntryId = (before - 1) as EntryId;
+    // Parsed entry IDs are positive, so the entry before one is still a valid bound.
+    query.maxEntryId = entryIdOf(before - 1);
   }
 
   const page = await conversation.entries(
@@ -654,9 +716,9 @@ async function earlierCitationContext(
   agentId: string,
   conversation: Conversation | undefined,
   oldest: number | null,
-  messages: TranscriptMessage[],
-): Promise<TranscriptMessage[]> {
-  const context: TranscriptMessage[] = [];
+  messages: Array<TranscriptMessage>,
+): Promise<Array<TranscriptMessage>> {
+  const context: Array<TranscriptMessage> = [];
   let cursor = oldest;
   const firstUser = messages.findIndex((message) => message.role === "user");
 
@@ -672,14 +734,18 @@ async function earlierCitationContext(
   ) {
     const previous = await collectEntries(conversation, 100, cursor);
 
-    if (!previous.entries.length) break;
+    if (!previous.entries.length) {
+      break;
+    }
 
     for (const entry of previous.entries) {
       const normalized = normalize(agentId, entry);
       context.unshift(...normalized);
       cursor = Number(entry.id);
 
-      if (normalized.some((message) => message.role === "user")) break;
+      if (normalized.some((message) => message.role === "user")) {
+        break;
+      }
     }
   }
 
@@ -705,17 +771,20 @@ async function readPage(
     before,
   );
 
-  const messages: TranscriptMessage[] = [];
+  const messages: Array<TranscriptMessage> = [];
   let consumed = 0;
 
   // Pages end on entry boundaries so a cursor never splits one entry's messages.
   for (const entry of entries) {
-    if (messages.length >= limit) break;
+    if (messages.length >= limit) {
+      break;
+    }
     messages.unshift(...normalize(agentId, entry));
     consumed += 1;
   }
 
-  const oldest = consumed ? Number(entries[consumed - 1]!.id) : null;
+  const lastConsumed = consumed ? entries[consumed - 1] : undefined;
+  const oldest = lastConsumed ? Number(lastConsumed.id) : null;
 
   const context = await earlierCitationContext(
     agentId,
@@ -761,12 +830,11 @@ const entriesBetween = (
   last: number,
   limit: number,
 ) =>
-  // SAFETY: see above; pi-durable brands entry numbers at this boundary.
   conversation.entries(
     {
       order: "ascending",
-      minEntryId: first as EntryId,
-      maxEntryId: last as EntryId,
+      minEntryId: entryIdOf(first),
+      maxEntryId: entryIdOf(last),
     },
     limit,
     undefined,
@@ -776,13 +844,17 @@ const entriesBetween = (
 export const entryAt = async (conversation: Conversation, id: number) =>
   (await entriesBetween(conversation, id, id, 1)).items[0];
 
-const trimQuoted = <Quote extends { content: string }>(quoted: Quote[]) => {
-  while (JSON.stringify(quoted).length > 12000) {
+const trimQuoted = <Quote extends { content: string }>(
+  quoted: Array<Quote>,
+) => {
+  while (JSON.stringify(quoted).length > 12_000) {
     const longest = quoted.reduce((a, b) =>
       b.content.length > a.content.length ? b : a,
     );
 
-    if (longest.content.length <= 80) break;
+    if (longest.content.length <= 80) {
+      break;
+    }
     longest.content = longest.content.slice(0, longest.content.length - 200);
   }
 };
@@ -797,8 +869,9 @@ export async function prepareReply(
   const target = parseEntryRef(agentId, replyTo, "reply target");
   const chat = await harness.root(BACKGROUND_CONTEXT);
 
-  if (!(await entryAt(chat, target)))
+  if (!(await entryAt(chat, target))) {
     throw new InvalidInput({ message: "Reply target not found" });
+  }
 
   const nearby = await entriesBetween(
     chat,
@@ -816,13 +889,15 @@ export async function prepareReply(
   );
 
   const at = rows.findIndex((row) => Number(row.entry.id) === target);
+  const targetRow = at < 0 ? undefined : rows[at];
 
-  if (at < 0)
+  if (!targetRow) {
     throw new InvalidInput({
       message: "Reply target is not a visible message",
     });
+  }
 
-  const targetMessage = rows[at]!.message;
+  const targetMessage = targetRow.message;
 
   const quoted = rows.slice(Math.max(0, at - 2), at + 3).map((row) => ({
     id: row.message.entryId,
@@ -858,7 +933,9 @@ export async function readAttachment(
 
   const image = entry && screenshotImage(entry, index);
 
-  if (!image) throw new NotFound({ message: "Attachment not found" });
+  if (!image) {
+    throw new NotFound({ message: "Attachment not found" });
+  }
 
   return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
 }
@@ -876,7 +953,7 @@ function screenshotImage(entry: EntryRecord, index: number) {
     : undefined;
 }
 
-function outputLines(message: ModelMessage): string[] {
+function outputLines(message: ModelMessage): Array<string> {
   const text = message.role === "assistant" ? contentText(message.content) : "";
   const reaction = reactionOf(message);
 
@@ -890,20 +967,21 @@ export async function turnEntries(
   conversation: Conversation,
   inputEntryId: number,
 ) {
-  const entries: EntryRecord[] = [];
+  const entries: Array<EntryRecord> = [];
   let cursor: Cursor | undefined;
 
   do {
     const page = await conversation.entries(
-      // SAFETY: a persisted input's ID is a valid inclusive lower bound.
-      { order: "ascending", minEntryId: inputEntryId as EntryId },
+      { order: "ascending", minEntryId: entryIdOf(inputEntryId) },
       MAX_LIMIT,
       cursor,
       BACKGROUND_CONTEXT,
     );
 
     for (const entry of page.items) {
-      if (entries.length && isInputEntry(entry)) return entries;
+      if (entries.length && isInputEntry(entry)) {
+        return entries;
+      }
       entries.push(entry);
     }
 
@@ -926,9 +1004,8 @@ export async function entriesBefore(
   next: number,
   limit: number,
 ) {
-  // SAFETY: the entry before a persisted input is the inclusive upper bound of what preceded it.
   const page = await conversation.entries(
-    { order: "descending", maxEntryId: (next - 1) as EntryId },
+    { order: "descending", maxEntryId: entryIdOf(next - 1) },
     limit,
     undefined,
     BACKGROUND_CONTEXT,

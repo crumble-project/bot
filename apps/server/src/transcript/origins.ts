@@ -86,34 +86,53 @@ export function turnSource({
 }: Pick<Execution, "requestId" | "scheduleId">): TurnSource {
   const request = parseRequestId(requestId);
 
-  if (request.kind === "event") return request;
+  if (request.kind === "event") {
+    return request;
+  }
 
-  if (scheduleId) return { kind: "task", scheduleId };
+  if (scheduleId) {
+    return { kind: "task", scheduleId };
+  }
 
   const asking = askingBot(request);
 
-  if (asking) return { kind: "bot", agentId: asking };
+  if (asking) {
+    return { kind: "bot", agentId: asking };
+  }
 
-  if (request.kind === "script")
+  if (request.kind === "script") {
     return { kind: "script", scheduleId: request.scheduleId };
+  }
 
-  if (request.kind === "notice")
+  if (request.kind === "notice") {
     return request.notice === "files"
       ? { kind: "files" }
       : { kind: "credential", name: request.name };
+  }
 
-  if (request.kind === "bot-request") return { kind: "bot_request" };
+  if (request.kind === "bot-request") {
+    return { kind: "bot_request" };
+  }
 
-  if (request.kind === "gateway")
+  if (request.kind === "gateway") {
     return { kind: "owner", via: request.adapterId };
+  }
 
-  if (request.kind === "voice") return { kind: "owner", via: VOICE_VIA };
+  if (request.kind === "voice") {
+    return { kind: "owner", via: VOICE_VIA };
+  }
 
-  if (request.kind === "voice-call") return { kind: "call" };
+  if (request.kind === "voice-call") {
+    return { kind: "call" };
+  }
 
-  if (request.kind === "outside-call") return { kind: "callee" };
+  if (request.kind === "outside-call") {
+    return { kind: "callee" };
+  }
 
-  if (request.kind === "call-request") return { kind: "call_request" };
+  if (request.kind === "call-request") {
+    return { kind: "call_request" };
+  }
 
   return { kind: "owner" };
 }

@@ -30,10 +30,13 @@ export function fileName(value: string | undefined) {
 }
 
 function friendlySize(bytes: number) {
-  if (bytes >= 1024 * 1024 && bytes % (1024 * 1024) === 0)
+  if (bytes >= 1024 * 1024 && bytes % (1024 * 1024) === 0) {
     return `${bytes / (1024 * 1024)} MB`;
+  }
 
-  if (bytes >= 1024 && bytes % 1024 === 0) return `${bytes / 1024} KB`;
+  if (bytes >= 1024 && bytes % 1024 === 0) {
+    return `${bytes / 1024} KB`;
+  }
 
   return `${bytes} bytes`;
 }
@@ -66,12 +69,13 @@ const upload = Effect.fnUntraced(function* (
     ),
   );
 
-  if (result.kind === "too-large")
+  if (result.kind === "too-large") {
     return yield* Effect.die(
       new HTTPException(413, {
         message: fileTooLarge(name, result.limit),
       }),
     );
+  }
 
   return result.value;
 });
@@ -84,7 +88,9 @@ const list = Effect.fnUntraced(function* (
     limit: page.limit,
   };
 
-  if (page.before !== undefined) input.before = page.before;
+  if (page.before !== undefined) {
+    input.before = page.before;
+  }
   const service = yield* Library;
 
   return yield* service.list(library, input);
@@ -102,7 +108,7 @@ const download = Effect.fnUntraced(function* (library: LibraryRef, id: string) {
 });
 
 const remove = (library: LibraryRef, id: string) =>
-  Library.use((service) => service.remove(library, id));
+  Effect.flatMap(Library, (service) => service.remove(library, id));
 
 export function registerFileRoutes({
   register,

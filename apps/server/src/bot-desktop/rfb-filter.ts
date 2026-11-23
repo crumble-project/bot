@@ -28,9 +28,13 @@ const COMPUTED_LENGTH = new Map<number, Length>([
 ]);
 
 function qemuLength(bytes: Uint8Array): number {
-  if (bytes.length < 2) return 0;
+  if (bytes.length < 2) {
+    return 0;
+  }
 
-  if (bytes[1] === 0) return 12;
+  if (bytes[1] === 0) {
+    return 12;
+  }
 
   throw new RfbProtocolError(`unknown QEMU client message ${bytes[1]}`);
 }
@@ -38,16 +42,21 @@ function qemuLength(bytes: Uint8Array): number {
 function messageLength(bytes: Uint8Array): number {
   const type = bytes[0];
 
-  if (type === undefined) return 0;
+  if (type === undefined) {
+    return 0;
+  }
 
   const fixed = FIXED_LENGTH.get(type);
 
-  if (fixed !== undefined) return fixed;
+  if (fixed !== undefined) {
+    return fixed;
+  }
 
   const computed = COMPUTED_LENGTH.get(type);
 
-  if (!computed)
+  if (!computed) {
     throw new RfbProtocolError(`unknown RFB client message ${type}`);
+  }
 
   return computed(
     bytes,
@@ -55,7 +64,7 @@ function messageLength(bytes: Uint8Array): number {
   );
 }
 
-function concat(parts: Uint8Array[]) {
+function concat(parts: Array<Uint8Array>) {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
 
@@ -71,8 +80,10 @@ export function rfbFilter(allowInput: () => boolean) {
   let handshake = HANDSHAKE_BYTES;
   let buffer: Uint8Array = new Uint8Array();
 
-  function passHandshake(out: Uint8Array[]) {
-    if (handshake <= 0) return;
+  function passHandshake(out: Array<Uint8Array>) {
+    if (handshake <= 0) {
+      return;
+    }
     const n = Math.min(handshake, buffer.length);
 
     out.push(buffer.subarray(0, n));
@@ -84,19 +95,23 @@ export function rfbFilter(allowInput: () => boolean) {
     push(chunk: Uint8Array): Uint8Array {
       buffer = buffer.length ? concat([buffer, chunk]) : chunk;
 
-      const out: Uint8Array[] = [];
+      const out: Array<Uint8Array> = [];
       passHandshake(out);
 
       while (handshake === 0 && buffer.length) {
         const length = messageLength(buffer);
 
-        if (length === 0 || buffer.length < length) break;
+        if (length === 0 || buffer.length < length) {
+          break;
+        }
 
         const message = buffer.subarray(0, length);
 
         buffer = buffer.subarray(length);
 
-        if (INPUT.has(message[0] ?? -1) && !allowInput()) continue;
+        if (INPUT.has(message[0] ?? -1) && !allowInput()) {
+          continue;
+        }
 
         out.push(message);
       }

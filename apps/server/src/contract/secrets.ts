@@ -57,7 +57,7 @@ const credentialHost = z
     return (
       labels.length >= 2 &&
       labels.every((label) => HOST_LABEL.test(label)) &&
-      !/^[0-9]+$/.test(labels.at(-1)!)
+      !/^[0-9]+$/.test(labels.at(-1) ?? "")
     );
   }, "Hosts look like api.example.com or *.example.com");
 
@@ -124,7 +124,7 @@ export const loginFieldInput = z.enum([
 export type LoginField = z.infer<typeof loginFieldInput>;
 
 /** The grammar of a 1Password item reference; a field reference continues it with `/<field>`. */
-export const ONE_PASSWORD_ITEM = "op:\\/\\/[^/]+\\/[^/]+";
+export const ONE_PASSWORD_ITEM = String.raw`op:\/\/[^/]+\/[^/]+`;
 
 /** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
 const loginItemInput = z.object({

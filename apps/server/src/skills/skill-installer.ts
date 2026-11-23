@@ -9,8 +9,10 @@ import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
 import type { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
-import { type Skill, type SkillInput } from "../contract/skills";
-import { skillNameKey, type SkillDocument } from "./skill-repository";
+import { required } from "../shared/required";
+import type { Skill, SkillInput } from "../contract/skills";
+import { skillNameKey } from "./skill-repository";
+import type { SkillDocument } from "./skill-repository";
 import { MAX_SKILL_FILE_BYTES } from "../shared/limits";
 import {
   Conflict,
@@ -27,8 +29,8 @@ import {
   skillFiles,
   skillFolders,
   skillFromMarkdown,
-  type TreeEntry,
 } from "./github-skills";
+import type { TreeEntry } from "./github-skills";
 import { skillUpdates } from "./schema";
 import { SkillRepository } from "./skill-repository";
 
@@ -44,7 +46,7 @@ export type SkillInstall = {
   repository: string;
   branch: string;
   commit: string;
-  paths: string[];
+  paths: Array<string>;
 };
 
 export type PendingSkillUpdate = z.infer<typeof pendingSkillUpdateResponse>;
@@ -54,6 +56,40 @@ export type SkillUpdate = { commit: string; removed: boolean };
 export type SkillCheck = z.infer<typeof skillCheckResponse>;
 
 type Installed = Skill & { origin: NonNullable<Skill["origin"]> };
+
+const statusOf = (
+  library: Array<Skill>,
+  repository: string,
+  folder: string,
+  name: string,
+  digest: string,
+): Pick<SkillCandidate, "status" | "problem" | "skillId"> => {
+  const same = library.find(
+    (skill) =>
+      skill.origin?.repository.toLowerCase() === repository.toLowerCase() &&
+      skill.origin.path === folder,
+  );
+
+  if (same) {
+    return {
+      status: same.origin?.digest === digest ? "installed" : "update",
+      problem: null,
+      skillId: same.id,
+    };
+  }
+
+  const named = library.find(
+    (skill) => skillNameKey(skill.name) === skillNameKey(name),
+  );
+
+  return named
+    ? {
+        status: "clash",
+        problem: `A shared skill named ${named.name} already exists`,
+        skillId: null,
+      }
+    : { status: "new", problem: null, skillId: null };
+};
 
 const isInstalled = (skill: Skill): skill is Installed => skill.origin !== null;
 
@@ -77,7 +113,7 @@ export class SkillInstaller extends Context.Service<
     readonly install: (
       request: SkillInstall,
     ) => Effect.Effect<
-      Skill[],
+      Array<Skill>,
       InvalidInput | NotFound | Conflict | Unavailable
     >;
     readonly updates: Effect.Effect<Map<string, SkillUpdate>>;
@@ -101,20 +137,23 @@ export class SkillInstaller extends Context.Service<
     const fetchSkill = Effect.fnUntraced(function* (
       repository: string,
       commit: string,
-      tree: TreeEntry[],
+      tree: Array<TreeEntry>,
       folder: string,
       withDocuments: boolean,
     ) {
       const files = skillFiles(tree, folder);
 
-      if (!files.main) return { problem: "No SKILL.md", files } as const;
+      if (!files.main) {
+        return { problem: "No SKILL.md", files } as const;
+      }
 
-      if ((files.main.size ?? 0) > MAX_SKILL_FILE_BYTES)
+      if ((files.main.size ?? 0) > MAX_SKILL_FILE_BYTES) {
         return { problem: "SKILL.md is too large", files } as const;
+      }
 
       const markdown = yield* reader.file(repository, commit, files.main.path);
 
-      const documents: SkillDocument[] = withDocuments
+      const documents: Array<SkillDocument> = withDocuments
         ? yield* Effect.forEach(
             files.documents,
             (document) =>
@@ -143,48 +182,15 @@ export class SkillInstaller extends Context.Service<
           } as const);
     });
 
-    const statusOf = (
-      library: Skill[],
-      repository: string,
-      folder: string,
-      name: string,
-      digest: string,
-    ): Pick<SkillCandidate, "status" | "problem" | "skillId"> => {
-      const same = library.find(
-        (skill) =>
-          skill.origin?.repository.toLowerCase() === repository.toLowerCase() &&
-          skill.origin.path === folder,
-      );
-
-      if (same)
-        return {
-          status: same.origin?.digest === digest ? "installed" : "update",
-          problem: null,
-          skillId: same.id,
-        };
-
-      const named = library.find(
-        (skill) => skillNameKey(skill.name) === skillNameKey(name),
-      );
-
-      return named
-        ? {
-            status: "clash",
-            problem: `A shared skill named ${named.name} already exists`,
-            skillId: null,
-          }
-        : { status: "new", problem: null, skillId: null };
-    };
-
     const candidateOf = (
-      library: Skill[],
+      library: Array<Skill>,
       repository: string,
       folder: string,
       found: Effect.Success<ReturnType<typeof fetchSkill>>,
     ): SkillCandidate => {
       const skipped = found.files.skipped;
 
-      if ("problem" in found)
+      if ("problem" in found) {
         return {
           path: folder,
           name: nameOf(repository, folder),
@@ -194,6 +200,7 @@ export class SkillInstaller extends Context.Service<
           skipped,
           skillId: null,
         };
+      }
 
       return {
         path: folder,
@@ -215,10 +222,11 @@ export class SkillInstaller extends Context.Service<
     ) {
       const location = parseSkillLocation(input);
 
-      if (!location)
+      if (!location) {
         return yield* new InvalidInput({
           message: "Enter owner/repo or a github.com URL",
         });
+      }
 
       const { repository } = location;
 
@@ -260,16 +268,21 @@ export class SkillInstaller extends Context.Service<
         folder: string;
         found: Effect.Success<ReturnType<typeof fetchSkill>>;
       }>,
-      library: Skill[],
+      library: Array<Skill>,
     ) {
       const names = new Set<string>();
-      const ready: { folder: string; skill: SkillInput; digest: string }[] = [];
+      const ready: Array<{
+        folder: string;
+        skill: SkillInput;
+        digest: string;
+      }> = [];
 
       for (const { folder, found } of fetched) {
-        if ("problem" in found)
+        if ("problem" in found) {
           return yield* new InvalidInput({
             message: `${nameOf(repository, folder)}: ${found.problem}`,
           });
+        }
 
         const { skill, digest } = found;
         const key = skillNameKey(skill.name);
@@ -282,10 +295,11 @@ export class SkillInstaller extends Context.Service<
           digest,
         );
 
-        if (status.status !== "new" || names.has(key))
+        if (status.status !== "new" || names.has(key)) {
           return yield* new Conflict({
             message: status.problem ?? `${skill.name} is already installed`,
           });
+        }
         names.add(key);
         ready.push({ folder, skill, digest });
       }
@@ -298,8 +312,9 @@ export class SkillInstaller extends Context.Service<
     ) {
       const location = parseSkillLocation(request.repository);
 
-      if (!location || location.repository !== request.repository)
+      if (!location || location.repository !== request.repository) {
         return yield* new InvalidInput({ message: "Invalid repository" });
+      }
 
       const { repository, commit } = request;
 
@@ -312,10 +327,11 @@ export class SkillInstaller extends Context.Service<
 
       const missing = paths.find((path) => !folders.has(path));
 
-      if (missing !== undefined)
+      if (missing !== undefined) {
         return yield* new NotFound({
           message: `No skill at ${missing || "the repository root"}`,
         });
+      }
 
       const fetched = yield* Effect.forEach(
         paths,
@@ -355,11 +371,12 @@ export class SkillInstaller extends Context.Service<
       for (const skill of (yield* shared).filter(isInstalled)) {
         const row = byId.get(skill.id);
 
-        if (row && row.digest !== skill.origin.digest)
+        if (row && row.digest !== skill.origin.digest) {
           result.set(skill.id, {
             commit: row.commit,
             removed: row.digest === null,
           });
+        }
       }
 
       return result;
@@ -379,13 +396,20 @@ export class SkillInstaller extends Context.Service<
         .pipe(Effect.orDie);
     });
 
-    const checkBranch = Effect.fnUntraced(function* (group: Installed[]) {
-      const { repository, branch } = group[0]!.origin;
+    const checkBranch = Effect.fnUntraced(function* (group: Array<Installed>) {
+      const [first] = group;
+
+      if (!first) {
+        return;
+      }
+
+      const { repository, branch } = first.origin;
       const head = yield* reader.head(repository, branch);
 
       if (group.every((skill) => skill.origin.commit === head.commit)) {
-        for (const skill of group)
+        for (const skill of group) {
           yield* record(skill.id, head.commit, skill.origin.digest);
+        }
 
         return;
       }
@@ -425,7 +449,13 @@ export class SkillInstaller extends Context.Service<
       const failed: SkillCheck["failed"] = [];
 
       for (const group of groups.values()) {
-        const { repository, branch } = group[0]!.origin;
+        const [first] = group;
+
+        if (!first) {
+          continue;
+        }
+
+        const { repository, branch } = first.origin;
 
         yield* checkBranch(group).pipe(
           Effect.catch((error) =>
@@ -442,17 +472,19 @@ export class SkillInstaller extends Context.Service<
     const upstreamOf = Effect.fnUntraced(function* (skillId: string) {
       const skill = yield* skills.get(skillId);
 
-      if (!skill || !isInstalled(skill))
+      if (!skill || !isInstalled(skill)) {
         return yield* new NotFound({ message: "Installed skill not found" });
+      }
 
       const update = (yield* updates).get(skill.id);
 
-      if (!update || update.removed)
+      if (!update || update.removed) {
         return yield* new NotFound({
           message: update
             ? `${skill.name} is no longer in ${skill.origin.repository}`
             : `${skill.name} has no update`,
         });
+      }
 
       const { repository, path } = skill.origin;
 
@@ -463,10 +495,11 @@ export class SkillInstaller extends Context.Service<
         Effect.mapError(fromGitHub(repository)),
       );
 
-      if ("problem" in found)
+      if ("problem" in found) {
         return yield* new Unavailable({
           message: `The new version of ${skill.name} can't be installed: ${found.problem}`,
         });
+      }
 
       return { skill, found, commit: update.commit };
     });
@@ -490,19 +523,23 @@ export class SkillInstaller extends Context.Service<
           skillNameKey(other.name) === skillNameKey(found.skill.name),
       );
 
-      if (named)
+      if (named) {
         return yield* new Conflict({
           message: `The new version is named ${found.skill.name}, and a shared skill with that name already exists`,
         });
+      }
 
-      return (yield* skills.update(
-        skill.id,
-        {
-          ...found.skill,
-          origin: { ...skill.origin, commit, digest: found.digest },
-        },
-        OWNER,
-      ))!;
+      return required(
+        yield* skills.update(
+          skill.id,
+          {
+            ...found.skill,
+            origin: { ...skill.origin, commit, digest: found.digest },
+          },
+          OWNER,
+        ),
+        "The installed skill was not stored",
+      );
     });
 
     return SkillInstaller.of({

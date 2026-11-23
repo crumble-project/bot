@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { HttpError, type RoutePath, send } from "@/lib/api";
+import { HttpError, send } from "@/lib/api";
+import type { RoutePath } from "@/lib/api";
 import { onSessionReset } from "@/lib/session";
 import type { Message } from "./api";
 import type { Upload } from "./composer";
@@ -8,7 +9,7 @@ export type Outgoing = {
   requestId: string;
   content: string;
   replyTo?: string;
-  uploads: Upload[];
+  uploads: Array<Upload>;
   state: "sending" | "failed";
 };
 
@@ -20,20 +21,27 @@ export const outgoingMessage = (message: Outgoing): Message => ({
   replyReferences: [],
 });
 
-const outgoing = new Map<string, Outgoing[]>();
+const outgoing = new Map<string, Array<Outgoing>>();
 const listeners = new Set<() => void>();
-const EMPTY: Outgoing[] = [];
+const EMPTY: Array<Outgoing> = [];
 
-function update(chat: string, change: (list: Outgoing[]) => Outgoing[]) {
+function update(
+  chat: string,
+  change: (list: Array<Outgoing>) => Array<Outgoing>,
+) {
   outgoing.set(chat, change(outgoing.get(chat) ?? []));
 
-  for (const listener of listeners) listener();
+  for (const listener of listeners) {
+    listener();
+  }
 }
 
 onSessionReset(() => {
   outgoing.clear();
 
-  for (const listener of listeners) listener();
+  for (const listener of listeners) {
+    listener();
+  }
 });
 
 export function useOutgoing(chat: string) {
@@ -50,10 +58,11 @@ export function useOutgoing(chat: string) {
 export function confirm(chat: string, requestIds: Set<string>) {
   const list = outgoing.get(chat);
 
-  if (list?.some((message) => requestIds.has(message.requestId)))
+  if (list?.some((message) => requestIds.has(message.requestId))) {
     update(chat, (current) =>
       current.filter((message) => !requestIds.has(message.requestId)),
     );
+  }
 }
 
 /** Takes a message the server refused off the transcript, so it can go back to the composer. */

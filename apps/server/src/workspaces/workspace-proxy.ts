@@ -11,7 +11,7 @@ export type WorkspaceInterceptor = {
 };
 
 export type WorkspaceProxyOptions = {
-  lookup?: (host: string) => Promise<string[]>;
+  lookup?: (host: string) => Promise<Array<string>>;
   isPublicAddress?: (address: string) => boolean;
   firstByteTimeoutMs?: number;
   /** Listen on this port, so a restarted machine finds its proxy at the address it was created with. */
@@ -32,17 +32,21 @@ export async function startWorkspaceProxy(
 ): Promise<WorkspaceProxy> {
   const lookup = options.lookup ?? lookupAll;
   const isPublic = options.isPublicAddress ?? isPublicAddress;
-  const timeout = options.firstByteTimeoutMs ?? 2_000;
+  const timeout = options.firstByteTimeoutMs ?? 2000;
   const { sockets, track } = socketTracker();
 
   async function tunnel(client: net.Socket) {
     const port = await acceptConnect(client, timeout);
 
-    if (port === undefined) return;
+    if (port === undefined) {
+      return;
+    }
 
     const request = await readFirstRequest(client, timeout);
 
-    if (!request) return void client.destroy();
+    if (!request) {
+      return void client.destroy();
+    }
 
     return route(client, request.first, request.host, port);
   }
@@ -61,13 +65,19 @@ export async function startWorkspaceProxy(
       return options.intercept?.handle(client, host, port);
     };
 
-    if (tls && options.intercept?.answers?.(host)) return handOff();
+    if (tls && options.intercept?.answers?.(host)) {
+      return handOff();
+    }
 
     const address = (await lookup(host)).find(isPublic);
 
-    if (!address || client.destroyed) return void client.destroy();
+    if (!address || client.destroyed) {
+      return void client.destroy();
+    }
 
-    if (tls && options.intercept?.wants(host)) return handOff();
+    if (tls && options.intercept?.wants(host)) {
+      return handOff();
+    }
 
     forward(client, first, port, address, track);
   }
@@ -86,10 +96,20 @@ export async function startWorkspaceProxy(
 }
 
 async function closeProxy(server: net.Server, sockets: Set<net.Socket>) {
-  for (const socket of sockets) socket.destroy();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
+  for (const socket of sockets) {
+    socket.destroy();
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+
+        return;
+      }
+
+      resolve();
+    });
+  });
 }
 
 function socketTracker() {
@@ -111,8 +131,11 @@ async function listenOnLoopback(server: net.Server, port: number) {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);
   });
-  // SAFETY: listen completed on a TCP port, not a Unix socket.
-  const address = server.address() as net.AddressInfo;
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("The workspace proxy did not listen on a TCP port");
+  }
 
   return address.port;
 }
@@ -156,7 +179,9 @@ async function acceptConnect(client: net.Socket, timeout: number) {
 
   const rest = head.subarray(head.indexOf("\r\n\r\n") + 4);
 
-  if (rest.length) client.unshift(rest);
+  if (rest.length) {
+    client.unshift(rest);
+  }
   client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
 
   return port;
@@ -170,8 +195,9 @@ async function readFirstRequest(client: net.Socket, timeout: number) {
 }
 
 function completeFirstRequest(data: Buffer) {
-  if (data[0] === 22)
+  if (data[0] === 22) {
     return data.length >= 5 && data.length >= 5 + data.readUInt16BE(3);
+  }
 
   return data.includes("\r\n\r\n");
 }
@@ -199,8 +225,11 @@ function readUntil(
     const receive = (data: Buffer) => {
       pending = Buffer.concat([pending, data]);
 
-      if (pending.length > MAX_HEADER_BYTES) finish();
-      else if (complete(pending)) finish(pending);
+      if (pending.length > MAX_HEADER_BYTES) {
+        finish();
+      } else if (complete(pending)) {
+        finish(pending);
+      }
     };
 
     const timer = setTimeout(ended, timeout);
@@ -209,7 +238,10 @@ function readUntil(
     socket.once("close", ended);
     socket.once("error", ended);
 
-    if (socket.destroyed || socket.readableEnded) ended();
-    else socket.resume();
+    if (socket.destroyed || socket.readableEnded) {
+      ended();
+    } else {
+      socket.resume();
+    }
   });
 }

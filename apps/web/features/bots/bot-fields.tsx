@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -26,18 +27,12 @@ import { Select, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, randomId } from "@/lib/utils";
-import {
-  type Bot,
-  type BotInput,
-  type Capabilities,
-  capabilitiesQuery,
-} from "./api";
-import { type McpServer, mcpServersQuery } from "@/features/integrations/api";
-import {
-  type Provider,
-  modelsQuery,
-  providersQuery,
-} from "@/features/providers/api";
+import { capabilitiesQuery } from "./api";
+import type { Bot, BotInput, Capabilities } from "./api";
+import { mcpServersQuery } from "@/features/integrations/api";
+import type { McpServer } from "@/features/integrations/api";
+import { modelsQuery, providersQuery } from "@/features/providers/api";
+import type { Provider } from "@/features/providers/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import {
   isWebSearchProviderId,
@@ -47,11 +42,8 @@ import { SelectOptions } from "@/components/form-fields";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { AvatarEditor } from "@/features/avatars/avatar-editor";
 import { CAPABILITIES } from "./capabilities";
-import {
-  type ThinkingLevel,
-  ReasoningSelect,
-  useReasoningPreview,
-} from "./reasoning";
+import { ReasoningSelect, useReasoningPreview } from "./reasoning";
+import type { ThinkingLevel } from "./reasoning";
 import { BOT_TOOL } from "@crumble/server/contract/tools";
 import {
   MAX_BOT_DESCRIPTION_CHARS,
@@ -60,7 +52,7 @@ import {
 } from "@crumble/server/contract/limits";
 import { DEFAULT_BOT_INSTRUCTIONS } from "@crumble/server/contract/agents";
 
-const DEFAULT_TOOLS: string[] = [
+const DEFAULT_TOOLS: Array<string> = [
   BOT_TOOL.memory,
   BOT_TOOL.web,
   BOT_TOOL.delegate,
@@ -69,8 +61,9 @@ const DEFAULT_TOOLS: string[] = [
 const DEFAULT_INSTRUCTIONS = DEFAULT_BOT_INSTRUCTIONS;
 
 const modelsHint = (configured: boolean, modelCount: number) => {
-  if (!configured)
+  if (!configured) {
     return "Add an API key or sign in for this provider in Settings to load its models.";
+  }
 
   return modelCount ? `${modelCount} models available.` : "Type a model ID.";
 };
@@ -80,12 +73,14 @@ const webProviderItems = [
   ...webSearchProviders.map(({ id, name }) => ({ label: name, value: id })),
 ];
 
-function providerItems(providers: Provider[], current: string) {
+function providerItems(providers: Array<Provider>, current: string) {
   const items = providers.flatMap((each) =>
     each.configured ? [{ label: each.name, value: each.provider }] : [],
   );
 
-  if (!current || items.some((item) => item.value === current)) return items;
+  if (!current || items.some((item) => item.value === current)) {
+    return items;
+  }
 
   const name = providers.find((each) => each.provider === current)?.name;
 
@@ -103,7 +98,7 @@ function ProviderSelect({
   placeholder,
 }: {
   id: string;
-  providers: Provider[];
+  providers: Array<Provider>;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
@@ -280,7 +275,10 @@ function useBotDetails(
   return { ...details, change };
 }
 
-function useBotModel(initial: BotInput | undefined, providers: Provider[]) {
+function useBotModel(
+  initial: BotInput | undefined,
+  providers: Array<Provider>,
+) {
   const [provider, setProvider] = useState(
     initial?.provider ??
       providers.find((each) => each.configured)?.provider ??
@@ -327,8 +325,8 @@ function initialAccess({
 
 function useBotAccess(initial?: BotInput) {
   const start = initialAccess(initial);
-  const [tools, setTools] = useState<string[]>(start.tools);
-  const [mcpServers, setMcpServers] = useState<string[]>(start.mcpServers);
+  const [tools, setTools] = useState<Array<string>>(start.tools);
+  const [mcpServers, setMcpServers] = useState<Array<string>>(start.mcpServers);
 
   const [webSearchProvider, setWebSearchProvider] = useState(
     start.webSearchProvider,
@@ -351,13 +349,13 @@ function useBotAccess(initial?: BotInput) {
   };
 }
 
-function toggle(list: string[], item: string, on: boolean) {
+function toggle(list: Array<string>, item: string, on: boolean) {
   return on
     ? [...new Set([...list, item])]
     : list.filter((each) => each !== item);
 }
 
-function isConfigured(providers: Provider[], id: string) {
+function isConfigured(providers: Array<Provider>, id: string) {
   return providers.find((each) => each.provider === id)?.configured ?? false;
 }
 
@@ -400,7 +398,7 @@ function DesktopModelFields({
   providers,
   access,
 }: {
-  providers: Provider[];
+  providers: Array<Provider>;
   access: ReturnType<typeof useBotAccess>;
 }) {
   const { desktopProvider, setDesktopProvider, desktopModel, setDesktopModel } =
@@ -445,7 +443,7 @@ function CapabilitiesSection({
 }: {
   initial: BotInput | undefined;
   capabilities: Capabilities | undefined;
-  providers: Provider[];
+  providers: Array<Provider>;
   access: ReturnType<typeof useBotAccess>;
 }) {
   const { tools, setTools } = access;
@@ -488,9 +486,9 @@ function IntegrationsSection({
   onChange,
 }: {
   botId: string | undefined;
-  servers: McpServer[];
-  value: string[];
-  onChange: (servers: string[]) => void;
+  servers: Array<McpServer>;
+  value: Array<string>;
+  onChange: (servers: Array<string>) => void;
 }) {
   const usableServers = servers.filter(
     (server) => server.agentId === null || server.agentId === botId,
@@ -541,7 +539,7 @@ function ProviderField({
   providers,
   selection: { provider, setProvider, setModel },
 }: {
-  providers: Provider[];
+  providers: Array<Provider>;
   selection: ReturnType<typeof useBotModel>;
 }) {
   return (
@@ -574,7 +572,7 @@ function ModelSettings({
   providers,
   selection,
 }: {
-  providers: Provider[];
+  providers: Array<Provider>;
   selection: ReturnType<typeof useBotModel>;
 }) {
   const {
@@ -848,9 +846,9 @@ function BotFieldSections({
   details: ReturnType<typeof useBotDetails>;
   selection: ReturnType<typeof useBotModel>;
   access: ReturnType<typeof useBotAccess>;
-  providers: Provider[];
+  providers: Array<Provider>;
   capabilities: Capabilities | undefined;
-  servers: McpServer[];
+  servers: Array<McpServer>;
   includeSettingsLinks: boolean;
   failed: boolean;
 }) {
@@ -924,7 +922,9 @@ export function BotFields({
       onSubmit={(event) => {
         event.preventDefault();
 
-        if (!invalid) onSubmit(botInput(initial, details, selection, access));
+        if (!invalid) {
+          onSubmit(botInput(initial, details, selection, access));
+        }
       }}
     >
       <BotFieldSections

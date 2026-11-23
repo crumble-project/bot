@@ -17,13 +17,10 @@ import {
   useSecretDraft,
 } from "@/features/password-managers/secret-source-field";
 import type { Bot } from "@/features/bots/api";
-import {
-  type Login,
-  type LoginRequest,
-  loginPath,
-  invalidateLogins,
-} from "./api";
-import { call, type RequestBody } from "@/lib/api";
+import { loginPath, invalidateLogins } from "./api";
+import type { Login, LoginRequest } from "./api";
+import { call } from "@/lib/api";
+import type { RequestBody } from "@/lib/api";
 
 const validName = (name: string) => loginName.safeParse(name).success;
 
@@ -47,7 +44,9 @@ const fieldBody = (secret: Secret) =>
   secret.changed && secret.input ? secret.input : undefined;
 
 function codeBody(draft: Draft, existing: Login | null, code: Secret) {
-  if (!draft.hasCode) return existing?.fields.one_time_code ? null : undefined;
+  if (!draft.hasCode) {
+    return existing?.fields.one_time_code ? null : undefined;
+  }
 
   return fieldBody(code);
 }
@@ -59,11 +58,12 @@ function loginBody(
 ): LoginBody {
   const hosts = hostList(draft.hosts);
 
-  if (draft.mode === "item")
+  if (draft.mode === "item") {
     return {
       hosts,
       item: { passwordManager: "1password", reference: draft.item.trim() },
     };
+  }
 
   const fields = {
     username: fieldBody(secrets.username),
@@ -92,8 +92,9 @@ function draftOf(existing: Login | null, request?: LoginRequest): Draft {
 }
 
 function fieldsReady(draft: Draft, existing: Login | null, secrets: Secrets) {
-  if (draft.hasCode && !existing?.fields.one_time_code && !secrets.code.input)
+  if (draft.hasCode && !existing?.fields.one_time_code && !secrets.code.input) {
     return false;
+  }
 
   return (
     existing !== null ||
@@ -102,7 +103,9 @@ function fieldsReady(draft: Draft, existing: Login | null, secrets: Secrets) {
 }
 
 function loginReady(draft: Draft, existing: Login | null, secrets: Secrets) {
-  if (!validName(draft.name) || !hostList(draft.hosts).length) return false;
+  if (!validName(draft.name) || !hostList(draft.hosts).length) {
+    return false;
+  }
 
   return draft.mode === "item"
     ? ITEM.test(draft.item.trim())
@@ -118,7 +121,8 @@ function useSaveLogin(
 ) {
   return useMutation({
     mutationFn: () =>
-      call<"saveAgentLogin">(
+      call(
+        "saveAgentLogin",
         loginPath(botId, draft.name),
         "PUT",
         loginBody(draft, existing, secrets),
@@ -137,7 +141,7 @@ export function LoginSheet({
   request,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   botId: string | null;
   existing: Login | null;
   request: LoginRequest | undefined;
@@ -300,8 +304,8 @@ function ItemField({
         onChange={(event) => onChange(event.target.value)}
       />
       <FieldDescription>
-        Fills the item's username, password, and one-time code, if it has one.
-        Crumble checks it can read them when you save.
+        Fills the item&apos;s username, password, and one-time code, if it has
+        one. Crumble checks it can read them when you save.
       </FieldDescription>
     </Field>
   );

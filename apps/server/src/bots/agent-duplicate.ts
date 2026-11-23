@@ -13,12 +13,17 @@ export const duplicateAgent = Effect.fn("duplicateAgent")(function* (
   const skills = yield* SkillRepository;
   const original = yield* agents.get(agentId);
 
-  if (!original) return null;
+  if (!original) {
+    return null;
+  }
 
-  const mcpServers: string[] = [];
+  const mcpServers: Array<string> = [];
 
-  for (const serverId of original.mcpServers)
-    if (!(yield* servers.get(serverId))?.agentId) mcpServers.push(serverId);
+  for (const serverId of original.mcpServers) {
+    if (!(yield* servers.get(serverId))?.agentId) {
+      mcpServers.push(serverId);
+    }
+  }
 
   const copy = yield* agents.create({
     ...original,
@@ -27,8 +32,8 @@ export const duplicateAgent = Effect.fn("duplicateAgent")(function* (
     name: name ?? `${original.name} Copy`,
   });
 
-  for (const skill of yield* skills.list(original.id))
-    if (skill.state !== "archived")
+  for (const skill of yield* skills.list(original.id)) {
+    if (skill.state !== "archived") {
       yield* skills.create(
         {
           ...skill,
@@ -40,6 +45,8 @@ export const duplicateAgent = Effect.fn("duplicateAgent")(function* (
         undefined,
         OWNER,
       );
+    }
+  }
 
   return yield* agents.get(copy.id);
 });

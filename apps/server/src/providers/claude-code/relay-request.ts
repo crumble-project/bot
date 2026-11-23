@@ -36,12 +36,20 @@ const body = z.looseObject({
 });
 
 type Body = z.infer<typeof body>;
+type Native = z.infer<ReturnType<typeof z.json>>;
 
 type Position = { message: number; index: number; block: Block };
 
-/** The native request, validated; the parsed object itself is returned so its key order survives re-encoding. */
+/** Whether the schema accepts the parsed request, proven by parsing it rather than by its TypeScript type. */
+const isBody = <T>(value: T): value is T & Body =>
+  body.safeParse(value).success;
+
+/**
+ * The native request, validated; the parsed object itself is returned so its key order survives re-encoding, which is
+ * what `body.parse` would reorder.
+ */
 function decode(payload: string): Body | undefined {
-  let raw: z.infer<ReturnType<typeof z.json>>;
+  let raw: Native;
 
   try {
     raw = z.json().parse(JSON.parse(payload));
@@ -49,23 +57,24 @@ function decode(payload: string): Body | undefined {
     return undefined;
   }
 
-  // SAFETY: `raw` is parsed JSON; the schema check below proves the shape before returning it as Body.
-  return body.safeParse(raw).success ? (raw as Body) : undefined;
+  return isBody(raw) ? raw : undefined;
 }
 
 const encode = (value: Body) => JSON.stringify(value);
 
-function without(entry: Block, ...keys: string[]) {
+function without(entry: Block, ...keys: Array<string>) {
   const copy = { ...entry };
 
-  for (const key of keys) delete copy[key];
+  for (const key of keys) {
+    delete copy[key];
+  }
 
   return copy;
 }
 
 const plain = (entry: Block) => without(entry, "cache_control");
 
-const sameBlocks = (left: readonly Block[], right: readonly Block[]) =>
+const sameBlocks = (left: ReadonlyArray<Block>, right: ReadonlyArray<Block>) =>
   left.length === right.length &&
   left.every((item, index) => {
     const other = right[index];
@@ -79,7 +88,7 @@ const breakpoints = (value: Body) =>
 const listContent = (item: Message | undefined) =>
   Array.isArray(item?.content) ? item.content : undefined;
 
-function positions(messages: Message[]) {
+function positions(messages: Array<Message>) {
   return messages.flatMap((item, messageIndex) =>
     (listContent(item) ?? []).map((entry, index): Position => ({
       message: messageIndex,
@@ -100,18 +109,25 @@ const before = (
  * Put the host's first user turn ahead of the context native prepends to it, on the conversation's first request
  * only, so the frame becomes a prefix the next request replays unchanged.
  */
-function frameFirst(messages: Message[], queried: readonly Block[]) {
-  if (messages.some((item) => item.role === "assistant")) return false;
+function frameFirst(messages: Array<Message>, queried: ReadonlyArray<Block>) {
+  if (messages.some((item) => item.role === "assistant")) {
+    return false;
+  }
   const first = messages.find((item) => item.role === "user");
   const content = listContent(first);
 
-  if (!first || !content || content.length <= queried.length) return false;
+  if (!first || !content || content.length <= queried.length) {
+    return false;
+  }
   const start = uniqueFrameStart(content, queried);
 
-  if (start === undefined || start === 0) return false;
-
-  if (!content.slice(0, start).every((entry) => entry.type === "text"))
+  if (start === undefined || start === 0) {
     return false;
+  }
+
+  if (!content.slice(0, start).every((entry) => entry.type === "text")) {
+    return false;
+  }
 
   first.content = [
     ...content.slice(start, start + queried.length),
@@ -126,10 +142,13 @@ function frameFirst(messages: Message[], queried: readonly Block[]) {
 const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
 
 function singleBlock(content: Message["content"] | undefined) {
-  if (content === undefined) return;
+  if (content === undefined) {
+    return;
+  }
 
-  if (Array.isArray(content))
+  if (Array.isArray(content)) {
     return content.length === 1 ? content[0] : undefined;
+  }
 
   return { type: "text", text: content };
 }
@@ -151,20 +170,26 @@ function appendToEnvironment(environment: Message, line: string) {
     ? original.at(-1)
     : { type: "text", text: original };
 
-  if (target?.type !== "text" || (target.text ?? "").endsWith(line))
+  if (target?.type !== "text" || (target.text ?? "").endsWith(line)) {
     return false;
+  }
 
-  if (Array.isArray(original)) target.text = `${target.text ?? ""}\n\n${line}`;
-  else environment.content = `${original}\n\n${line}`;
+  if (Array.isArray(original)) {
+    target.text = `${target.text ?? ""}\n\n${line}`;
+  } else {
+    environment.content = `${original}\n\n${line}`;
+  }
 
   return true;
 }
 
 function carryMark(target: Block | undefined, mark: Block["cache_control"]) {
-  if (mark && target) target.cache_control ??= mark;
+  if (mark && target) {
+    target.cache_control ??= mark;
+  }
 }
 
-function relocateDate(messages: Message[]) {
+function relocateDate(messages: Array<Message>) {
   const last = messages.at(-1);
 
   const environment = messages
@@ -173,11 +198,15 @@ function relocateDate(messages: Message[]) {
 
   const tail = dateTail(last);
 
-  if (!last || !environment || !tail) return false;
+  if (!last || !environment || !tail) {
+    return false;
+  }
 
   const line = tail.text ?? "";
 
-  if (!appendToEnvironment(environment, line)) return false;
+  if (!appendToEnvironment(environment, line)) {
+    return false;
+  }
   const mark = tail.cache_control ?? cacheControlOf(last);
 
   messages.pop();
@@ -186,12 +215,14 @@ function relocateDate(messages: Message[]) {
   return true;
 }
 
-function uniqueFrameStart(blocks: Block[], queried: readonly Block[]) {
+function uniqueFrameStart(blocks: Array<Block>, queried: ReadonlyArray<Block>) {
   const hits = [];
 
-  for (let start = 0; start <= blocks.length - queried.length; start++)
-    if (sameBlocks(blocks.slice(start, start + queried.length), queried))
+  for (let start = 0; start <= blocks.length - queried.length; start++) {
+    if (sameBlocks(blocks.slice(start, start + queried.length), queried)) {
       hits.push(start);
+    }
+  }
 
   return hits.length === 1 ? hits[0] : undefined;
 }
@@ -203,8 +234,8 @@ const contextText = (entry: Block) =>
   );
 
 function dropHistoricalContext(
-  messages: Message[],
-  queried: readonly Block[] | undefined,
+  messages: Array<Message>,
+  queried: ReadonlyArray<Block> | undefined,
 ) {
   const newest = messages.findLast((item) => item.role === "user");
   const blocks = listContent(newest);
@@ -213,12 +244,15 @@ function dropHistoricalContext(
     !queried?.some((entry) => entry.type !== "tool_result") ||
     !blocks ||
     !messages.some((item) => item.role === "assistant")
-  )
+  ) {
     return false;
+  }
 
   const start = uniqueFrameStart(blocks, queried);
 
-  if (!start || !blocks.slice(0, start).every(contextText)) return false;
+  if (!start || !blocks.slice(0, start).every(contextText)) {
+    return false;
+  }
 
   const mark = blocks
     .slice(0, start)
@@ -237,11 +271,13 @@ function dropHistoricalContext(
  */
 export function stableRequestContext(
   payload: string,
-  queried: readonly Block[] | undefined,
+  queried: ReadonlyArray<Block> | undefined,
 ) {
   const value = decode(payload);
 
-  if (!value) return payload;
+  if (!value) {
+    return payload;
+  }
   const relocated = relocateDate(value.messages);
   const dropped = dropHistoricalContext(value.messages, queried);
 
@@ -260,10 +296,12 @@ const opensTurn = (item: Message) =>
   (!Array.isArray(item.content) ||
     item.content.some((entry) => entry.type !== "tool_result"));
 
-function turnFrameIndex(messages: Message[], last: number) {
+function turnFrameIndex(messages: Array<Message>, last: number) {
   const opening = messages.slice(0, last).findLastIndex(opensTurn);
 
-  if (opening < 0) return;
+  if (opening < 0) {
+    return;
+  }
 
   const offset = messages
     .slice(opening + 1, last + 1)
@@ -273,7 +311,9 @@ function turnFrameIndex(messages: Message[], last: number) {
         listContent(item)?.some((entry) => UNCACHEABLE.has(entry.type)),
     );
 
-  if (offset < 0) return;
+  if (offset < 0) {
+    return;
+  }
   const thought = opening + 1 + offset;
 
   const user = messages
@@ -288,7 +328,7 @@ const blockCount = (item: Message) =>
 
 function moveTurnMark(
   value: Body,
-  messages: Message[],
+  messages: Array<Message>,
   from: Position,
   target: Position,
 ) {
@@ -298,7 +338,9 @@ function moveTurnMark(
 
   const next = later[0]?.block.cache_control;
 
-  if (!next) return false;
+  if (!next) {
+    return false;
+  }
 
   if (breakpoints(value) < MAX_BREAKPOINTS) {
     from.block.cache_control = structuredClone(next);
@@ -308,7 +350,9 @@ function moveTurnMark(
 
   const spare = later.find((entry) => before(entry, target));
 
-  if (!spare?.block.cache_control || !target.block.cache_control) return false;
+  if (!spare?.block.cache_control || !target.block.cache_control) {
+    return false;
+  }
   from.block.cache_control = spare.block.cache_control;
   delete spare.block.cache_control;
 
@@ -323,39 +367,49 @@ function moveTurnMark(
  */
 function keepTurnMark(
   value: Body,
-  messages: Message[],
+  messages: Array<Message>,
   last: number,
   target: Position,
 ) {
   const frame = turnFrameIndex(messages, last);
 
-  if (frame === undefined) return false;
+  if (frame === undefined) {
+    return false;
+  }
   const content = listContent(messages[frame]);
 
-  if (!content) return false;
+  if (!content) {
+    return false;
+  }
 
   const mark = content.findLastIndex((entry) => !UNCACHEABLE.has(entry.type));
 
   const marked = content[mark];
 
-  if (!marked || marked.cache_control) return false;
+  if (!marked || marked.cache_control) {
+    return false;
+  }
   const from = { message: frame, index: mark, block: marked };
 
-  if (!before(from, target)) return false;
+  if (!before(from, target)) {
+    return false;
+  }
 
   const span = messages
     .slice(frame, target.message)
     .reduce((total, item) => total + blockCount(item), 0);
 
-  if (span - mark + target.index + 1 <= LOOKBACK) return false;
+  if (span - mark + target.index + 1 <= LOOKBACK) {
+    return false;
+  }
 
   return moveTurnMark(value, messages, from, target);
 }
 
 function stableSpan(
-  messages: Message[],
+  messages: Array<Message>,
   last: number,
-  queried: readonly Block[],
+  queried: ReadonlyArray<Block>,
 ) {
   const stable = positions(messages).filter((entry) => entry.message <= last);
   const newest = messages[last + 1];
@@ -363,29 +417,41 @@ function stableSpan(
   const newestContent =
     newest?.role === "user" ? listContent(newest) : undefined;
 
-  if (!newestContent) return stable;
-  const prefix: Position[] = [];
+  if (!newestContent) {
+    return stable;
+  }
+  const prefix: Array<Position> = [];
 
   for (const [index, sent] of newestContent.entries()) {
     const host = queried[index];
 
-    if (!host || !Bun.deepEquals(plain(sent), plain(host))) break;
+    if (!host || !Bun.deepEquals(plain(sent), plain(host))) {
+      break;
+    }
     prefix.push({ message: last + 1, index, block: sent });
   }
 
-  if (newestContent[prefix.length]?.type !== "tool_result")
+  if (newestContent[prefix.length]?.type !== "tool_result") {
     stable.push(...prefix);
+  }
 
   return stable;
 }
 
-function foldMarks(marked: readonly Position[], target: Position | undefined) {
+function foldMarks(
+  marked: ReadonlyArray<Position>,
+  target: Position | undefined,
+) {
   const after = target ? marked.filter((entry) => before(target, entry)) : [];
   const moved = after[0]?.block.cache_control;
 
-  if (target === undefined || moved === undefined) return false;
+  if (target === undefined || moved === undefined) {
+    return false;
+  }
 
-  for (const entry of after) delete entry.block.cache_control;
+  for (const entry of after) {
+    delete entry.block.cache_control;
+  }
   target.block.cache_control ??= moved;
 
   return true;
@@ -398,12 +464,16 @@ function foldMarks(marked: readonly Position[], target: Position | undefined) {
  */
 export function pinMessageBreakpoint(
   payload: string,
-  queried: readonly Block[] | undefined,
+  queried: ReadonlyArray<Block> | undefined,
 ) {
-  if (!queried?.length) return payload;
+  if (!queried?.length) {
+    return payload;
+  }
   const value = decode(payload);
 
-  if (!value) return payload;
+  if (!value) {
+    return payload;
+  }
   const { messages } = value;
   const reordered = frameFirst(messages, queried);
 
@@ -411,7 +481,9 @@ export function pinMessageBreakpoint(
     (entry) => entry.block.cache_control,
   );
 
-  if (marked.length === 0) return payload;
+  if (marked.length === 0) {
+    return payload;
+  }
   const last = messages.findLastIndex((item) => item.role === "assistant");
 
   const target = stableSpan(messages, last, queried).findLast(
@@ -423,7 +495,9 @@ export function pinMessageBreakpoint(
   const turn =
     target !== undefined && keepTurnMark(value, messages, last, target);
 
-  if (!(reordered || folded || turn)) return payload;
+  if (!(reordered || folded || turn)) {
+    return payload;
+  }
 
   return encode(value);
 }
@@ -431,15 +505,19 @@ export function pinMessageBreakpoint(
 export function dropMessageBreakpoints(payload: string) {
   const value = decode(payload);
 
-  if (!value) return payload;
+  if (!value) {
+    return payload;
+  }
   let dropped = false;
 
-  for (const item of value.messages)
-    for (const entry of listContent(item) ?? [])
+  for (const item of value.messages) {
+    for (const entry of listContent(item) ?? []) {
       if (entry.cache_control) {
         delete entry.cache_control;
         dropped = true;
       }
+    }
+  }
 
   return dropped ? encode(value) : payload;
 }
@@ -455,9 +533,13 @@ export function streamToolInput(payload: string) {
     (tool) => !("eager_input_streaming" in tool),
   );
 
-  if (!value || tools.length === 0) return payload;
+  if (!value || tools.length === 0) {
+    return payload;
+  }
 
-  for (const tool of tools) tool["eager_input_streaming"] = true;
+  for (const tool of tools) {
+    tool["eager_input_streaming"] = true;
+  }
 
   return encode(value);
 }
@@ -479,9 +561,13 @@ const bareText = (entry: Block) =>
   Object.keys(entry).length === 2;
 
 const joinedText = (value: Block["content"]) => {
-  if (value === undefined) return;
+  if (value === undefined) {
+    return;
+  }
 
-  if (!Array.isArray(value)) return value;
+  if (!Array.isArray(value)) {
+    return value;
+  }
 
   return value.every(bareText)
     ? value.map((entry) => entry.text ?? "").join("")
@@ -493,8 +579,9 @@ function restoreContent(sent: Block["content"], host: Block["content"]) {
     const left = joinedText(sent);
     const right = joinedText(host);
 
-    if (left === undefined || right === undefined || !left.startsWith(right))
+    if (left === undefined || right === undefined || !left.startsWith(right)) {
       return unmatched();
+    }
 
     return structuredClone(host);
   }
@@ -504,41 +591,53 @@ function restoreContent(sent: Block["content"], host: Block["content"]) {
 
 function restoreToolResult(sent: Block, host: Block, restored: Block) {
   // Missing means false.
-  if ((sent.is_error ?? false) !== (host.is_error ?? false)) return unmatched();
+  if ((sent.is_error ?? false) !== (host.is_error ?? false)) {
+    return unmatched();
+  }
 
   const ignored = ["content", "is_error", "cache_control"];
 
-  if (!Bun.deepEquals(without(sent, ...ignored), without(host, ...ignored)))
+  if (!Bun.deepEquals(without(sent, ...ignored), without(host, ...ignored))) {
     return unmatched();
+  }
 
-  if ("content" in sent !== "content" in host) return unmatched();
+  if ("content" in sent !== "content" in host) {
+    return unmatched();
+  }
 
-  if ("content" in host)
+  if ("content" in host) {
     restored.content = restoreContent(sent.content, host.content);
+  }
 }
 
 function restoreBlock(sent: Block, host: Block): Block {
   const restored = structuredClone(host);
 
-  if (host.type === "tool_result") restoreToolResult(sent, host, restored);
-  else if (!Bun.deepEquals(plain(sent), plain(host))) return unmatched();
+  if (host.type === "tool_result") {
+    restoreToolResult(sent, host, restored);
+  } else if (!Bun.deepEquals(plain(sent), plain(host))) {
+    return unmatched();
+  }
 
   if (sent.cache_control) {
     if (
       host.cache_control &&
       !Bun.deepEquals(sent.cache_control, host.cache_control)
-    )
+    ) {
       return unmatched();
+    }
     restored.cache_control = structuredClone(sent.cache_control);
   }
 
   return restored;
 }
 
-function bareTextRun(blocks: Block[], start: number) {
+function bareTextRun(blocks: Array<Block>, start: number) {
   let end = start + 1;
 
-  while (end < blocks.length && bareText(blocks[end] ?? { type: "" })) end++;
+  while (end < blocks.length && bareText(blocks[end] ?? { type: "" })) {
+    end++;
+  }
 
   const text = blocks
     .slice(start, end)
@@ -548,8 +647,8 @@ function bareTextRun(blocks: Block[], start: number) {
   return { end, text };
 }
 
-function restoreSequence(sent: Block[], host: Block[]): Block[] {
-  const restored: Block[] = [];
+function restoreSequence(sent: Array<Block>, host: Array<Block>): Array<Block> {
+  const restored: Array<Block> = [];
   let hostIndex = 0;
   let sentIndex = 0;
 
@@ -557,7 +656,9 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
     const hostBlock = host[hostIndex];
     const sentBlock = sent[sentIndex];
 
-    if (!hostBlock || !sentBlock) return unmatched();
+    if (!hostBlock || !sentBlock) {
+      return unmatched();
+    }
 
     if (bareText(hostBlock) && bareText(sentBlock)) {
       const original = bareTextRun(host, hostIndex);
@@ -567,8 +668,9 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
         !(original.end === host.length
           ? actual.text.startsWith(original.text)
           : actual.text === original.text)
-      )
+      ) {
         return unmatched();
+      }
       restored.push(...structuredClone(host.slice(hostIndex, original.end)));
       hostIndex = original.end;
       sentIndex = actual.end;
@@ -579,26 +681,28 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
     }
   }
 
-  if (sent.slice(sentIndex).some((entry) => !bareText(entry)))
+  if (sent.slice(sentIndex).some((entry) => !bareText(entry))) {
     return unmatched();
+  }
 
   return restored;
 }
 
-function newestToolTurn(messages: Message[]) {
+function newestToolTurn(messages: Array<Message>) {
   const newest =
     messages[messages.findLastIndex((item) => item.role === "assistant") + 1];
 
   return newest?.role === "user" ? newest : undefined;
 }
 
-function queriedResultIds(queried: readonly Block[]) {
+function queriedResultIds(queried: ReadonlyArray<Block>) {
   const ids = queried.flatMap((entry) =>
     entry.type === "tool_result" ? [entry.tool_use_id ?? ""] : [],
   );
 
-  if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
     return unmatched();
+  }
 
   return ids;
 }
@@ -609,29 +713,38 @@ function queriedResultIds(queried: readonly Block[]) {
  */
 export function restoreQueriedTurn(
   payload: string,
-  queried: readonly Block[] | undefined,
+  queried: ReadonlyArray<Block> | undefined,
 ) {
   if (
     !queried?.length ||
     !queried.some((entry) => entry.type === "tool_result")
-  )
+  ) {
     return payload;
+  }
   const value = decode(payload);
 
-  if (!value) return unmatched();
+  if (!value) {
+    return unmatched();
+  }
   const newest = newestToolTurn(value.messages);
   const native = listContent(newest);
 
-  if (!newest || !native) return unmatched();
+  if (!newest || !native) {
+    return unmatched();
+  }
 
   const nativeIds = native.flatMap((entry) =>
     entry.type === "tool_result" ? [entry.tool_use_id] : [],
   );
 
-  if (!Bun.deepEquals(queriedResultIds(queried), nativeIds)) return unmatched();
+  if (!Bun.deepEquals(queriedResultIds(queried), nativeIds)) {
+    return unmatched();
+  }
   const restored = restoreSequence(native, [...queried]);
 
-  if (Bun.deepEquals(native, restored)) return payload;
+  if (Bun.deepEquals(native, restored)) {
+    return payload;
+  }
   newest.content = restored;
 
   return encode(value);

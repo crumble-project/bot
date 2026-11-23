@@ -1,11 +1,9 @@
-import { Effect, FiberMap, type Scope } from "effect";
+import { Effect, FiberMap } from "effect";
+import type { Scope } from "effect";
 import { parseRequestId } from "../shared/request-ids";
 import type { Execution } from "../shared/domain";
-import {
-  keyedListeners,
-  keyedLocks,
-  type KeyedListeners,
-} from "../shared/keyed";
+import { keyedListeners, keyedLocks } from "../shared/keyed";
+import type { KeyedListeners } from "../shared/keyed";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { ScriptRunRepository } from "../automations/script-run-repository";

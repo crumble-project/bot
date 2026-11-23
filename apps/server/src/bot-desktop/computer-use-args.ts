@@ -1,4 +1,5 @@
-import { StringEnum, Type, type Static } from "@earendil-works/pi-ai";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
+import type { Static } from "@earendil-works/pi-ai";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import { ACTION_NAMES } from "./computer-use-actions";
 import { STEP_ACTION_NAMES } from "./computer-use-steps";
@@ -193,9 +194,11 @@ const isPlaceholder = (value: ComputerUseArgs[OptionalArg]) =>
 export function normalize(raw: ComputerUseArgs): ComputerUseArgs {
   const args = { ...raw };
 
-  for (const name of OPTIONAL_ARGS)
-    if (isPlaceholder(args[name]) && KEEPS_EMPTY[name] !== args.action)
+  for (const name of OPTIONAL_ARGS) {
+    if (isPlaceholder(args[name]) && KEEPS_EMPTY[name] !== args.action) {
       delete args[name];
+    }
+  }
 
   return args;
 }

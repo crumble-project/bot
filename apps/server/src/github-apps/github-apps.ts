@@ -23,24 +23,16 @@ import {
   github,
   noreplyEmail,
 } from "./github-api";
-import {
-  accountMembership,
-  GitHubAccounts,
-  type GitHubAccount,
-} from "./github-accounts";
-import {
-  assignmentChange,
-  githubIdentityLines,
-  type GitHubIdentity,
-} from "./github-identity";
+import { accountMembership, GitHubAccounts } from "./github-accounts";
+import type { GitHubAccount } from "./github-accounts";
+import { assignmentChange, githubIdentityLines } from "./github-identity";
+import type { GitHubIdentity } from "./github-identity";
 import { GitHubAppUsers, githubAppClientSecretKey } from "./github-app-users";
 import { Secrets } from "../secrets/secrets";
 import { PendingStates } from "../secrets/server-secrets";
 import { githubAppBots, githubApps } from "./schema";
-import {
-  GITHUB_APP_WEB_PATHS,
-  type GitHubAppResponse,
-} from "../contract/github-apps";
+import { GITHUB_APP_WEB_PATHS } from "../contract/github-apps";
+import type { GitHubAppResponse } from "../contract/github-apps";
 
 // Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
 const PERMISSIONS = {
@@ -111,9 +103,11 @@ const appJwt = (clientId: string, privateKey: string, nowMs: number) => {
 const OWNER_SCOPES = new Set(["repos", "orgs", "users"]);
 
 export const ownerOf = (target: CredentialTarget) => {
-  const parts = target.path.split("?")[0]!.split("/").filter(Boolean);
+  const parts = (target.path.split("?")[0] ?? "").split("/").filter(Boolean);
 
-  if (target.host === "github.com") return parts[0]?.toLowerCase();
+  if (target.host === "github.com") {
+    return parts[0]?.toLowerCase();
+  }
 
   return OWNER_SCOPES.has(parts[0] ?? "") ? parts[1]?.toLowerCase() : undefined;
 };
@@ -134,7 +128,7 @@ const trailerOf = (row: AppRow) => {
 };
 
 /** The key stays on the server: git hands the commit to a guest helper that asks it for the signature. */
-const signingEntries = (signingKey: string): [string, string][] => [
+const signingEntries = (signingKey: string): Array<[string, string]> => [
   ["gpg.format", "ssh"],
   ["user.signingkey", `key::${signingKey}`],
   ["gpg.ssh.program", GUEST_SIGN_PATH],
@@ -150,7 +144,7 @@ const signingEntries = (signingKey: string): [string, string][] => [
 export class GitHubApps extends Context.Service<
   GitHubApps,
   {
-    readonly list: Effect.Effect<GitHubApp[]>;
+    readonly list: Effect.Effect<Array<GitHubApp>>;
     readonly get: (id: string) => Effect.Effect<GitHubApp, NotFound>;
     readonly manifest: (input: {
       name: string;
@@ -167,13 +161,13 @@ export class GitHubApps extends Context.Service<
     /** Replaces the bots that act through the App; a bot keeps at most one App per GitHub account. */
     readonly assign: (
       id: string,
-      botIds: readonly string[],
+      botIds: ReadonlyArray<string>,
     ) => Effect.Effect<GitHubApp, NotFound | Conflict>;
     /** Forgets the App; it stays on GitHub until the owner deletes it there. */
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
     readonly assignAccount: (
       id: string,
-      botIds: readonly string[],
+      botIds: ReadonlyArray<string>,
     ) => Effect.Effect<GitHubAccount, NotFound | Conflict>;
     readonly removeAccount: (id: string) => Effect.Effect<void, NotFound>;
     readonly token: (
@@ -183,7 +177,9 @@ export class GitHubApps extends Context.Service<
       Redacted.Redacted,
       GitHubUnavailable | SecretUnavailable
     >;
-    readonly identities: (agentId: string) => Effect.Effect<GitHubIdentity[]>;
+    readonly identities: (
+      agentId: string,
+    ) => Effect.Effect<Array<GitHubIdentity>>;
     readonly gitEnv: (agentId: string) => Effect.Effect<Record<string, string>>;
   }
 >()("crumble/github-apps/GitHubApps") {
@@ -241,8 +237,9 @@ export class GitHubApps extends Context.Service<
       const get = Effect.fn("GitHubApps.get")(function* (id: string) {
         const found = yield* row(id);
 
-        if (!found)
+        if (!found) {
           return yield* new NotFound({ message: "GitHub App not found" });
+        }
 
         return yield* appOf(found);
       });
@@ -334,11 +331,12 @@ export class GitHubApps extends Context.Service<
           STATE_TTL_MS,
         );
 
-        if (!pending)
+        if (!pending) {
           return yield* new InvalidInput({
             message:
               "This GitHub link is stale or was already used; start again",
           });
+        }
 
         const app = yield* github(
           `/app-manifests/${encodeURIComponent(input.code)}/conversions`,
@@ -370,10 +368,11 @@ export class GitHubApps extends Context.Service<
           })
           .pipe(Effect.orDie);
 
-        if (app.client_secret)
+        if (app.client_secret) {
           yield* secrets
             .save(githubAppClientSecretKey(id), { value: app.client_secret })
             .pipe(Effect.orDie);
+        }
 
         return yield* get(id).pipe(Effect.orDie);
       });
@@ -381,8 +380,9 @@ export class GitHubApps extends Context.Service<
       const connect = Effect.fn("GitHubApps.connect")(function* (id: string) {
         const found = yield* row(id);
 
-        if (!found)
+        if (!found) {
           return yield* new NotFound({ message: "GitHub App not found" });
+        }
 
         const all = yield* github("/app/installations", installations, {
           token: yield* jwtFor(found),
@@ -395,10 +395,11 @@ export class GitHubApps extends Context.Service<
             each.account.login.toLowerCase() === found.account.toLowerCase(),
         );
 
-        if (!installation)
+        if (!installation) {
           return yield* new Conflict({
             message: `Install ${found.name} on GitHub first`,
           });
+        }
 
         yield* db
           .update(githubApps)
@@ -416,9 +417,11 @@ export class GitHubApps extends Context.Service<
 
       const clashes = Effect.fn("GitHubApps.clashes")(function* (
         found: AppRow,
-        botIds: readonly string[],
+        botIds: ReadonlyArray<string>,
       ) {
-        if (!found.account || !botIds.length) return [];
+        if (!found.account || !botIds.length) {
+          return [];
+        }
 
         const rows = yield* db
           .select({
@@ -443,12 +446,13 @@ export class GitHubApps extends Context.Service<
 
       const assign = Effect.fn("GitHubApps.assign")(function* (
         id: string,
-        botIds: readonly string[],
+        botIds: ReadonlyArray<string>,
       ) {
         const found = yield* row(id);
 
-        if (!found)
+        if (!found) {
           return yield* new NotFound({ message: "GitHub App not found" });
+        }
 
         const { added, removed } = assignmentChange(
           yield* botIdsOf(id),
@@ -457,17 +461,18 @@ export class GitHubApps extends Context.Service<
 
         const clashing = yield* clashes(found, added);
 
-        if (clashing.length)
+        if (clashing.length) {
           return yield* new Conflict({
             message: `A bot already uses another App for ${found.account}; take it off that App first`,
           });
+        }
 
         const at = yield* nowIso;
 
         yield* db
           .transaction(() =>
             Effect.gen(function* () {
-              if (removed.length)
+              if (removed.length) {
                 yield* db
                   .delete(githubAppBots)
                   .where(
@@ -476,8 +481,9 @@ export class GitHubApps extends Context.Service<
                       inArray(githubAppBots.agentId, removed),
                     ),
                   );
+              }
 
-              if (added.length)
+              if (added.length) {
                 yield* db.insert(githubAppBots).values(
                   added.map((agentId) => ({
                     appId: id,
@@ -485,6 +491,7 @@ export class GitHubApps extends Context.Service<
                     assignedAt: at,
                   })),
                 );
+              }
             }),
           )
           .pipe(Effect.orDie);
@@ -505,8 +512,9 @@ export class GitHubApps extends Context.Service<
           .returning({ id: githubApps.id })
           .pipe(Effect.orDie);
 
-        if (!deleted.length)
+        if (!deleted.length) {
           return yield* new NotFound({ message: "GitHub App not found" });
+        }
 
         tokens.delete(id);
         yield* secrets.delete(githubAppClientSecretKey(id));
@@ -515,7 +523,7 @@ export class GitHubApps extends Context.Service<
 
       const assignAccount = Effect.fn("GitHubApps.assignAccount")(function* (
         id: string,
-        botIds: readonly string[],
+        botIds: ReadonlyArray<string>,
       ) {
         const { account, changed } = yield* membership.assign(id, botIds);
 
@@ -534,8 +542,9 @@ export class GitHubApps extends Context.Service<
         const now = yield* Clock.currentTimeMillis;
         const cached = tokens.get(found.id);
 
-        if (cached && cached.expiresAt - now > TOKEN_MARGIN_MS)
+        if (cached && cached.expiresAt - now > TOKEN_MARGIN_MS) {
           return Redacted.make(cached.token);
+        }
 
         const minted = yield* github(
           `/app/installations/${found.installationId}/access_tokens`,
@@ -567,14 +576,17 @@ export class GitHubApps extends Context.Service<
           ? installed.find((each) => each.account?.toLowerCase() === owner)
           : undefined;
 
-        if (!app && machine) return yield* machine.token;
+        if (!app && machine) {
+          return yield* machine.token;
+        }
 
         const fallback = app ?? installed[0];
 
-        if (!fallback)
+        if (!fallback) {
           return yield* new GitHubUnavailable({
             message: "the bot has no installed GitHub App or machine account",
           });
+        }
 
         return (yield* users.of(fallback.id))
           ? yield* users.token(fallback)
@@ -586,11 +598,15 @@ export class GitHubApps extends Context.Service<
       ) {
         const machine = yield* accounts.ofBot(agentId);
 
-        const own: GitHubIdentity[] = yield* Effect.forEach(
-          (yield* appsOfBot(agentId)).filter((app) => app.account !== null),
+        const installed = (yield* appsOfBot(agentId)).flatMap((app) =>
+          app.account === null ? [] : [{ ...app, account: app.account }],
+        );
+
+        const own: Array<GitHubIdentity> = yield* Effect.forEach(
+          installed,
           (app) =>
             Effect.map(users.of(app.id), (owner) => ({
-              account: app.account!,
+              account: app.account,
               ...(owner
                 ? {
                     name: owner.login,
@@ -618,7 +634,9 @@ export class GitHubApps extends Context.Service<
         agentId: string,
         identity: GitHubIdentity | undefined,
       ) {
-        if (identity?.account !== null) return [];
+        if (identity?.account !== null) {
+          return [];
+        }
         const machine = yield* accounts.ofBot(agentId);
 
         return machine ? signingEntries(machine.signingKey) : [];
@@ -627,40 +645,46 @@ export class GitHubApps extends Context.Service<
       const gitEnv = Effect.fn("GitHubApps.gitEnv")(function* (
         agentId: string,
       ) {
-        const apps = yield* appsOfBot(agentId);
+        const [app] = yield* appsOfBot(agentId);
         const [fallback] = yield* identities(agentId);
+        const chosen = fallback ?? (app && identityOf(app));
 
-        if (!apps.length && !fallback) return {};
+        if (!chosen) {
+          return {};
+        }
 
         const { name, email, trailer }: Omit<GitHubIdentity, "account"> =
-          fallback ?? identityOf(apps[0]!);
+          chosen;
 
         // Config, not GIT_AUTHOR_*, so a repository's own user.name wins in another account's repositories.
-        const entries: [string, string][] = [
+        const entries: Array<[string, string]> = [
           ["user.name", name],
           ["user.email", email],
         ];
 
-        if (trailer) entries.push(["init.templateDir", GIT_TEMPLATE_DIR]);
+        if (trailer) {
+          entries.push(["init.templateDir", GIT_TEMPLATE_DIR]);
+        }
 
         entries.push(...(yield* signingConfig(agentId, fallback)));
 
         if (yield* hasToken(agentId))
-          // git sends the placeholder as the Basic password; the credential proxy swaps it for the token.
+        // git sends the placeholder as the Basic password; the credential proxy swaps it for the token.
+        {
           entries.push([
             "credential.https://github.com.helper",
             `!f() { echo username=x-access-token; echo "password=$${GITHUB_TOKEN_CREDENTIAL}"; }; f`,
           ]);
+        }
 
-        const config: [string, string][] = [
+        const config: Array<[string, string]> = [
           ...(trailer
-            ? ([["CRUMBLE_COMMIT_TRAILER", trailer]] satisfies [
-                string,
-                string,
-              ][])
+            ? ([["CRUMBLE_COMMIT_TRAILER", trailer]] satisfies Array<
+                [string, string]
+              >)
             : []),
           ["GIT_CONFIG_COUNT", String(entries.length)],
-          ...entries.flatMap(([key, value], index): [string, string][] => [
+          ...entries.flatMap(([key, value], index): Array<[string, string]> => [
             [`GIT_CONFIG_KEY_${index}`, key],
             [`GIT_CONFIG_VALUE_${index}`, value],
           ]),

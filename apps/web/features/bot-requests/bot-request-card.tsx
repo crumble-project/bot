@@ -1,4 +1,5 @@
-import { type ComponentProps, useState } from "react";
+import { useState } from "react";
+import type { ComponentProps } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { IconPencil, IconUsersGroup } from "@tabler/icons-react";
@@ -13,12 +14,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SettledCard } from "@/components/request-card";
-import {
-  type Bot,
-  type BotInput,
-  botsQuery,
-  invalidateBots,
-} from "@/features/bots/api";
+import { botsQuery, invalidateBots } from "@/features/bots/api";
+import type { Bot, BotInput } from "@/features/bots/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotFields, useBotFields } from "@/features/bots/bot-fields";
 import { CAPABILITIES } from "@/features/bots/capabilities";
@@ -30,7 +27,8 @@ import { call, queryClient } from "@/lib/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { botRequestDetails } from "@crumble/server/contract/tool-details";
 import { REQUEST_BOT_TOOL_NAME } from "@crumble/server/contract/tools";
-import { type BotRequest, botRequestPath, botRequestsQuery } from "./api";
+import { botRequestPath, botRequestsQuery } from "./api";
+import type { BotRequest } from "./api";
 
 const botRequestOf = (message: Message): BotRequest | null =>
   toolDetailsOf(message, botRequestDetails, REQUEST_BOT_TOOL_NAME);
@@ -52,7 +50,9 @@ function BotRequestCard({
     setOpen,
   );
 
-  if (live.status !== "pending") return <BotRequestSettled request={live} />;
+  if (live.status !== "pending") {
+    return <BotRequestSettled request={live} />;
+  }
 
   return (
     <BotPendingCard
@@ -108,14 +108,15 @@ function useBotRequestMutations(
 
   const approve = useMutation({
     mutationFn: (proposal?: BotInput) =>
-      call<"approveBotRequest">(
+      call(
+        "approveBotRequest",
         `${botRequestPath(botId, requestId)}/approve`,
         "POST",
         proposal ? { proposal } : undefined,
       ),
     onSuccess: ({ agent }) => {
       setOpen(false);
-      queryClient.setQueryData<Bot[]>(botsQuery.queryKey, (bots) =>
+      queryClient.setQueryData<Array<Bot>>(botsQuery.queryKey, (bots) =>
         !bots || bots.some((bot) => bot.id === agent.id)
           ? bots
           : [...bots, agent],
@@ -128,7 +129,8 @@ function useBotRequestMutations(
 
   const decline = useMutation({
     mutationFn: () =>
-      call<"declineBotRequest">(
+      call(
+        "declineBotRequest",
         `${botRequestPath(botId, requestId)}/decline`,
         "POST",
       ),

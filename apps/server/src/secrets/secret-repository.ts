@@ -20,11 +20,13 @@ const secretSourceOf = (
   box: SecretBox["Service"],
   row: SecretSourceRow,
 ): SecretSource => {
-  if (row.value !== null)
+  if (row.value !== null) {
     return { stored: Redacted.make(box.decrypt(row.value)) };
+  }
 
-  if (row.passwordManager === null || row.reference === null)
+  if (row.passwordManager === null || row.reference === null) {
     throw new Error("A secret has neither a stored value nor a reference");
+  }
 
   return { passwordManager: row.passwordManager, reference: row.reference };
 };
@@ -41,9 +43,9 @@ export class SecretRepository extends Context.Service<
     readonly get: (key: string) => Effect.Effect<string | undefined>;
     readonly source: (key: string) => Effect.Effect<SecretSource | undefined>;
     readonly status: (key: string) => Effect.Effect<SecretStatus>;
-    readonly usedBy: (id: PasswordManagerId) => Effect.Effect<string[]>;
+    readonly usedBy: (id: PasswordManagerId) => Effect.Effect<Array<string>>;
     readonly delete: (key: string) => Effect.Effect<boolean>;
-    readonly deleteAll: (prefix: string) => Effect.Effect<SecretSource[]>;
+    readonly deleteAll: (prefix: string) => Effect.Effect<Array<SecretSource>>;
   }
 >()("crumble/secrets/SecretRepository") {
   static readonly layer = Layer.effect(

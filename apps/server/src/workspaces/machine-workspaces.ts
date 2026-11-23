@@ -4,13 +4,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  Connection,
-  RemoteExecutionEnv,
-  type ConnectionOptions,
-} from "@earendil-works/pi-env";
+import { Connection, RemoteExecutionEnv } from "@earendil-works/pi-env";
+import type { ConnectionOptions } from "@earendil-works/pi-env";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { Effect, Exit, Fiber, Semaphore, type Scope } from "effect";
+import { Effect, Exit, Fiber, Semaphore } from "effect";
+import type { Scope } from "effect";
 import { z } from "zod";
 import {
   DESKTOP_DISPLAY_ONLY,
@@ -29,14 +27,16 @@ import {
   DesktopNotRunning,
   WorkspaceBootFailed,
   WorkspacesClosed,
-  type DesktopOpenError,
-  type DesktopStartFailed,
-  type WorkspaceRemoveFailed,
-  type WorkspaceStartError,
-  type WorkspaceStopFailed,
-  type WorkspaceStreamFailed,
-  type WorkspaceSyncFailed,
-  type WorkspaceUnreachable,
+} from "./workspace-errors";
+import type {
+  DesktopOpenError,
+  DesktopStartFailed,
+  WorkspaceRemoveFailed,
+  WorkspaceStartError,
+  WorkspaceStopFailed,
+  WorkspaceStreamFailed,
+  WorkspaceSyncFailed,
+  WorkspaceUnreachable,
 } from "./workspace-errors";
 import type { WorkspaceInterceptor } from "./workspace-proxy";
 
@@ -57,7 +57,7 @@ export interface WorkspaceMachine {
   readonly desktopReady: Effect.Effect<void, DesktopStartFailed>;
   stream(
     command: string,
-    args: readonly string[],
+    args: ReadonlyArray<string>,
   ): Effect.Effect<MachineStream, WorkspaceStreamFailed>;
   /** Makes completed writes in the workspace durable. */
   readonly sync: Effect.Effect<void, WorkspaceSyncFailed>;
@@ -75,18 +75,18 @@ export type GuestCommand = { step: string; command: string };
 
 /** What a booted guest gets from the server's features. Commands run in order, after every file is written. */
 export type GuestSetup = {
-  files: readonly GuestFile[];
-  commands: readonly GuestCommand[];
+  files: ReadonlyArray<GuestFile>;
+  commands: ReadonlyArray<GuestCommand>;
 };
 
 export const NO_GUEST: GuestSetup = { files: [], commands: [] };
 
 export type GuestOps = {
   readonly writeStep: string;
-  files(desktop: boolean): Promise<GuestFile[]>;
-  write(files: readonly GuestFile[]): Promise<void>;
+  files(desktop: boolean): Promise<Array<GuestFile>>;
+  write(files: ReadonlyArray<GuestFile>): Promise<void>;
   run(command: string): Promise<void>;
-  startDesktop(...args: string[]): Effect.Effect<void, DesktopStartFailed>;
+  startDesktop(...args: Array<string>): Effect.Effect<void, DesktopStartFailed>;
   readonly concurrency: "unbounded" | 1;
 };
 
@@ -132,8 +132,9 @@ export type WorkspaceBackendOptions = Omit<
 
 /** Throws for an agent id that could name another bot's machine. */
 export function assertAgentId(agentId: string) {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId))
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId)) {
     throw new Error(`Invalid agent id: ${agentId}`);
+  }
 }
 
 export function machineName(namePrefix: string, agentId: string) {
@@ -187,10 +188,13 @@ export const prepareGuest = Effect.fn("prepareGuest")(function* (
     { concurrency: ops.concurrency },
   );
 
-  for (const { step, command } of setup.commands)
+  for (const { step, command } of setup.commands) {
     yield* bootStep(step, () => ops.run(command));
+  }
 
-  if (desktop) yield* ops.startDesktop(DESKTOP_DISPLAY_ONLY);
+  if (desktop) {
+    yield* ops.startDesktop(DESKTOP_DISPLAY_ONLY);
+  }
 });
 
 export const untilBooted = <A, E>(
@@ -219,8 +223,9 @@ const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
 export function daemonPath(arch: NodeJS.Architecture = process.arch) {
   const directory = DAEMON_DIRECTORY[arch];
 
-  if (!directory)
+  if (!directory) {
     throw new Error(`Workspaces need an arm64 or x64 guest, not ${arch}`);
+  }
 
   return path.join(
     path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-env"))),
@@ -235,7 +240,7 @@ type Running = {
   machine: WorkspaceMachine;
   desktopReady: Fiber.Fiber<void, DesktopStartFailed>;
   relay: Relay;
-  command: readonly string[];
+  command: ReadonlyArray<string>;
 };
 
 type Relay = {
@@ -316,7 +321,9 @@ class Workspace {
   ) {
     const running = yield* this.exclusive(this.boot());
 
-    if (displayOnly) return running;
+    if (displayOnly) {
+      return running;
+    }
 
     yield* Fiber.join(running.desktopReady).pipe(
       Effect.onError(() =>
@@ -346,10 +353,13 @@ class Workspace {
       (this.running.machine.image === image ||
         (image !== desktop && this.running.machine.image !== desktop)) &&
       (yield* this.running.machine.isAlive)
-    )
+    ) {
       return this.running;
+    }
 
-    if (this.running) yield* this.teardown();
+    if (this.running) {
+      yield* this.teardown();
+    }
 
     const booted = yield* this.owner.boot(this.agentId, image);
 
@@ -361,7 +371,7 @@ class Workspace {
 
   ensureStarted(
     displayOnly = false,
-  ): Effect.Effect<readonly string[], WorkspaceStartError> {
+  ): Effect.Effect<ReadonlyArray<string>, WorkspaceStartError> {
     return this.start(displayOnly).pipe(Effect.map(({ command }) => command));
   }
 
@@ -379,9 +389,13 @@ class Workspace {
       return this.exclusive(
         Effect.suspend(() => {
           // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
-          if (force && !keepConnection) this.connection.close();
+          if (force && !keepConnection) {
+            this.connection.close();
+          }
 
-          if (!this.running || (!force && this.holds > 0)) return Effect.void;
+          if (!this.running || (!force && this.holds > 0)) {
+            return Effect.void;
+          }
 
           return this.teardown();
         }),
@@ -396,7 +410,9 @@ class Workspace {
     let released = false;
 
     return () => {
-      if (released) return;
+      if (released) {
+        return;
+      }
 
       released = true;
       this.holds -= 1;
@@ -408,16 +424,18 @@ class Workspace {
     function* (this: Workspace) {
       const desktopImage = this.owner.desktopImageName();
 
-      if (desktopImage === undefined)
+      if (desktopImage === undefined) {
         return yield* new DesktopNotConfigured({
           message: "This server has no bot desktop image",
         });
+      }
 
-      if (this.owner.imageFor(this.agentId) !== desktopImage)
+      if (this.owner.imageFor(this.agentId) !== desktopImage) {
         return yield* new DesktopNotEnabled({
           message:
             "This bot has no bot desktop: it does not have the desktop tool",
         });
+      }
 
       return desktopImage;
     },
@@ -437,12 +455,13 @@ class Workspace {
   ): Effect.fn.Return<DesktopStream, DesktopOpenError> {
     const desktopImage = yield* this.desktopImage();
 
-    if (passive)
+    if (passive) {
       return yield* this.connectDesktop(
         desktopImage,
         this.runningDesktop(desktopImage),
         () => {},
       );
+    }
 
     const release = this.hold();
 
@@ -485,11 +504,12 @@ class Workspace {
       const running = yield* machine;
 
       // The bot lost its bot desktop while the machine booted.
-      if (running.machine.image !== desktopImage)
+      if (running.machine.image !== desktopImage) {
         return yield* new DesktopNotEnabled({
           message:
             "This bot has no bot desktop: it does not have the desktop tool",
         });
+      }
 
       const stream = yield* running.machine.stream("socat", [
         "-",
@@ -513,7 +533,9 @@ class Workspace {
   private armIdleTimer() {
     clearTimeout(this.idleTimer);
 
-    if (!this.running || this.holds > 0) return;
+    if (!this.running || this.holds > 0) {
+      return;
+    }
 
     this.idleTimer = setTimeout(
       () =>
@@ -534,7 +556,9 @@ class Workspace {
 
     this.running = undefined;
 
-    if (!running) return;
+    if (!running) {
+      return;
+    }
 
     yield* Effect.promise(() => running.relay.close());
     yield* running.machine.stop;
@@ -663,7 +687,9 @@ export class MachineWorkspaces implements Workspaces {
 
     const failed = exits.find(Exit.isFailure);
 
-    if (failed) return yield* Effect.failCause(failed.cause);
+    if (failed) {
+      return yield* Effect.failCause(failed.cause);
+    }
   });
 
   readonly boot = Effect.fn("MachineWorkspaces.boot")(function* (
@@ -671,10 +697,11 @@ export class MachineWorkspaces implements Workspaces {
     agentId: string,
     image: string,
   ): Effect.fn.Return<Running, WorkspaceStartError> {
-    if (this.closed)
+    if (this.closed) {
       return yield* new WorkspacesClosed({
         message: "The account's workspaces are closed",
       });
+    }
 
     const guest = this.guest;
 
@@ -756,15 +783,19 @@ async function startRelay(machine: WorkspaceMachine): Promise<Relay> {
   return {
     socketPath,
     async close() {
-      for (const socket of sockets) socket.destroy();
-      await new Promise((resolve) => server.close(resolve));
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await new Promise((resolve) => {
+        server.close(resolve);
+      });
       await rm(dir, { recursive: true, force: true });
     },
   };
 }
 
 // A throw here would escape the socket's event handler and take the server down.
-function daemonArgs(line: string): string[] | undefined {
+function daemonArgs(line: string): Array<string> | undefined {
   try {
     return relayRequest.safeParse(JSON.parse(line)).data;
   } catch {
@@ -781,14 +812,18 @@ function serveRelayConnection(machine: WorkspaceMachine, socket: net.Socket) {
 
     const newline = pending.indexOf(10);
 
-    if (newline < 0) return;
+    if (newline < 0) {
+      return;
+    }
 
     socket.off("data", onFirstData);
     socket.pause();
 
     const args = daemonArgs(pending.subarray(0, newline).toString());
 
-    if (!args) return void socket.destroy();
+    if (!args) {
+      return void socket.destroy();
+    }
 
     pipeDaemon(machine, socket, args, pending.subarray(newline + 1)).catch(() =>
       socket.destroy(),
@@ -801,7 +836,7 @@ function serveRelayConnection(machine: WorkspaceMachine, socket: net.Socket) {
 async function pipeDaemon(
   machine: WorkspaceMachine,
   socket: net.Socket,
-  args: string[],
+  args: Array<string>,
   rest: Buffer,
 ) {
   const daemon = await Effect.runPromise(machine.stream(GUEST_DAEMON, args));
@@ -813,13 +848,17 @@ async function pipeDaemon(
     writes = writes.then(write).catch(() => void socket.destroy());
   };
 
-  if (rest.length) enqueue(() => daemon.write(rest));
+  if (rest.length) {
+    enqueue(() => daemon.write(rest));
+  }
   socket.on("data", (data: Buffer) => enqueue(() => daemon.write(data)));
   socket.on("end", () => enqueue(() => daemon.end()));
   socket.on("close", () => enqueue(() => daemon.end()));
   socket.resume();
 
-  for await (const data of daemon.output) socket.write(data);
+  for await (const data of daemon.output) {
+    socket.write(data);
+  }
 
   socket.end();
 }

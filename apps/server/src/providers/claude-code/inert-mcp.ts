@@ -7,7 +7,9 @@ import { Match } from "effect";
 
 const manifestPath = process.argv[2];
 
-if (!manifestPath) throw new Error("Usage: inert-mcp.ts <tools.json>");
+if (!manifestPath) {
+  throw new Error("Usage: inert-mcp.ts <tools.json>");
+}
 
 const tools = z
   .array(z.json())
@@ -19,7 +21,9 @@ const request = z.looseObject({
 });
 
 for await (const line of createInterface({ input: process.stdin })) {
-  if (!line.trim()) continue;
+  if (!line.trim()) {
+    continue;
+  }
   const row = request.parse(JSON.parse(line));
 
   const result = Match.value(row.method).pipe(
@@ -41,8 +45,9 @@ for await (const line of createInterface({ input: process.stdin })) {
     Match.orElse(() => ({})),
   );
 
-  if (row.id !== undefined)
+  if (row.id !== undefined) {
     process.stdout.write(
       `${JSON.stringify({ jsonrpc: "2.0", id: row.id, result })}\n`,
     );
+  }
 }

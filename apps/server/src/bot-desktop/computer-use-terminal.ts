@@ -1,7 +1,9 @@
 import type { Context } from "@earendil-works/chord";
 import type { ComputerUseResult } from "./computer-use";
-import { sh, type Window } from "./computer-use-driver";
-import { textResult, type ComputerUseState } from "./computer-use-state";
+import { sh } from "./computer-use-driver";
+import type { Window } from "./computer-use-driver";
+import { textResult } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 /** Terminal emulators: Enter runs a shell command in the bot's own workspace, and the tree holds none of their text. */
 const TERMINAL_APP = /terminal|xterm|konsole|alacritty|kitty/i;

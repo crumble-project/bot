@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace custom lint rules and vendored plugins with `@cloudflare/oxlint-config`.
+- The web client validates JSON API responses against their route schemas and rejects malformed responses instead of trusting unchecked types.
+
+- The `event_payload` tool reports a page of text as `encoding: "utf8"` instead of `"utf-8"`. Binary pages stay `"base64"`, and the page's fields are otherwise unchanged. Only the tool's answer changes; no HTTP endpoint or stored record carries the value.
+
 - Breaking: remove group chats from the server, web client, and API. Upgrading permanently deletes group histories, group pins, queued group notifications, and files used only by groups. Member bots, direct chats, memories, skills, and bot-library files remain. Back up the complete data directory before upgrading; recovering removed groups requires restoring that backup with the previous server version.
 
 - Remove Fallow from development dependencies, Git hooks, and CI. Lint, formatting, type checks, tests, and documentation checks remain in place.

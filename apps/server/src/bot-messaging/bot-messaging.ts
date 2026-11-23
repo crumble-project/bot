@@ -1,11 +1,13 @@
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
-  type Context as PiContext,
 } from "@earendil-works/chord/context";
+import type { Context as PiContext } from "@earendil-works/chord/context";
 import { Clock, Context, Effect, Layer, Option } from "effect";
-import { activeExecution, type Execution } from "../shared/domain";
-import { type Agent } from "../contract/agents";
+import { activeExecution } from "../shared/domain";
+import { required } from "../shared/required";
+import type { Execution } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { appErrors, pi } from "../shared/app-errors";
 import {
   botMessageRequest,
@@ -18,13 +20,8 @@ import { Bots } from "../bots/bots";
 import type { JobAsked, TurnWork } from "../jobs/jobs";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "../bots/runtime";
-import {
-  InvalidInput,
-  Forbidden,
-  NotFound,
-  Conflict,
-  type AppError,
-} from "../shared/errors";
+import { InvalidInput, Forbidden, NotFound, Conflict } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { BOT_TOOL } from "../contract/tools";
 import { MAX_MESSAGE_CHARS, MAX_WAIT_SECONDS } from "../shared/limits";
 import { delegationStore } from "./delegation-store";
@@ -36,7 +33,10 @@ type Receipt = {
   status: Execution["status"];
 };
 
-type DelegationResult = Receipt & { error: string | null; response: string[] };
+type DelegationResult = Receipt & {
+  error: string | null;
+  response: Array<string>;
+};
 
 type JobQuestionAnswered = { agentId: string; agent: string; job: string };
 
@@ -56,17 +56,19 @@ const sendableText = (input: {
 }): Effect.Effect<string, InvalidInput> => {
   const message = input.message.trim();
 
-  if (!message || message.length > MAX_MESSAGE_CHARS)
+  if (!message || message.length > MAX_MESSAGE_CHARS) {
     return Effect.fail(
       new InvalidInput({
         message: `A bot message must contain 1–${MAX_MESSAGE_CHARS} characters`,
       }),
     );
+  }
 
-  if (!input.requestId)
+  if (!input.requestId) {
     return Effect.fail(
       new InvalidInput({ message: "A bot message needs a request ID" }),
     );
+  }
 
   return Effect.succeed(message);
 };
@@ -87,16 +89,20 @@ const outcomeOf = (
   execution: Execution,
   work: TurnWork | undefined,
 ): Outcome => {
-  if (work?.open) return { status: "running", error: execution.error };
+  if (work?.open) {
+    return { status: "running", error: execution.error };
+  }
 
-  if (work?.error !== undefined) return { status: "failed", error: work.error };
+  if (work?.error !== undefined) {
+    return { status: "failed", error: work.error };
+  }
 
   return { status: execution.status, error: execution.error };
 };
 
 const closingText = (
   status: Execution["status"],
-  response: string[],
+  response: Array<string>,
   error: string | null,
 ) =>
   response.join("\n\n") ||
@@ -105,13 +111,23 @@ const closingText = (
     ? "The bot returned no text answer."
     : "The bot exchange was cancelled.");
 
+const authorize = (from: Agent, target: Agent) => {
+  if (!target.enabled || target.id === from.id) {
+    return Effect.fail(
+      new InvalidInput({ message: "Choose another enabled bot" }),
+    );
+  }
+
+  return Effect.void;
+};
+
 export class BotMessaging extends Context.Service<
   BotMessaging,
   {
     readonly recipients: (
       sourceId: string,
     ) => Effect.Effect<
-      { id: string; name: string; description: string }[],
+      Array<{ id: string; name: string; description: string }>,
       AppError
     >;
     readonly send: (
@@ -150,12 +166,13 @@ export class BotMessaging extends Context.Service<
       const source = Effect.fnUntraced(function* (sourceId: string) {
         const found = yield* bots.agent(sourceId);
 
-        if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate))
+        if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate)) {
           return yield* Effect.fail(
             new Forbidden({
               message: "This bot has no permission to message other bots",
             }),
           );
+        }
 
         return found;
       });
@@ -164,27 +181,31 @@ export class BotMessaging extends Context.Service<
         const reference = addressed(recipient);
         const byId = yield* agents.get(reference);
 
-        if (byId) return byId;
+        if (byId) {
+          return byId;
+        }
 
         const matches = (yield* agents.list).filter(
           (agent) => normalize(agent.name) === normalize(reference),
         );
 
-        if (!matches.length)
+        if (!matches.length) {
           return yield* Effect.fail(
             new NotFound({
               message: "Bot not found; use list_bots to find a recipient",
             }),
           );
+        }
 
-        if (matches.length > 1)
+        if (matches.length > 1) {
           return yield* Effect.fail(
             new Conflict({
               message: "Bot name is ambiguous; use the ID from list_bots",
             }),
           );
+        }
 
-        return matches[0]!;
+        return required(matches[0], "No bot matched the recipient");
       });
 
       const assertCanSend = Effect.fnUntraced(function* (sourceId: string) {
@@ -193,22 +214,14 @@ export class BotMessaging extends Context.Service<
             (execution) =>
               parseRequestId(execution.requestId).kind === "delegate",
           )
-        )
+        ) {
           return yield* Effect.fail(
             new Conflict({
               message: "Delegated tasks cannot start further delegations",
             }),
           );
+        }
       });
-
-      const authorize = (from: Agent, target: Agent) => {
-        if (!target.enabled || target.id === from.id)
-          return Effect.fail(
-            new InvalidInput({ message: "Choose another enabled bot" }),
-          );
-
-        return Effect.void;
-      };
 
       const exchange = Effect.fnUntraced(function* (
         sourceId: string,
@@ -217,16 +230,18 @@ export class BotMessaging extends Context.Service<
         const saved = yield* delegations.receipt(executionId);
         const from = yield* source(sourceId);
 
-        if (saved?.sourceAgentId !== from.id)
+        if (saved?.sourceAgentId !== from.id) {
           return yield* Effect.fail(
             new NotFound({ message: "Delegation receipt not found" }),
           );
+        }
         const execution = yield* executions.get(executionId);
 
-        if (!execution || execution.agentId !== saved.targetAgentId)
+        if (!execution || execution.agentId !== saved.targetAgentId) {
           return yield* Effect.fail(
             new NotFound({ message: "Delegation execution not found" }),
           );
+        }
 
         return execution;
       });
@@ -318,7 +333,9 @@ export class BotMessaging extends Context.Service<
         while (work?.open) {
           const left = deadline - (yield* Clock.currentTimeMillis);
 
-          if (left <= 0) break;
+          if (left <= 0) {
+            break;
+          }
           yield* Effect.sleep(Math.min(JOB_POLL_MS, left));
           yield* checkAborted(context);
           work = Option.getOrUndefined(yield* jobsOf(answering, execution));
@@ -332,8 +349,8 @@ export class BotMessaging extends Context.Service<
       const turnResponse = (
         answering: Agent,
         { status, submissionId, conversationId }: Execution,
-        reports: string[],
-      ): Effect.Effect<string[], AppError> =>
+        reports: Array<string>,
+      ): Effect.Effect<Array<string>, AppError> =>
         status === "done" && submissionId
           ? pi(async () =>
               (
@@ -368,14 +385,15 @@ export class BotMessaging extends Context.Service<
         if (
           saved &&
           (saved.targetAgentId !== target.id || saved.message !== message)
-        )
+        ) {
           return yield* Effect.fail(
             new Conflict({
               message: "Request ID already used for a different bot message",
             }),
           );
+        }
 
-        if (!saved)
+        if (!saved) {
           yield* delegations.reserve({
             requestId,
             sourceAgentId: from.id,
@@ -383,6 +401,7 @@ export class BotMessaging extends Context.Service<
             recipient,
             message,
           });
+        }
 
         return target;
       });
@@ -397,8 +416,9 @@ export class BotMessaging extends Context.Service<
           !activeExecution(execution) ||
           !execution.submissionId ||
           waitMs <= 0
-        )
+        ) {
           return execution;
+        }
 
         yield* awaitTurn(execution, execution.submissionId, waitMs, context);
 
@@ -444,13 +464,14 @@ export class BotMessaging extends Context.Service<
           yield* assertCanSend(from.id);
           const existing = yield* executions.getByRequest(chat.id, requestId);
 
-          if (!existing && (yield* executions.active(target.id)).length >= 4)
+          if (!existing && (yield* executions.active(target.id)).length >= 4) {
             return yield* Effect.fail(
               new Conflict({
                 message:
                   "This bot already has four active tasks; try again later",
               }),
             );
+          }
           const execution = yield* bots.send(chat.id, message, requestId);
           yield* delegations.saveReceipt({
             executionId: execution.id,
@@ -495,13 +516,14 @@ export class BotMessaging extends Context.Service<
 
           yield* exchange(sourceId, executionId);
 
-          if (status !== "pending" && status !== "running")
+          if (status !== "pending" && status !== "running") {
             yield* record(
               sourceId,
               execution,
               status,
               closingText(status, response, error),
             );
+          }
 
           yield* exchange(sourceId, executionId);
 
@@ -525,11 +547,15 @@ export class BotMessaging extends Context.Service<
               parseRequestId(execution.requestId).kind === "delegate",
           );
 
-          if (!delegation) return false;
+          if (!delegation) {
+            return false;
+          }
 
           const saved = yield* delegations.receipt(delegation.id);
 
-          if (saved?.targetAgentId !== asked.agentId) return false;
+          if (saved?.targetAgentId !== asked.agentId) {
+            return false;
+          }
 
           const permitted = yield* Effect.option(
             Effect.gen(function* () {
@@ -541,7 +567,9 @@ export class BotMessaging extends Context.Service<
             }),
           );
 
-          if (Option.isNone(permitted)) return false;
+          if (Option.isNone(permitted)) {
+            return false;
+          }
           const { reporter, assignee } = permitted.value;
 
           yield* delegations.saveQuestion({
@@ -569,10 +597,11 @@ export class BotMessaging extends Context.Service<
 
           const saved = yield* delegations.question(input.questionId);
 
-          if (saved?.reporterAgentId !== from.id)
+          if (saved?.reporterAgentId !== from.id) {
             return yield* Effect.fail(
               new NotFound({ message: "Job question not found" }),
             );
+          }
 
           const assignee = yield* bots.agent(saved.assigneeAgentId);
           yield* authorize(from, assignee);

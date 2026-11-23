@@ -4,13 +4,18 @@ import { Window } from "happy-dom";
 
 const globals = Object.getOwnPropertyDescriptors(globalThis);
 
+const reported: Array<unknown> = [];
+
 afterEach(() => {
+  reported.length = 0;
+
   for (const key of [
     "window",
     "document",
     "localStorage",
     "location",
     "Notification",
+    "reportError",
   ]) {
     const original = globals[key];
 
@@ -32,6 +37,11 @@ function browser(NotificationClass: NotificationConstructor) {
     localStorage: window.localStorage,
     location: window.location,
     Notification: NotificationClass,
+    // A browser hands the error to its global error channel and keeps running;
+    // Bun's `reportError` ends the process, so the report is recorded instead.
+    reportError: (error: unknown) => {
+      reported.push(error);
+    },
   };
 
   for (const [key, value] of Object.entries(values))
@@ -66,6 +76,8 @@ test("a browser that refuses notifications keeps the activity stream alive", asy
   const { notifyReply } = await import("./notifications");
 
   expect(() => notifyReply(reply("refused"), links)).not.toThrow();
+  expect(reported).toHaveLength(1);
+  expect(reported[0]).toBeInstanceOf(TypeError);
 });
 
 test("full storage keeps the activity stream alive", async () => {

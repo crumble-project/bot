@@ -1,18 +1,13 @@
 import type { Context } from "@earendil-works/chord";
-import {
-  ToolTask,
-  defineExtension,
-  hook,
-  type PromptSection,
-} from "@earendil-works/pi-durable";
+import { ToolTask, defineExtension, hook } from "@earendil-works/pi-durable";
+import type { PromptSection } from "@earendil-works/pi-durable";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import { Effect } from "effect";
-import {
-  credentialExtension,
-  type CredentialsAccess,
-} from "../credentials/credentials";
+import { credentialExtension } from "../credentials/credentials";
+import type { CredentialsAccess } from "../credentials/credentials";
 import type { Agent } from "../contract/agents";
-import { defineJobKind, type JobExtensions, type JobKind } from "./jobs";
+import { defineJobKind } from "./jobs";
+import type { JobExtensions, JobKind } from "./jobs";
 import { JOB_KINDS } from "../shared/job-kinds";
 import type { CrumblePlugin } from "../plugins/plugins";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
@@ -82,7 +77,9 @@ const questionHold = (
     | undefined;
 
   const wake = () => {
-    if (!awake) return;
+    if (!awake) {
+      return;
+    }
     clearTimeout(awake.timer);
     awake.release();
     awake = undefined;
@@ -131,7 +128,9 @@ const jobExtension = (
     hooks: [
       hook(ToolTask, {
         afterTool: async (call, _result, api, context) => {
-          if (!(await coding.isJob(api, api.conversationId, context))) return;
+          if (!(await coding.isJob(api, api.conversationId, context))) {
+            return;
+          }
 
           wake();
           await syncAfter(workspaces, agentId, call.name);

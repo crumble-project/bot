@@ -1,6 +1,9 @@
-import { type CSSProperties, useLayoutEffect, useMemo, useRef } from "react";
-import { type AvatarState, renderAvatarSvg } from "open-bot-avatar";
-import { type MountedAvatar, mountAvatar } from "open-bot-avatar/dom";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
+import { renderAvatarSvg } from "open-bot-avatar";
+import type { AvatarState } from "open-bot-avatar";
+import { mountAvatar } from "open-bot-avatar/dom";
+import type { MountedAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +29,9 @@ function useLiveAvatar(
   const latest = useRef(state);
 
   useLayoutEffect(() => {
-    if (still || !host.current) return;
+    if (still || !host.current) {
+      return;
+    }
 
     const mounted = mountAvatar(host.current, {
       ...look,

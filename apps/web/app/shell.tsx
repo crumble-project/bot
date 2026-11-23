@@ -1,5 +1,7 @@
-import { type ComponentProps, useEffect, useRef, useState } from "react";
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import type { ComponentProps } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   Link,
   useMatchRoute,
@@ -46,7 +48,8 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CrumbleMark } from "@/components/crumble-mark";
 import { cn, plainMarkdown } from "@/lib/utils";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { authClient } from "@/lib/auth-client";
 import {
   setTheme,
@@ -55,7 +58,8 @@ import {
   useTheme,
 } from "@/lib/theme";
 import { resetSession, signedOut } from "@/lib/session";
-import { botPin, type Pins, usePins } from "@/lib/pins";
+import { botPin, usePins } from "@/lib/pins";
+import type { Pins } from "@/lib/pins";
 import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
 import { followActivity, useConnectionStatus } from "./activity-stream";
 import { markSeen, useUnreadCount } from "@/lib/notifications";
@@ -74,8 +78,9 @@ function useResetOnUserChange(userId: string | undefined) {
       previousUserId.current !== undefined &&
       previousUserId.current !== userId
     ) {
-      if (!userId) signedOut();
-      else {
+      if (!userId) {
+        signedOut();
+      } else {
         resetSession();
         void navigate({ to: "/" });
       }
@@ -96,7 +101,9 @@ function useFollowActivity(userId: string | undefined) {
   useEffect(markSeen, [path]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      return;
+    }
 
     const controller = new AbortController();
 
@@ -112,7 +119,7 @@ function useFollowActivity(userId: string | undefined) {
   }, [navigate, router, userId]);
 }
 
-function useDocumentTitle(bots: Bot[] | undefined) {
+function useDocumentTitle(bots: Array<Bot> | undefined) {
   const matchRoute = useMatchRoute();
   const unread = useUnreadCount();
   const bot = matchRoute({ to: "/bots/$botId" });
@@ -137,7 +144,9 @@ function SidebarThemeColor() {
   const tinted = isMobile && openMobile;
 
   useEffect(() => {
-    if (!tinted) return;
+    if (!tinted) {
+      return;
+    }
 
     setThemeColor(SIDEBAR_THEME_COLOR);
 
@@ -199,12 +208,14 @@ function PinnedSection({
   bots,
 }: {
   pins: Pins;
-  bots: Bot[] | undefined;
+  bots: Array<Bot> | undefined;
 }) {
   const matchRoute = useMatchRoute();
   const dragged = useRef<string | null>(null);
 
-  if (pins.pinned.length === 0) return null;
+  if (pins.pinned.length === 0) {
+    return null;
+  }
 
   const botsByPin = new Map(bots?.map((bot) => [botPin(bot.id), bot]));
 
@@ -215,7 +226,9 @@ function PinnedSection({
       event.dataTransfer.effectAllowed = "move";
     },
     onDragOver: (event) => {
-      if (!dragged.current || dragged.current === key) return;
+      if (!dragged.current || dragged.current === key) {
+        return;
+      }
 
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
@@ -223,7 +236,9 @@ function PinnedSection({
     onDrop: (event) => {
       event.preventDefault();
 
-      if (dragged.current) pins.move(dragged.current, key);
+      if (dragged.current) {
+        pins.move(dragged.current, key);
+      }
 
       dragged.current = null;
     },
@@ -240,7 +255,7 @@ function PinnedSection({
           {pins.pinned.map((key) => {
             const bot = botsByPin.get(key);
 
-            if (bot)
+            if (bot) {
               return (
                 <BotRow
                   key={key}
@@ -256,6 +271,7 @@ function PinnedSection({
                   drag={drag(key)}
                 />
               );
+            }
 
             return null;
           })}
@@ -272,7 +288,9 @@ function PinAction({
   conversation: string;
   pins: Pins;
 }) {
-  if (!pins.ready) return null;
+  if (!pins.ready) {
+    return null;
+  }
 
   const pinned = pins.isPinned(conversation);
 
@@ -302,7 +320,7 @@ function BotsSection({
   bots,
   pins,
 }: {
-  bots: UseQueryResult<Bot[]>;
+  bots: UseQueryResult<Array<Bot>>;
   pins: Pins;
 }) {
   const matchRoute = useMatchRoute();
@@ -419,7 +437,9 @@ function ThemeMenu() {
             onValueChange={(value) => {
               const option = THEME_OPTIONS.find((item) => item.value === value);
 
-              if (option) void setTheme(option.value);
+              if (option) {
+                void setTheme(option.value);
+              }
             }}
           >
             {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
@@ -458,7 +478,9 @@ function SearchButton({ onOpen }: { onOpen: () => void }) {
 function ConnectionStatus() {
   const status = useConnectionStatus();
 
-  if (status === "connected") return null;
+  if (status === "connected") {
+    return null;
+  }
 
   return (
     <span className="ml-auto text-xs text-destructive">

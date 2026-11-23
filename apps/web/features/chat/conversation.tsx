@@ -1,4 +1,5 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -21,24 +22,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
 import { getChatAttention } from "@/lib/chat-attention";
 import { AttentionChatContext, selectAttentionChat } from "./reply-attention";
-import { type HistoryPage, type Message, historyPage } from "./api";
-import { api, type RoutePath } from "@/lib/api";
+import { historyPage } from "./api";
+import type { HistoryPage, Message } from "./api";
+import { api } from "@/lib/api";
+import type { RoutePath } from "@/lib/api";
 import { useChatStream } from "./chat-stream";
 import type { Upload } from "./composer";
 import type { ConversationTarget, HistoryRoute } from "./conversation-target";
 import {
-  type Outgoing,
   confirm,
   deliver,
   discard,
   outgoingMessage,
   useOutgoing,
 } from "./delivery";
+import type { Outgoing } from "./delivery";
 import {
   ARRIVAL,
   NoticeRow,
   OwnerMessage,
-  type Reaction,
   TimeMarker,
   isNotice,
   mergeMessages,
@@ -46,10 +48,11 @@ import {
   useArrivals,
   withTimeMarkers,
 } from "./transcript";
+import type { Reaction } from "./transcript";
 
 function useHistory(
   path: RoutePath<HistoryRoute>,
-  remember: (messages: Message[]) => void,
+  remember: (messages: Array<Message>) => void,
 ) {
   const [older, setOlder] = useState<HistoryPage | null>(null);
 
@@ -57,7 +60,7 @@ function useHistory(
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const loadEarlier = useMutation({
     mutationFn: (before: string) =>
-      api<HistoryRoute>(historyPage(path, 100, before)),
+      api("history", historyPage(path, 100, before)),
     onSuccess: (page) => {
       remember(page.messages);
       setOlder({
@@ -79,7 +82,7 @@ function useMessageSending<S extends HistoryPage>(
 
   const sendMessage = async (
     content: string,
-    uploads: Upload[],
+    uploads: Array<Upload>,
     retried?: string,
     reply = replyTo?.entryId,
   ) => {
@@ -99,11 +102,15 @@ function useMessageSending<S extends HistoryPage>(
       target.sendContext(),
     );
 
-    if (!failure) return true;
+    if (!failure) {
+      return true;
+    }
 
     setSendError(`Message was not confirmed: ${failure.reason}`);
 
-    if (!failure.rejected || retried) return true;
+    if (!failure.rejected || retried) {
+      return true;
+    }
 
     discard(target.key, requestId);
 
@@ -130,11 +137,12 @@ export function useConversation<S extends HistoryPage>(
   const { older, loadEarlier } = useHistory(target.history, remember);
 
   useEffect(() => {
-    if (live)
+    if (live) {
       confirm(
         target.key,
         new Set(live.flatMap((message) => message.requestId ?? [])),
       );
+    }
   }, [target, live]);
 
   // The live transcript reports the stopped turn.
@@ -256,17 +264,17 @@ function ConversationRows({
   renderMessage,
   renderNotice,
 }: {
-  messages: Message[];
+  messages: Array<Message>;
   arrival: (message: Message) => string | undefined;
   byEntry: Map<string, Message>;
-  reactions: Map<string, Reaction[]>;
+  reactions: Map<string, Array<Reaction>>;
   onReply: (message: Message) => void;
   filePath: (id: string) => string;
   renderMessage: (message: Message) => ReactNode;
   renderNotice: (message: Message, row: ReactNode) => ReactNode;
 }) {
   const contentOf = (message: Message) => {
-    if (isNotice(message))
+    if (isNotice(message)) {
       return renderNotice(
         message,
         <NoticeRow
@@ -274,8 +282,9 @@ function ConversationRows({
           reactions={reactions.get(message.entryId)}
         />,
       );
+    }
 
-    if (message.role === "user")
+    if (message.role === "user") {
       return (
         <OwnerMessage
           message={message}
@@ -285,6 +294,7 @@ function ConversationRows({
           filePath={filePath}
         />
       );
+    }
 
     return renderMessage(message);
   };
@@ -358,14 +368,18 @@ export function ConversationMessages({
     const kind = chatKey.slice(0, separator);
     const id = chatKey.slice(separator + 1);
 
-    if (kind !== "bot" || !id) return;
+    if (kind !== "bot" || !id) {
+      return;
+    }
     const controller = getChatAttention();
     const release = selectAttentionChat(chatKey);
 
     controller.setChat({ kind, id });
 
     return () => {
-      if (release()) controller.setChat(null);
+      if (release()) {
+        controller.setChat(null);
+      }
     };
   }, [chatKey]);
 
@@ -400,7 +414,9 @@ export function ConversationMessages({
 }
 
 export function SendError({ message }: { message: string | null }) {
-  if (!message) return null;
+  if (!message) {
+    return null;
+  }
 
   return (
     <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">

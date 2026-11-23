@@ -54,15 +54,15 @@ export type WorkspaceBackend = (
 export type PluginVendors = {
   /** Stored data and settings key on it: never rename. */
   id: string;
-  passwordManagers?: PasswordManagerVendor[];
+  passwordManagers?: Array<PasswordManagerVendor>;
   /** Tried in list order; the first the environment configures runs the account's workspaces. */
-  workspaceBackends?: WorkspaceBackend[];
+  workspaceBackends?: Array<WorkspaceBackend>;
 };
 
 export function assertVendorIds(
   kind: string,
-  catalog: readonly string[],
-  implemented: readonly string[],
+  catalog: ReadonlyArray<string>,
+  implemented: ReadonlyArray<string>,
 ) {
   const problems = [
     ...catalog.flatMap((id) => {
@@ -75,15 +75,16 @@ export function assertVendorIds(
     ),
   ];
 
-  if (problems.length)
+  if (problems.length) {
     throw new Error(`Plugin ${kind} IDs: ${problems.join("; ")}`);
+  }
 }
 
-export const pluginPasswordManagers = (vendors: readonly PluginVendors[]) =>
+export const pluginPasswordManagers = (vendors: ReadonlyArray<PluginVendors>) =>
   vendors.flatMap((vendor) => vendor.passwordManagers ?? []);
 
 export function pluginWorkspaces(
-  vendors: readonly PluginVendors[],
+  vendors: ReadonlyArray<PluginVendors>,
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
 ) {
@@ -92,7 +93,9 @@ export function pluginWorkspaces(
   )) {
     const workspaces = backend(env, options);
 
-    if (workspaces) return workspaces;
+    if (workspaces) {
+      return workspaces;
+    }
   }
 
   return;
@@ -114,30 +117,31 @@ export type PluginSetting = {
 export type CrumblePlugin = {
   /** Stored data and settings key on it: never rename. */
   id: string;
-  providers?: ProviderContribution[];
-  jobKinds?: JobKindContribution[];
-  webSearchProviders?: WebSearchProvider[];
-  settings?: PluginSetting[];
-  chatAdapters?: ChatAdapter[];
+  providers?: Array<ProviderContribution>;
+  jobKinds?: Array<JobKindContribution>;
+  webSearchProviders?: Array<WebSearchProvider>;
+  settings?: Array<PluginSetting>;
+  chatAdapters?: Array<ChatAdapter>;
 };
 
 export const pluginContributions = (plugin: CrumblePlugin) =>
   PLUGIN_CONTRIBUTIONS.filter((kind) => (plugin[kind]?.length ?? 0) > 0);
 
-export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
+export const pluginProviders = (plugins: ReadonlyArray<CrumblePlugin>) =>
   plugins.flatMap((plugin) => plugin.providers ?? []);
 
-export const pluginJobKinds = (plugins: readonly CrumblePlugin[]) =>
+export const pluginJobKinds = (plugins: ReadonlyArray<CrumblePlugin>) =>
   plugins.flatMap((plugin) => plugin.jobKinds ?? []);
 
-export const pluginWebSearchProviders = (plugins: readonly CrumblePlugin[]) =>
-  plugins.flatMap((plugin) => plugin.webSearchProviders ?? []);
+export const pluginWebSearchProviders = (
+  plugins: ReadonlyArray<CrumblePlugin>,
+) => plugins.flatMap((plugin) => plugin.webSearchProviders ?? []);
 
-export const pluginChatAdapters = (plugins: readonly CrumblePlugin[]) =>
+export const pluginChatAdapters = (plugins: ReadonlyArray<CrumblePlugin>) =>
   plugins.flatMap((plugin) => plugin.chatAdapters ?? []);
 
 export const jobExtensions = (
-  kinds: readonly JobKindContribution[],
+  kinds: ReadonlyArray<JobKindContribution>,
   agent: Agent,
 ): JobExtensions => {
   const enabled = kinds.flatMap((kind) =>
@@ -151,7 +155,7 @@ export const jobExtensions = (
 };
 
 export async function conversationEnv(
-  kinds: readonly JobKindContribution[],
+  kinds: ReadonlyArray<JobKindContribution>,
   agent: Agent,
   target: EnvTarget,
   context: PiContext,
@@ -159,7 +163,9 @@ export async function conversationEnv(
   for (const kind of kinds) {
     const env = await kind.env(agent.id, target, context);
 
-    if (env) return env;
+    if (env) {
+      return env;
+    }
   }
 
   return kinds
@@ -169,5 +175,5 @@ export async function conversationEnv(
 
 export class Plugins extends Context.Service<
   Plugins,
-  readonly CrumblePlugin[]
+  ReadonlyArray<CrumblePlugin>
 >()("crumble/plugins/Plugins") {}

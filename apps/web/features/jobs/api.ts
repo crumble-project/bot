@@ -9,9 +9,7 @@ export type JobRef = { kind: JobKind; name: string };
 
 export type Job = z.infer<typeof codingJobsResponse>["jobs"][number];
 
-type JobsRoute = "codingJobs" | "desktopJobs";
-
-const ACTIVE_REFRESH_MS = 3_000;
+const ACTIVE_REFRESH_MS = 3000;
 const IDLE_REFRESH_MS = 15_000;
 
 export const jobsQuery = (id: string, kind: JobKind) =>
@@ -19,7 +17,13 @@ export const jobsQuery = (id: string, kind: JobKind) =>
     queryKey: ["jobs", id, kind],
     queryFn: async ({ signal }) =>
       // Coding and desktop jobs share one response shape.
-      (await api<JobsRoute>(`${agentPath(id)}/${kind}-jobs`, { signal })).jobs,
+      (
+        await api(
+          kind === "coding" ? "codingJobs" : "desktopJobs",
+          `${agentPath(id)}/${kind}-jobs`,
+          { signal },
+        )
+      ).jobs,
     refetchOnMount: "always",
     // A job's own progress sends the chat nothing, and a chat message may never tell of a job waking up.
     refetchInterval: (query) =>

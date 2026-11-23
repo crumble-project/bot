@@ -14,7 +14,7 @@ import { PluginSettingRows } from "@/features/plugin-settings/plugin-settings";
 
 const webSearchSettingsQuery = {
   queryKey: ["web-search-settings"],
-  queryFn: () => api<"getWebSearch">("/v1/web-search"),
+  queryFn: () => api("getWebSearch", "/v1/web-search"),
 };
 
 const refresh = () =>
@@ -25,7 +25,7 @@ export function WebSearchPage() {
 
   const change = useMutation({
     mutationFn: (defaultProvider: (typeof webSearchProviders)[number]["id"]) =>
-      call<"updateWebSearch">("/v1/web-search", "PUT", { defaultProvider }),
+      call("updateWebSearch", "/v1/web-search", "PUT", { defaultProvider }),
     onSuccess: refresh,
   });
 
@@ -58,7 +58,12 @@ export function WebSearchPage() {
               <Tabs
                 value={data.defaultProvider}
                 onValueChange={(value) => {
-                  if (isWebSearchProviderId(value)) change.mutate(value);
+                  if (
+                    typeof value === "string" &&
+                    isWebSearchProviderId(value)
+                  ) {
+                    change.mutate(value);
+                  }
                 }}
               >
                 <TabsList aria-label="Default web search provider">

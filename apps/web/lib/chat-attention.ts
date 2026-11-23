@@ -15,7 +15,9 @@ const controllers = new Set<() => void>();
 let shared: ChatAttentionController | undefined;
 
 onSessionReset(() => {
-  for (const reset of controllers) reset();
+  for (const reset of controllers) {
+    reset();
+  }
   controllers.clear();
   shared = undefined;
 });
@@ -38,11 +40,11 @@ export function createChatAttention(): ChatAttentionController {
   let seenSending = false;
   const pending = new Set<string>();
 
-  const failedBatches: {
+  const failedBatches: Array<{
     chat: ChatReference;
-    eventIds: string[];
+    eventIds: Array<string>;
     generation: number;
-  }[] = [];
+  }> = [];
 
   const acknowledged = new Set<string>();
 
@@ -56,15 +58,18 @@ export function createChatAttention(): ChatAttentionController {
     const current = ++generation;
     clearTimeout(reportRetry);
     reportQueue = reportQueue.then(async () => {
-      if (reset || current !== generation) return;
+      if (reset || current !== generation) {
+        return;
+      }
 
       try {
         await send<"putView">(`/v1/chat-attention/views/${viewId}`, "PUT", {
           chat: value,
         });
       } catch {
-        if (!reset && !disposed && current === generation && active())
+        if (!reset && !disposed && current === generation && active()) {
           reportRetry = setTimeout(() => report(chat), 1000);
+        }
       }
     });
   }
@@ -75,8 +80,9 @@ export function createChatAttention(): ChatAttentionController {
       seenSending ||
       (pending.size === 0 && failedBatches.length === 0) ||
       disposed
-    )
+    ) {
       return;
+    }
     seenTimer = setTimeout(() => {
       seenTimer = undefined;
       void flushSeen();
@@ -84,7 +90,9 @@ export function createChatAttention(): ChatAttentionController {
   }
 
   async function flushSeen() {
-    if (disposed || seenSending) return;
+    if (disposed || seenSending) {
+      return;
+    }
 
     const batch =
       chat && pending.size > 0
@@ -95,10 +103,13 @@ export function createChatAttention(): ChatAttentionController {
           }
         : failedBatches.shift();
 
-    if (!batch) return;
+    if (!batch) {
+      return;
+    }
 
-    if (batch.generation === seenGeneration)
+    if (batch.generation === seenGeneration) {
       batch.eventIds.forEach((id) => pending.delete(id));
+    }
     seenSending = true;
     let failed = false;
 
@@ -108,12 +119,15 @@ export function createChatAttention(): ChatAttentionController {
         eventIds: batch.eventIds,
       });
 
-      if (!disposed && batch.generation === seenGeneration)
+      if (!disposed && batch.generation === seenGeneration) {
         batch.eventIds.forEach((id) => acknowledged.add(id));
+      }
     } catch {
       failed = true;
 
-      if (!disposed) failedBatches.push(batch);
+      if (!disposed) {
+        failedBatches.push(batch);
+      }
     } finally {
       seenSending = false;
       scheduleSeen(failed && pending.size === 0 ? 1000 : 0);
@@ -133,7 +147,9 @@ export function createChatAttention(): ChatAttentionController {
   }
 
   function cleanup(isReset: boolean) {
-    if (isReset) reset = true;
+    if (isReset) {
+      reset = true;
+    }
 
     if (!disposed) {
       disposed = true;
@@ -147,23 +163,33 @@ export function createChatAttention(): ChatAttentionController {
       window.removeEventListener("blur", updateActivity);
       document.removeEventListener("visibilitychange", updateActivity);
 
-      if (!isReset) report(null);
+      if (!isReset) {
+        report(null);
+      }
     }
 
-    if (isReset) ++generation;
+    if (isReset) {
+      ++generation;
+    }
 
-    if (shared === controller) shared = undefined;
+    if (shared === controller) {
+      shared = undefined;
+    }
 
-    if (isReset) controllers.delete(resetController);
-    else void reportQueue.then(() => controllers.delete(resetController));
+    if (isReset) {
+      controllers.delete(resetController);
+    } else {
+      void reportQueue.then(() => controllers.delete(resetController));
+    }
   }
 
   const resetController = () => cleanup(true);
 
   const controller: ChatAttentionController = {
     setChat(next) {
-      if (disposed || (chat?.kind === next?.kind && chat?.id === next?.id))
+      if (disposed || (chat?.kind === next?.kind && chat?.id === next?.id)) {
         return;
+      }
       ++seenGeneration;
       pending.clear();
       acknowledged.clear();
@@ -174,7 +200,9 @@ export function createChatAttention(): ChatAttentionController {
       updateActivity();
     },
     displayed(reference) {
-      if (!active() || acknowledged.has(reference.eventId)) return;
+      if (!active() || acknowledged.has(reference.eventId)) {
+        return;
+      }
       pending.add(reference.eventId);
       scheduleSeen(0);
     },

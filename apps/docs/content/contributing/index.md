@@ -125,6 +125,10 @@ bun run openapi:generate
 `bun run openapi:check` fails if the generated files are out of date, and
 `bun run check` runs it for you.
 
+The web client validates JSON responses against the route schema for the returned HTTP status.
+Pass the route name to `api`, `call`, or `bodyOf`, such as `api("listAgents", "/v1/agents")`.
+Mock responses in UI tests must match the schema and status, including required fields and UUID formats.
+
 ## Chat attention API
 
 Chat attention belongs to the authenticated account, independently of push

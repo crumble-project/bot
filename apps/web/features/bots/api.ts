@@ -18,7 +18,7 @@ export const agentPath = (id: string) =>
 
 export const botsQuery = queryOptions({
   queryKey: ["bots"],
-  queryFn: ({ signal }) => api<"listAgents">("/v1/agents", { signal }),
+  queryFn: ({ signal }) => api("listAgents", "/v1/agents", { signal }),
 });
 
 export const invalidateBots = () =>
@@ -26,6 +26,6 @@ export const invalidateBots = () =>
 
 export const capabilitiesQuery = queryOptions({
   queryKey: ["capabilities"],
-  queryFn: ({ signal }) => api<"capabilities">("/v1/capabilities", { signal }),
+  queryFn: ({ signal }) => api("capabilities", "/v1/capabilities", { signal }),
   staleTime: Infinity,
 });

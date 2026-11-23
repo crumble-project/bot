@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { required } from "../shared/required";
 import { Context, Effect, Layer } from "effect";
 import { atomic, ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
@@ -46,13 +47,13 @@ export class LibraryRepository extends Context.Service<
     ): Effect.Effect<LibraryEntry | undefined>;
     getMany(
       library: LibraryRef,
-      ids: readonly string[],
-    ): Effect.Effect<LibraryEntry[]>;
+      ids: ReadonlyArray<string>,
+    ): Effect.Effect<Array<LibraryEntry>>;
     list(
       library: LibraryRef,
       page: { before?: string; limit: number },
-    ): Effect.Effect<LibraryEntry[]>;
-    hashes(library: LibraryRef): Effect.Effect<string[]>;
+    ): Effect.Effect<Array<LibraryEntry>>;
+    hashes(library: LibraryRef): Effect.Effect<Array<string>>;
     describe(
       library: LibraryRef,
       id: string,
@@ -104,21 +105,30 @@ export class LibraryRepository extends Context.Service<
           .onConflictDoNothing()
           .returning();
 
-        if (rows[0]) return { entry: entryOf(rows[0]), existed: false };
+        if (rows[0]) {
+          return { entry: entryOf(rows[0]), existed: false };
+        }
 
         const [existing] = yield* db
           .select()
           .from(libraryFiles)
           .where(and(owner(input.library), eq(libraryFiles.hash, input.hash)));
 
-        return { entry: entryOf(existing!), existed: true };
+        return {
+          entry: entryOf(
+            required(existing, "The library entry was not stored"),
+          ),
+          existed: true,
+        };
       }, Effect.orDie);
 
       const getMany = Effect.fn("LibraryRepository.getMany")(function* (
         library: LibraryRef,
-        ids: readonly string[],
+        ids: ReadonlyArray<string>,
       ) {
-        if (!ids.length) return [];
+        if (!ids.length) {
+          return [];
+        }
 
         return (yield* db
           .select()
@@ -161,12 +171,13 @@ export class LibraryRepository extends Context.Service<
             .where(and(owner(library), eq(libraryFiles.id, id)))
             .returning();
 
-          if (row)
+          if (row) {
             yield* db.insert(deletedLibraryFiles).values({
               id: row.id,
               agentId: row.agentId,
               name: row.name,
             });
+          }
 
           return row ? entryOf(row) : undefined;
         },

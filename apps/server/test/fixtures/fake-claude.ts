@@ -8,6 +8,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { logInfo } from "../../src/shared/process-log";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { z } from "zod";
@@ -28,19 +29,25 @@ const env = {
 
 const args = process.argv.slice(2);
 
-if (env["FAKE_PIDS"]) appendFileSync(env["FAKE_PIDS"], `${process.pid}\n`);
+if (env["FAKE_PIDS"]) {
+  appendFileSync(env["FAKE_PIDS"], `${process.pid}\n`);
+}
 
-if (env["FAKE_ARGV"]) writeFileSync(env["FAKE_ARGV"], JSON.stringify(args));
+if (env["FAKE_ARGV"]) {
+  writeFileSync(env["FAKE_ARGV"], JSON.stringify(args));
+}
 
-if (env["FAKE_ENV"]) writeFileSync(env["FAKE_ENV"], JSON.stringify(env));
+if (env["FAKE_ENV"]) {
+  writeFileSync(env["FAKE_ENV"], JSON.stringify(env));
+}
 
 if (args[0] === "--version") {
-  console.log(`${env["FAKE_VERSION"] ?? "2.1.309"} (Claude Code)`);
+  logInfo(`${env["FAKE_VERSION"] ?? "2.1.309"} (Claude Code)`);
   process.exit(0);
 }
 
 if (args[0] === "auth" && args[1] === "status") {
-  console.log(
+  logInfo(
     JSON.stringify({
       loggedIn: env["FAKE_LOGGED_IN"] !== "0",
       subscriptionType: "max",
@@ -59,8 +66,9 @@ if (env["FAKE_MODE"] === "hang") {
     stdio: "ignore",
   });
 
-  if (env["FAKE_PIDS"] && child.pid)
+  if (env["FAKE_PIDS"] && child.pid) {
     appendFileSync(env["FAKE_PIDS"], `${child.pid}\n`);
+  }
   setInterval(() => {}, 1000);
 } else {
   const frame = z.looseObject({
@@ -69,19 +77,22 @@ if (env["FAKE_MODE"] === "hang") {
     message: z.looseObject({ role: z.string(), content: z.json() }),
   });
 
-  const messages: {
+  const messages: Array<{
     role: string;
     content: z.infer<ReturnType<typeof z.json>>;
-  }[] = [];
+  }> = [];
 
   for await (const line of createInterface({ input: process.stdin })) {
-    if (!line.trim()) continue;
+    if (!line.trim()) {
+      continue;
+    }
     const row = frame.parse(JSON.parse(line));
 
     messages.push({ role: row.message.role, content: row.message.content });
 
-    if (row.shouldQuery === false)
+    if (row.shouldQuery === false) {
       emit({ type: "result", num_turns: 0, is_error: false });
+    }
   }
 
   const settingsPath = args[args.indexOf("--settings") + 1] ?? "";
@@ -146,7 +157,9 @@ if (env["FAKE_MODE"] === "hang") {
   for (;;) {
     const chunk = await reader?.read();
 
-    if (!chunk || chunk.done) break;
+    if (!chunk || chunk.done) {
+      break;
+    }
     buffer += decoder.decode(chunk.value, { stream: true });
     let end = buffer.indexOf("\n\n");
 
@@ -161,12 +174,15 @@ if (env["FAKE_MODE"] === "hang") {
       buffer = buffer.slice(end + 2);
       end = buffer.indexOf("\n\n");
 
-      if (!data) continue;
+      if (!data) {
+        continue;
+      }
       const raw = z.json().parse(JSON.parse(data));
       const parsed = event.parse(raw);
 
-      if (parsed.type === "message_delta")
+      if (parsed.type === "message_delta") {
         stopReason = parsed.delta?.stop_reason;
+      }
       emit({ type: "stream_event", event: raw });
     }
   }

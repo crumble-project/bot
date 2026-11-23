@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Scope } from "effect";
-import { createAPI, type ApiServices } from "../../src/app/api";
+import { createAPI } from "../../src/app/api";
+import type { ApiServices } from "../../src/app/api";
 import type { CoreServices } from "../../src/app/core-layer";
 import { standaloneScheduler } from "../../src/automations/scheduler-test-support";
 import { Scheduler } from "../../src/automations/scheduler";
@@ -14,36 +15,31 @@ import { McpIntegrations } from "../../src/integrations/integrations";
 import { mcpServersOver } from "../../src/integrations/integrations-test-support";
 import { McpServers } from "../../src/integrations/mcp-servers";
 import { MessageGateway } from "../../src/message-gateway/message-gateway";
-import {
-  pluginProviders,
-  Plugins,
-  type CrumblePlugin,
-} from "../../src/plugins/plugins";
+import { pluginProviders, Plugins } from "../../src/plugins/plugins";
+import type { CrumblePlugin } from "../../src/plugins/plugins";
 import { standaloneSignIns } from "../../src/providers/provider-auth-test-support";
-import {
-  ProviderSignIns,
-  type ProviderSignInsAccess,
-} from "../../src/providers/provider-auth";
+import { ProviderSignIns } from "../../src/providers/provider-auth";
+import type { ProviderSignInsAccess } from "../../src/providers/provider-auth";
 import { meliousPlugin } from "../../src/providers/melious";
 import { Push } from "../../src/push/push";
-import { runnerOf, type Runner } from "../../src/shared/runner";
-import {
-  DefaultSkills,
-  type DefaultSkill,
-} from "../../src/skills/default-skills";
+import { runnerOf } from "../../src/shared/runner";
+import type { Runner } from "../../src/shared/runner";
+import { DefaultSkills } from "../../src/skills/default-skills";
+import type { DefaultSkill } from "../../src/skills/default-skills";
 import { OwnerSkills } from "../../src/skills/owner-skills";
 import { VoiceGateway } from "../../src/voice-gateway/voice-gateway";
 import { CallRequests } from "../../src/voice-gateway/call-requests";
-import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
+import { BotWorkspaces } from "../../src/workspaces/workspace";
+import type { Workspaces } from "../../src/workspaces/workspace";
 
 export type TestServices = {
   library?: Library["Service"];
   scheduler?: { service: Scheduler["Service"] };
   push?: Runner<Push>;
   scriptRuns?: ScriptRuns["Service"];
-  defaultSkills?: DefaultSkill[];
+  defaultSkills?: Array<DefaultSkill>;
   workspaces?: Workspaces | undefined;
-  plugins?: readonly CrumblePlugin[];
+  plugins?: ReadonlyArray<CrumblePlugin>;
   providerAuth?: ProviderSignInsAccess;
   viewerTickets?: ViewerTickets;
   voiceGateway?: VoiceGateway["Service"];
@@ -55,11 +51,21 @@ type TestBots = BotsAccess & {
   runtime: AgentRuntime;
 };
 
-// SAFETY: a fixture that reaches a route of one of these supplies the real service.
-const notReached = <S>() => ({}) as S;
+/**
+ * A stand-in for a service the suites' routes don't reach: what a test implements works, and reaching any other
+ * member fails with Effect's `UnimplementedError`, which names it, instead of reading `undefined`.
+ */
+const mocked = <I, S extends object>(
+  service: Context.Key<I, S>,
+  implementation: Layer.PartialEffectful<S>,
+): S =>
+  Effect.runSync(
+    Effect.scoped(Layer.build(Layer.mock(service, implementation))).pipe(
+      Effect.map(Context.get(service)),
+    ),
+  );
 
-const noPush = Push.of({
-  ...notReached<Push["Service"]>(),
+const noPush = mocked(Push, {
   serverId: "",
   transports: { apns: false, fcm: false },
 });
@@ -70,15 +76,27 @@ const noScriptRuns = ScriptRuns.of({
   list: () => Effect.succeed([]),
 });
 
-const noIntegrations = McpIntegrations.of({
-  ...notReached<McpIntegrations["Service"]>(),
+/** A member that is neither an Effect nor returns one, for a service whose routes these suites don't reach. */
+const unreached = (member: string): never => {
+  throw new Error(`${member} is not available in these tests`);
+};
+
+const noIntegrations = mocked(McpIntegrations, {
   oauthClient: undefined,
   failure: () => null,
+  extensionsForAgent: () =>
+    Promise.reject(unreached("McpIntegrations.extensionsForAgent")),
+  codemodeNamespaces: () => unreached("McpIntegrations.codemodeNamespaces"),
   disconnect: () => Effect.void,
 });
 
+const noBotRequests = mocked(BotRequests, {});
+const noCallRequests = mocked(CallRequests, {});
+const noEventSources = mocked(EventSources, {});
+const noMessageGateway = mocked(MessageGateway, { list: Effect.succeed([]) });
+
 const testPush = (push: Runner<Push> | undefined) =>
-  push?.runSync(Push.use(Effect.succeed)) ?? noPush;
+  push?.runSync(Effect.flatMap(Push, Effect.succeed)) ?? noPush;
 
 // Its scope stays open, as an account's does: an outside call settles in it. Nothing starts its ticker.
 export const testVoiceGateway = (core: Runner<CoreServices>) =>
@@ -115,19 +133,10 @@ function testServices(
       services.providerAuth ??
         standaloneSignIns(bots.core, pluginProviders([meliousPlugin()])),
     ),
-    Context.add(BotRequests, notReached<BotRequests["Service"]>()),
-    Context.add(
-      CallRequests,
-      services.callRequests ?? notReached<CallRequests["Service"]>(),
-    ),
-    Context.add(
-      MessageGateway,
-      MessageGateway.of({
-        ...notReached<MessageGateway["Service"]>(),
-        list: Effect.succeed([]),
-      }),
-    ),
-    Context.add(EventSources, notReached<EventSources["Service"]>()),
+    Context.add(BotRequests, noBotRequests),
+    Context.add(CallRequests, services.callRequests ?? noCallRequests),
+    Context.add(MessageGateway, noMessageGateway),
+    Context.add(EventSources, noEventSources),
     Context.add(
       VoiceGateway,
       services.voiceGateway ?? testVoiceGateway(bots.core),

@@ -31,33 +31,36 @@ export const describedAs = (description: string | null) =>
     : `Description: ${JSON.stringify(description)}.`;
 
 export function modelBlocks(
-  files: readonly ResolvedFile[],
-): (TextContent | ImageContent)[] {
-  return files.flatMap((resolved): (TextContent | ImageContent)[] => {
-    if (!("content" in resolved))
+  files: ReadonlyArray<ResolvedFile>,
+): Array<TextContent | ImageContent> {
+  return files.flatMap((resolved): Array<TextContent | ImageContent> => {
+    if (!("content" in resolved)) {
       return [
         {
           type: "text",
           text: `File ${resolved.file.id} was deleted from the library before it arrived.`,
         },
       ];
+    }
 
     const { file, content, description } = resolved;
     const label = `File ${JSON.stringify(file.name)} (id: ${file.id}`;
 
-    if (content.kind === "image")
+    if (content.kind === "image") {
       return [
         { type: "text", text: `${label}). ${describedAs(description)}` },
         { type: "image", data: content.data, mimeType: file.mimeType },
       ];
+    }
 
-    if (content.kind === "text")
+    if (content.kind === "text") {
       return [
         {
           type: "text",
           text: `${label}). ${describedAs(description)}\n<attachment name=${JSON.stringify(file.name)}>\n${content.text}\n</attachment>`,
         },
       ];
+    }
 
     return [
       {
@@ -72,7 +75,7 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
   library: Library["Service"],
   store: FileStore["Service"],
   ref: LibraryRef,
-  ids: readonly string[],
+  ids: ReadonlyArray<string>,
 ) {
   return yield* store.withLock(
     Effect.gen(function* () {
@@ -82,7 +85,9 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
         Effect.gen(function* (): Effect.fn.Return<ResolvedFile> {
           const entry = entries.get(id);
 
-          if (!entry) return { file: { id, deleted: true } };
+          if (!entry) {
+            return { file: { id, deleted: true } };
+          }
 
           const file = {
             id,
@@ -99,7 +104,9 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
               .bytes(entry.hash)
               .pipe(Effect.catchTag("NotFound", () => Effect.succeed(null)));
 
-            if (!stream) return { file: { id, deleted: true } };
+            if (!stream) {
+              return { file: { id, deleted: true } };
+            }
 
             const data = yield* Effect.promise(async () =>
               Buffer.from(await new Response(stream).arrayBuffer()).toString(
@@ -123,14 +130,15 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
             if (
               text !== null &&
               Buffer.byteLength(text, "utf8") <= MAX_INLINE_TEXT_BYTES
-            )
+            ) {
               return {
                 file,
                 description: entry.description,
                 content: { kind: "text", text },
               };
+            }
 
-            if (entry.mimeType === "application/pdf" && text === null)
+            if (entry.mimeType === "application/pdf" && text === null) {
               return {
                 file,
                 description: entry.description,
@@ -139,6 +147,7 @@ export const resolveMessageFiles = Effect.fnUntraced(function* (
                   note: "No text could be read from this PDF.",
                 },
               };
+            }
           }
 
           return {

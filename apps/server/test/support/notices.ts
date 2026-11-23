@@ -5,11 +5,11 @@ import type { Store } from "./store";
 export type Notice = { agentId: string; text: string; requestId: string };
 
 export function takeNotices(store: Store) {
-  const notices: Notice[] = [];
+  const notices: Array<Notice> = [];
   const scope = store.runtime.runSync(Scope.make());
 
   store.runtime.runSync(
-    BotNotices.use((botNotices) =>
+    Effect.flatMap(BotNotices, (botNotices) =>
       botNotices.handle((agentId, text, requestId) =>
         Effect.sync(() => {
           notices.push({ agentId, text, requestId });

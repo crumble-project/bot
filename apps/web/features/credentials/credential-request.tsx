@@ -1,12 +1,8 @@
 import { IconKey } from "@tabler/icons-react";
 import { secretRequestResult } from "@/features/bot-secrets/secret-request";
 import { REQUEST_CREDENTIAL_TOOL_NAME } from "@crumble/server/contract/tools";
-import {
-  type Credentials,
-  credentialPath,
-  credentialsQuery,
-  invalidateCredentials,
-} from "./api";
+import { credentialPath, credentialsQuery, invalidateCredentials } from "./api";
+import type { Credentials } from "./api";
 import { CredentialSheet } from "./credential-sheet";
 
 export const credentialRequestResult = secretRequestResult({

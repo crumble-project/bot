@@ -11,29 +11,29 @@ import { inChat } from "../shared/chat-only";
 export type BotTool = ReturnType<typeof defineTool>;
 
 export type ConversationParts = {
-  memory: BotTool[];
-  skill: BotTool[];
+  memory: Array<BotTool>;
+  skill: Array<BotTool>;
   skillManage: BotTool;
   library: BotTool;
-  vision: BotTool[];
+  vision: Array<BotTool>;
   memoryExtension: Extension;
   skillExtension: Extension;
   libraryExtension: Extension;
   visionExtension: Extension;
-  offered: Extension[];
+  offered: Array<Extension>;
 };
 
 /** `bare`: the prompt is `standing` and the clock alone, without the identity line, skills, or memory. */
 export type ConversationPrompt = {
-  standing?: (agent: Agent) => string[];
+  standing?: (agent: Agent) => Array<string>;
   addition?: string;
   skillWriting?: boolean;
   bare?: true;
 };
 
 export type ConversationStyle = {
-  tools: (parts: ConversationParts) => BotTool[];
-  extensions?: (parts: ConversationParts) => Extension[];
+  tools: (parts: ConversationParts) => Array<BotTool>;
+  extensions?: (parts: ConversationParts) => Array<Extension>;
   prompt?: ConversationPrompt;
   model?: (agent: Agent) => Pick<Agent, "provider" | "model">;
   noEnvironment?: boolean;
@@ -51,8 +51,8 @@ export type ConversationKind = {
 
 export const chatTools = (
   parts: ConversationParts,
-  extensions: Extension[],
-  own: BotTool[] = [],
+  extensions: Array<Extension>,
+  own: Array<BotTool> = [],
 ) => [
   ...parts.memory,
   ...parts.skill,

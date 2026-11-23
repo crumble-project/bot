@@ -3,10 +3,11 @@ import { Clock, Effect, Fiber, Result, Semaphore } from "effect";
 import {
   defaultGatewayConfig,
   gatewayConfigInput,
-  type GatewayConfig,
 } from "../contract/message-gateway";
+import type { GatewayConfig } from "../contract/message-gateway";
 import { Secrets, secretText } from "../secrets/secrets";
-import { InvalidInput, type AppError } from "../shared/errors";
+import { InvalidInput } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import {
   blocked,
   connecting,
@@ -18,15 +19,11 @@ import {
   stayedUp,
   stopped,
   tokenOrFailure,
-  type Reconnecting,
 } from "../shared/reconnecting";
+import type { Reconnecting } from "../shared/reconnecting";
 import { SettingsRepository } from "../shared/settings-repository";
-import {
-  GatewayTransportError,
-  type ChatAdapter,
-  type GatewayConnection,
-  type GatewayMessage,
-} from "./adapter";
+import { GatewayTransportError } from "./adapter";
+import type { ChatAdapter, GatewayConnection, GatewayMessage } from "./adapter";
 
 const configKey = (id: string) => `message-gateway:${id}`;
 
@@ -87,7 +84,7 @@ export type CurrentConnection = {
 };
 
 export const gatewayConnections = Effect.fnUntraced(function* (
-  adapters: readonly ChatAdapter[],
+  adapters: ReadonlyArray<ChatAdapter>,
   hooks: ConnectionHooks,
 ) {
   const settings = yield* SettingsRepository;
@@ -113,7 +110,11 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     return yield* decodeConfig(stored ?? defaultGatewayConfig()).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {
-          states.get(id)!.error = error.message;
+          const state = states.get(id);
+
+          if (state) {
+            state.error = error.message;
+          }
 
           return defaultGatewayConfig();
         }),
@@ -142,7 +143,7 @@ export const gatewayConnections = Effect.fnUntraced(function* (
   const readToken = (adapter: ChatAdapter) => readSecret(adapter.secretKey);
 
   const generationCurrent = (adapterId: string, generation: number) =>
-    !closed && states.get(adapterId)!.generation === generation;
+    !closed && states.get(adapterId)?.generation === generation;
 
   const configureConnection = Effect.fnUntraced(function* (
     adapter: ChatAdapter,
@@ -154,15 +155,19 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     if (!current.enabled || !token) {
       yield* hooks.cancelWorkers(adapter.id);
 
-      if (state.connection || state.token) yield* stop(state);
+      if (state.connection || state.token) {
+        yield* stop(state);
+      }
       state.token = undefined;
 
-      if (current.enabled)
+      if (current.enabled) {
         blocked(
           state,
           tokenError ?? "Configure the adapter token in plugin settings.",
         );
-      else stopped(state);
+      } else {
+        stopped(state);
+      }
 
       return false;
     }
@@ -215,7 +220,9 @@ export const gatewayConnections = Effect.fnUntraced(function* (
               ),
             ),
       onStatus: (status) => {
-        if (closed || state.generation !== generation) return;
+        if (closed || state.generation !== generation) {
+          return;
+        }
         reported(
           state,
           status,
@@ -223,7 +230,9 @@ export const gatewayConnections = Effect.fnUntraced(function* (
         );
       },
       onInvalidated: () => {
-        if (closed || state.generation !== generation) return;
+        if (closed || state.generation !== generation) {
+          return;
+        }
         state.invalidated = true;
       },
     };
@@ -271,28 +280,48 @@ export const gatewayConnections = Effect.fnUntraced(function* (
   });
 
   const reconcile = Effect.fnUntraced(function* (adapter: ChatAdapter) {
-    if (reconfiguring.has(adapter.id)) return;
-    const state = states.get(adapter.id)!;
+    if (reconfiguring.has(adapter.id)) {
+      return;
+    }
+    const state = states.get(adapter.id);
+
+    if (!state) {
+      return;
+    }
     const current = yield* config(adapter.id);
     const { token, failure } = yield* tokenOrFailure(readToken(adapter));
     const now = yield* Clock.currentTimeMillis;
 
-    if (!(yield* configureConnection(adapter, state, current, token, failure)))
+    if (
+      !(yield* configureConnection(adapter, state, current, token, failure))
+    ) {
       return;
+    }
 
-    if (!(yield* readyToConnect(adapter, state, now))) return;
+    // Without a token there is nothing to connect: leave the generation untouched.
+    if (token === undefined) {
+      return;
+    }
+
+    if (!(yield* readyToConnect(adapter, state, now))) {
+      return;
+    }
     const generation = ++state.generation;
 
     connecting(state);
 
-    const connected = yield* connectAdapter(adapter, state, token!, generation);
+    const connected = yield* connectAdapter(adapter, state, token, generation);
 
-    if (!generationCurrent(adapter.id, generation)) return;
+    if (!generationCurrent(adapter.id, generation)) {
+      return;
+    }
 
     if (Result.isSuccess(connected)) {
       state.connection = connected.success;
 
-      if (state.connection) connectionUp(state, now);
+      if (state.connection) {
+        connectionUp(state, now);
+      }
       yield* hooks.connected;
     } else {
       state.generation++;
@@ -307,13 +336,19 @@ export const gatewayConnections = Effect.fnUntraced(function* (
 
   const reconcileAll = Effect.gen(function* () {
     for (const adapter of adapters) {
-      if (reconciling.has(adapter.id)) continue;
+      if (reconciling.has(adapter.id)) {
+        continue;
+      }
       reconciling.add(adapter.id);
       yield* reconcile(adapter).pipe(
         Effect.catchCause(() =>
           Effect.sync(() => {
-            states.get(adapter.id)!.error =
-              "Gateway configuration could not be loaded. Check server storage.";
+            const state = states.get(adapter.id);
+
+            if (state) {
+              state.error =
+                "Gateway configuration could not be loaded. Check server storage.";
+            }
           }),
         ),
         Effect.ensuring(
@@ -349,7 +384,7 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     generation: number,
   ) =>
     live(adapterId, generation) &&
-    states.get(adapterId)!.connection === connection &&
+    states.get(adapterId)?.connection === connection &&
     !reconfiguring.has(adapterId);
 
   /** Stops the adapter's connection and workers, then stores `next`; the next reconcile connects with it. */
@@ -358,7 +393,11 @@ export const gatewayConnections = Effect.fnUntraced(function* (
       configurationChanges,
       Effect.gen(function* () {
         reconfiguring.add(id);
-        const state = states.get(id)!;
+        const state = states.get(id);
+
+        if (!state) {
+          return;
+        }
 
         yield* stop(state);
         yield* hooks.cancelWorkers(id);
@@ -377,7 +416,9 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     Effect.gen(function* () {
       closed = true;
 
-      for (const state of states.values()) yield* stop(state);
+      for (const state of states.values()) {
+        yield* stop(state);
+      }
     }),
   );
 
@@ -392,14 +433,19 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     installed: (id: string) => states.has(id),
     isClosed: () => closed,
     status: (id: string) => {
-      const { status, error } = states.get(id)!;
+      const state = states.get(id);
 
-      return { status, error };
+      return {
+        status: state?.status ?? "disconnected",
+        error: state?.error ?? null,
+      };
     },
     note: (id: string, error: string | null) => {
       const state = states.get(id);
 
-      if (state) state.error = error;
+      if (state) {
+        state.error = error;
+      }
     },
   };
 });

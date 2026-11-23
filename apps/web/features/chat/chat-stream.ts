@@ -23,11 +23,18 @@ function release(key: string) {
 }
 
 queryClient.getQueryCache().subscribe((event) => {
-  if (event.type === "updated") for (const key of streams.keys()) release(key);
+  if (event.type === "updated") {
+    for (const key of streams.keys()) {
+      release(key);
+    }
+  }
 });
 
 onSessionReset(() => {
-  for (const stream of streams.values()) stream.controller.abort();
+  for (const stream of streams.values()) {
+    stream.controller.abort();
+  }
+
   streams.clear();
 });
 
@@ -42,8 +49,9 @@ function followSnapshots<S extends HistoryPage>(
     {
       onOpen: () => void queryClient.invalidateQueries({ queryKey }),
       onEvent: (event, data) => {
-        if (event === "snapshot")
+        if (event === "snapshot") {
           queryClient.setQueryData(queryKey, JSON.parse(data));
+        }
       },
       onGone: () => {
         void target.refreshList();
@@ -52,7 +60,9 @@ function followSnapshots<S extends HistoryPage>(
     },
     stream.controller.signal,
   ).finally(() => {
-    if (streams.get(target.key) === stream) streams.delete(target.key);
+    if (streams.get(target.key) === stream) {
+      streams.delete(target.key);
+    }
   });
 }
 

@@ -1,5 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
+import { Predicate } from "effect";
 import { z } from "zod";
 import type { DesktopShell } from "../../src/bot-desktop/computer-use";
 import { DRIVER_ARGS } from "../../src/bot-desktop/computer-use-driver";
@@ -28,8 +29,8 @@ type GuestState = {
 
 type Guest = {
   files: Map<string, Uint8Array | string>;
-  calls: GuestCall[];
-  replies: Record<string, GuestReply[]>;
+  calls: Array<GuestCall>;
+  replies: Record<string, Array<GuestReply>>;
   state: GuestState;
 };
 
@@ -40,7 +41,9 @@ type GuestCommand = (
 ) => number;
 
 const convert: GuestCommand = ({ files, state }, [, png = "", jpg = ""]) => {
-  if (state.failConvert || !files.has(png)) return 1;
+  if (state.failConvert || !files.has(png)) {
+    return 1;
+  }
 
   files.set(jpg, new Uint8Array([0xff, 0xd8, 0xff]));
 
@@ -61,7 +64,9 @@ const captureScreen: GuestCommand = ({ files, state }, [, jpg = ""], io) => {
 };
 
 const remove: GuestCommand = ({ files }, [, paths = ""]) => {
-  for (const path of paths.split(" ")) files.delete(path);
+  for (const path of paths.split(" ")) {
+    files.delete(path);
+  }
 
   return 0;
 };
@@ -96,14 +101,16 @@ const driverCall: GuestCommand = (
 
   const queue = replies[tool] ?? [];
 
-  if (screenshot) files.set(screenshot, new Uint8Array([0x89, 0x50]));
+  if (screenshot) {
+    files.set(screenshot, new Uint8Array([0x89, 0x50]));
+  }
 
   io.out(JSON.stringify((queue.length > 1 ? queue.shift() : queue[0]) ?? {}));
 
   return 0;
 };
 
-const GUEST_COMMANDS: [RegExp, GuestCommand][] = [
+const GUEST_COMMANDS: Array<[RegExp, GuestCommand]> = [
   [/^convert (\S+) -quality 75 (\S+)$/, convert],
   [/import -window root -quality 75 (\S+) 2>&1 && echo ok$/, captureScreen],
   [/^rm -f (.*)$/, remove],
@@ -114,11 +121,11 @@ const GUEST_COMMANDS: [RegExp, GuestCommand][] = [
   [CALL, driverCall],
 ];
 
-export function scriptedGuest(replies: Record<string, GuestReply[]>) {
+export function scriptedGuest(replies: Record<string, Array<GuestReply>>) {
   const files = new Map<string, Uint8Array | string>();
-  const calls: GuestCall[] = [];
-  const commands: string[] = [];
-  const writes: string[] = [];
+  const calls: Array<GuestCall> = [];
+  const commands: Array<string> = [];
+  const writes: Array<string> = [];
 
   const state: GuestState = {
     failConvert: false,
@@ -139,7 +146,7 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     async readBinaryFile(path) {
       const content = files.get(path);
 
-      return content instanceof Uint8Array
+      return Predicate.isUint8Array(content)
         ? { ok: true, value: content }
         : { ok: false, error: new FileError("not_found", `no ${path}`, path) };
     },
@@ -157,8 +164,9 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
       for (const [pattern, run] of GUEST_COMMANDS) {
         const match = pattern.exec(text);
 
-        if (match)
+        if (match) {
           return { ok: true, value: { exitCode: run(guest, match, io) } };
+        }
       }
 
       return {

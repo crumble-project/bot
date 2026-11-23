@@ -30,7 +30,10 @@ import { BotActivity } from "../bots/bot-activity";
 import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots-test-support";
-import { standaloneScheduler } from "../automations/scheduler-test-support";
+import {
+  recordedDispatch,
+  standaloneScheduler,
+} from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
 import type { Agent } from "../contract/agents";
 import { until } from "../../test/support/until";
@@ -185,7 +188,10 @@ describe("push registration and durable delivery", () => {
     };
 
     const service = standaloneBots(store, runtime);
-    const scheduler = standaloneScheduler(store.runtime, async () => {});
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
 
     const push = ManagedRuntime.make(
       Push.layerNoDeps.pipe(
@@ -906,7 +912,10 @@ test("keeps chat attention ownership atomic and account-scoped", async () => {
     const bots = standaloneBots(store, { close: async () => {} } as Parameters<
       typeof standaloneBots
     >[1]);
-    const scheduler = standaloneScheduler(store.runtime, async () => {});
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
     const app = testAPI(bots, token, { scheduler, push: runtime });
     const request = (path: string, method: string, body: object) =>
       app.request(path, {

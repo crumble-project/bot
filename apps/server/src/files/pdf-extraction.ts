@@ -13,15 +13,18 @@ export type PdfResult =
 export type PdfLimits = { ms: number; memoryMib: number };
 
 export type PdfRuntime = {
-  workerCommand: readonly string[];
+  workerCommand: ReadonlyArray<string>;
   spawnWorker?: (
-    command: string[],
+    command: Array<string>,
     options: Bun.Spawn.SpawnOptions<"pipe", "pipe", "ignore">,
   ) => Bun.Subprocess<"pipe", "pipe", "ignore">;
   sampleRss: (pid: number, signal?: AbortSignal) => Promise<number | null>;
   beforeInput?: (signal: AbortSignal) => Promise<void>;
   onResultFrame?: () => void;
 };
+
+/** The promise resolvers below start as this and are replaced by their executors. */
+const noop = () => {};
 
 const MAX_STDOUT_BYTES = 64 * 1024 * 1024;
 const receiptSchema = z.object({ kind: z.literal("ack-received") });
@@ -36,7 +39,7 @@ function validLimits(limits: PdfLimits): boolean {
 }
 
 function appendPdfFrame(
-  chunks: Uint8Array[],
+  chunks: Array<Uint8Array>,
   value: Uint8Array,
 ): PdfResult | undefined {
   const delimiter = value.indexOf(10);
@@ -47,8 +50,9 @@ function appendPdfFrame(
     return;
   }
 
-  if (delimiter !== value.length - 1)
+  if (delimiter !== value.length - 1) {
     return { kind: "failed", reason: "Invalid PDF extraction output" };
+  }
 
   chunks.push(value.subarray(0, delimiter));
 
@@ -72,8 +76,9 @@ export async function runPdfExtraction(
   limits: PdfLimits,
   runtime: PdfRuntime,
 ): Promise<PdfResult> {
-  if (!validLimits(limits))
+  if (!validLimits(limits)) {
     return { kind: "failed", reason: "Invalid extraction limits" };
+  }
 
   let reason: string | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
@@ -83,19 +88,19 @@ export async function runPdfExtraction(
   let closed = false;
   let measured = false;
   const monitor = new AbortController();
-  let resolveFrame = () => {};
+  let resolveFrame = noop;
 
   const frameReady = new Promise<void>((resolve) => {
     resolveFrame = resolve;
   });
 
-  let resolveClosed = () => {};
+  let resolveClosed = noop;
 
   const ipcClosed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
   });
 
-  let resolveSample = () => {};
+  let resolveSample = noop;
 
   const firstSample = new Promise<void>((resolve) => {
     resolveSample = resolve;
@@ -109,7 +114,9 @@ export async function runPdfExtraction(
 
     try {
       child?.disconnect();
-    } catch {}
+    } catch {
+      // The worker is already gone.
+    }
 
     child?.kill();
   };
@@ -128,17 +135,20 @@ export async function runPdfExtraction(
             acknowledged &&
             receiptSchema.safeParse(message).success &&
             !received
-          )
+          ) {
             received = true;
-          else fail("Invalid PDF extraction output");
+          } else {
+            fail("Invalid PDF extraction output");
+          }
         },
         onDisconnect() {
           closed = true;
           resolveClosed();
 
           if (!received) {
-            if (frame) fail("PDF extraction failed");
-            else {
+            if (frame) {
+              fail("PDF extraction failed");
+            } else {
               monitor.abort();
               resolveFrame();
               resolveSample();
@@ -156,7 +166,9 @@ export async function runPdfExtraction(
         const rss = await runtime.sampleRss(running.pid, monitor.signal);
         resolveSample();
 
-        if (reason || closed) break;
+        if (reason || closed) {
+          break;
+        }
 
         if (rss === null) {
           fail("PDF memory measurement unavailable");
@@ -170,23 +182,29 @@ export async function runPdfExtraction(
           break;
         }
 
-        if (!frame) await Bun.sleep(25);
+        if (!frame) {
+          await Bun.sleep(25);
+        }
       }
     })().catch(() => {
       resolveSample();
 
-      if (!closed) fail("PDF memory measurement unavailable");
+      if (!closed) {
+        fail("PDF memory measurement unavailable");
+      }
     });
 
     const read = (async () => {
       const reader = running.stdout.getReader();
-      const chunks: Uint8Array[] = [];
+      const chunks: Array<Uint8Array> = [];
       let size = 0;
 
       while (true) {
         const { value, done } = await reader.read();
 
-        if (done) break;
+        if (done) {
+          break;
+        }
         size += value.byteLength;
 
         if (size > MAX_STDOUT_BYTES) {
@@ -201,7 +219,9 @@ export async function runPdfExtraction(
 
         const parsed = appendPdfFrame(chunks, value);
 
-        if (!parsed) continue;
+        if (!parsed) {
+          continue;
+        }
 
         if (parsed.kind === "failed") {
           fail(parsed.reason);
@@ -213,18 +233,25 @@ export async function runPdfExtraction(
         resolveFrame();
       }
 
-      if (!frame && !reason)
+      if (!frame && !reason) {
         fail(
           size > 0 ? "Invalid PDF extraction output" : "PDF extraction failed",
         );
+      }
     })().catch(() => fail("PDF extraction failed"));
 
     const writeInput = async () => {
-      if (reason || closed) return;
+      if (reason || closed) {
+        return;
+      }
 
-      if (runtime.beforeInput) await runtime.beforeInput(monitor.signal);
+      if (runtime.beforeInput) {
+        await runtime.beforeInput(monitor.signal);
+      }
 
-      if (reason || closed) return;
+      if (reason || closed) {
+        return;
+      }
 
       await running.stdin.write(bytes);
       await running.stdin.end();
@@ -243,8 +270,9 @@ export async function runPdfExtraction(
 
     const acknowledge = () => {
       if (!reason && frame && measured) {
-        if (closed) fail("PDF extraction failed");
-        else {
+        if (closed) {
+          fail("PDF extraction failed");
+        } else {
           acknowledged = true;
 
           try {
@@ -260,10 +288,13 @@ export async function runPdfExtraction(
 
     const [code] = await Promise.all([running.exited, read, ipcClosed]);
 
-    if (reason) return { kind: "failed", reason };
+    if (reason) {
+      return { kind: "failed", reason };
+    }
 
-    if (!received || code !== 0 || !frame)
+    if (!received || code !== 0 || !frame) {
       return { kind: "failed", reason: "PDF extraction failed" };
+    }
 
     return frame;
   } catch {
@@ -274,7 +305,9 @@ export async function runPdfExtraction(
 
     try {
       child?.disconnect();
-    } catch {}
+    } catch {
+      // The worker is already gone.
+    }
 
     child?.kill();
   }

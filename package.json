@@ -8,14 +8,13 @@
     "apps/web"
   ],
   "devDependencies": {
+    "@cloudflare/oxlint-config": "0.1.0",
     "@earendil-works/pi-ai": "1.4.0",
-    "@oxlint/plugins": "1.88.0",
     "@types/bun": "latest",
     "@types/node": "^26.6.6",
     "emulate": "0.14.0",
-    "oxlint": "1.88.0",
-    "oxlint-plugin-effect": "^0.32.1",
-    "oxlint-tsgolint": "7.0.2005",
+    "oxlint": "1.94.0",
+    "tsrs": "0.25.0-ts7.1.0-beta",
     "typescript": "7.0.2",
     "zod": "4.6.7"
   },

@@ -11,9 +11,8 @@ import {
   MAX_PAGE_CHARS,
   WebExtractionError,
   WebSearchError,
-  type WebExtract,
-  type WebSearch,
 } from "./provider";
+import type { WebExtract, WebSearch } from "./provider";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
 import {
@@ -28,7 +27,9 @@ const refused = "Crumble does not read private or local addresses.";
 const unavailable =
   "The selected web search provider is unavailable or its API key is missing.";
 
-const date = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }));
+const date = Type.Optional(
+  Type.String({ pattern: String.raw`^\d{4}-\d{2}-\d{2}$` }),
+);
 
 // Every address must be public: the provider resolves the name itself, so unlike the credential proxy, Crumble can't
 // connect to only the public ones.
@@ -41,12 +42,18 @@ const publicUrl = Effect.fnUntraced(function* (value: string) {
     return false;
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return false;
+  }
+  const hostname = url.hostname.replaceAll(/^\[|\]$/g, "");
 
-  if (hostname === "localhost" || hostname.endsWith(".localhost")) return false;
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    return false;
+  }
 
-  if (isIP(hostname)) return isPublicAddress(hostname);
+  if (isIP(hostname)) {
+    return isPublicAddress(hostname);
+  }
 
   const addresses = yield* Effect.tryPromise({
     try: () => lookup(hostname, { all: true }),
@@ -63,8 +70,9 @@ const extractPage = Effect.fnUntraced(function* (
   url: string,
   extract: WebExtract,
 ) {
-  if (!(yield* publicUrl(url)))
+  if (!(yield* publicUrl(url))) {
     return { url, error: refused } satisfies WebPage;
+  }
 
   const page = yield* extract(url).pipe(
     Effect.catch((error) =>
@@ -72,7 +80,9 @@ const extractPage = Effect.fnUntraced(function* (
     ),
   );
 
-  if ("error" in page || page.text.length <= MAX_PAGE_CHARS) return page;
+  if ("error" in page || page.text.length <= MAX_PAGE_CHARS) {
+    return page;
+  }
 
   return {
     ...page,
@@ -172,7 +182,9 @@ export const configuredWebSearchTools = Layer.effectDiscard(
     const extensions = yield* BotExtensions;
 
     yield* extensions.register(ExtensionPosition.webSearch, (agent) => {
-      if (!agent.tools.includes(BOT_TOOL.web)) return [];
+      if (!agent.tools.includes(BOT_TOOL.web)) {
+        return [];
+      }
 
       const resolve = Effect.fnUntraced(function* () {
         const current = yield* agents.get(agent.id);

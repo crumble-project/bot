@@ -10,14 +10,18 @@ type CatalogOptions = NonNullable<Parameters<typeof builtinModels>[0]>;
 
 const catalog = (
   credentials: CredentialStore | undefined,
-  contributions: readonly ProviderContribution[],
+  contributions: ReadonlyArray<ProviderContribution>,
   options: CatalogOptions,
 ) => {
-  if (credentials) options.credentials = credentials;
+  if (credentials) {
+    options.credentials = credentials;
+  }
 
   const models = builtinModels(options);
 
-  for (const { provider } of contributions) models.setProvider(provider);
+  for (const { provider } of contributions) {
+    models.setProvider(provider);
+  }
 
   return models;
 };
@@ -25,7 +29,7 @@ const catalog = (
 /** An account's catalog: only credentials the account saved reach a model, never the host's environment or files. */
 export const accountModels = (
   credentials: CredentialStore | undefined,
-  contributions: readonly ProviderContribution[],
+  contributions: ReadonlyArray<ProviderContribution>,
   emulate?: EmulateProfile,
 ) =>
   emulate
@@ -39,7 +43,7 @@ export const accountModels = (
 
 export const hostModels = (
   credentials: CredentialStore | undefined,
-  contributions: readonly ProviderContribution[],
+  contributions: ReadonlyArray<ProviderContribution>,
 ) => catalog(credentials, contributions, {});
 
 export class ProviderModels extends Context.Service<ProviderModels, Models>()(
@@ -47,7 +51,7 @@ export class ProviderModels extends Context.Service<ProviderModels, Models>()(
 ) {
   static layer(
     make: typeof accountModels,
-    contributions: readonly ProviderContribution[],
+    contributions: ReadonlyArray<ProviderContribution>,
   ) {
     return Layer.effect(
       ProviderModels,

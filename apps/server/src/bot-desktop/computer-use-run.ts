@@ -2,17 +2,18 @@ import { errorText } from "../shared/errors";
 import type { Context } from "@earendil-works/chord";
 import type { ComputerUseResult } from "./computer-use";
 import { ACTIONS, dispatch, effectOf } from "./computer-use-actions";
-import { normalize, type ComputerUseArgs } from "./computer-use-args";
-import { targetWindow, type Window } from "./computer-use-driver";
-import {
-  forgetScreen,
-  textResult,
-  type ComputerUseState,
-} from "./computer-use-state";
+import { normalize } from "./computer-use-args";
+import type { ComputerUseArgs } from "./computer-use-args";
+import { targetWindow } from "./computer-use-driver";
+import type { Window } from "./computer-use-driver";
+import { forgetScreen, textResult } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 import { restoreFilled, scrubFilled } from "./computer-use-login";
 import { terminalText } from "./computer-use-terminal";
-import { proposedAction, type IntentGate } from "./computer-use-intent";
-import { isEnter, type ProposedAction } from "./intent-check";
+import { proposedAction } from "./computer-use-intent";
+import type { IntentGate } from "./computer-use-intent";
+import { isEnter } from "./intent-check";
+import type { ProposedAction } from "./intent-check";
 
 const STALE =
   "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.";
@@ -22,7 +23,9 @@ async function controlTurn(
   action: string,
   context: Context,
 ): Promise<string | undefined> {
-  if (!state.gate) return undefined;
+  if (!state.gate) {
+    return undefined;
+  }
 
   const lease = await state.gate.untilBot(context);
 
@@ -31,7 +34,9 @@ async function controlTurn(
 
   state.lastChanges = lease.changes;
 
-  if (!changed) return undefined;
+  if (!changed) {
+    return undefined;
+  }
 
   forgetScreen(state);
 
@@ -51,8 +56,9 @@ async function pinned(
     effectOf(args.action) !== "act" ||
     args.ref !== undefined ||
     ACTIONS.get(args.action)?.place
-  )
+  ) {
     return { args, window: undefined };
+  }
 
   const window = await targetWindow(state, args.window_id, context);
 
@@ -68,14 +74,18 @@ async function withCommand<T extends { action: ProposedAction }>(
   const { steps, terminal } = proposal.action;
   const enter = steps.findIndex(isEnter);
 
-  if (!terminal || !window || enter < 0) return proposal;
+  if (!terminal || !window || enter < 0) {
+    return proposal;
+  }
 
   const line = await terminalText(state, window, context).then(
     (text) => text.split("\n").at(-1) ?? "",
     () => {},
   );
 
-  if (line === undefined) return proposal;
+  if (line === undefined) {
+    return proposal;
+  }
 
   const typed = steps
     .slice(0, enter)
@@ -98,7 +108,9 @@ async function intentVerdict(
 ) {
   const proposal = proposedAction(state, args, window);
 
-  if (!proposal) return {};
+  if (!proposal) {
+    return {};
+  }
 
   const { refusal, usage } = await intent(
     await withCommand(state, proposal, window, context),
@@ -117,7 +129,9 @@ async function checkedDispatch(
   intent: IntentGate | undefined,
   context: Context,
 ): Promise<ComputerUseResult> {
-  if (!intent) return dispatch(state, normalized, context);
+  if (!intent) {
+    return dispatch(state, normalized, context);
+  }
 
   const { args, window } = await pinned(state, normalized, context);
 
@@ -144,7 +158,9 @@ export async function runAction(
 ): Promise<ComputerUseResult> {
   const stale = await controlTurn(state, raw.action, context);
 
-  if (stale) return textResult(stale, true);
+  if (stale) {
+    return textResult(stale, true);
+  }
 
   try {
     await restoreFilled(state);

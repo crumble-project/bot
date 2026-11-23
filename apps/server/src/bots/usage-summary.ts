@@ -4,10 +4,10 @@ type Totals = { tokens: number; cost: number };
 
 type Bucket = UsageState["models"];
 
-const sum = (states: readonly UsageState[], bucket: keyof UsageState) => {
+const sum = (states: ReadonlyArray<UsageState>, bucket: keyof UsageState) => {
   const totals = new Map<string, Totals>();
 
-  for (const state of states)
+  for (const state of states) {
     for (const [key, usage] of Object.entries<Bucket[string]>(state[bucket])) {
       const total = totals.get(key) ?? { tokens: 0, cost: 0 };
 
@@ -15,6 +15,7 @@ const sum = (states: readonly UsageState[], bucket: keyof UsageState) => {
       total.cost += usage.cost.total;
       totals.set(key, total);
     }
+  }
 
   return [...totals].sort(([, a], [, b]) => b.tokens - a.tokens);
 };
@@ -29,7 +30,7 @@ const modelOf = (key: string) => {
 };
 
 /** Tokens and cost of every model and tool across `states`, most tokens first. */
-export function usageSummary(states: readonly UsageState[]) {
+export function usageSummary(states: ReadonlyArray<UsageState>) {
   return {
     models: sum(states, "models").map(([key, totals]) => ({
       ...modelOf(key),

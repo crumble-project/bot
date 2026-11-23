@@ -20,7 +20,7 @@ export type GatewayConnection = {
     nonce: string;
   }): Promise<string>;
   /** Shows that a bot is writing in the channel, for a few seconds; best effort. */
-  typing?(channelId: string): Promise<void>;
+  typing?: (channelId: string) => Promise<void>;
   close(): Promise<void>;
 };
 

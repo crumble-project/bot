@@ -5,12 +5,15 @@ import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { InvalidInput } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
-import {
-  chosenVisionModel,
-  VISION_MODEL,
-  visionChoices,
-  type VisionModelRef,
-} from "./vision";
+import { chosenVisionModel, VISION_MODEL, visionChoices } from "./vision";
+import type { VisionModelRef } from "./vision";
+
+const save = (chosen: VisionModelRef | null) =>
+  Effect.flatMap(SettingsRepository, (settings) =>
+    chosen === null
+      ? settings.delete(VISION_MODEL)
+      : settings.set(VISION_MODEL, chosen),
+  );
 
 export function registerVisionModelRoutes(options: {
   register: Register<Env, SettingsRepository>;
@@ -42,25 +45,19 @@ export function registerVisionModelRoutes(options: {
     );
   });
 
-  const save = (chosen: VisionModelRef | null) =>
-    SettingsRepository.use((settings) =>
-      chosen === null
-        ? settings.delete(VISION_MODEL)
-        : settings.set(VISION_MODEL, chosen),
-    );
-
   register(routes.getVisionModel, function* (c) {
     return c.json(yield* status, 200);
   });
   register(routes.updateVisionModel, function* (c) {
     const { visionModel } = c.req.valid("json");
 
-    if (visionModel && !(yield* reachable(visionModel)))
+    if (visionModel && !(yield* reachable(visionModel))) {
       return yield* Effect.fail(
         new InvalidInput({
           message: `${visionModel.provider}/${visionModel.model} is not a model that reads images and your provider keys reach`,
         }),
       );
+    }
 
     yield* save(visionModel);
 

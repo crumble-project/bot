@@ -35,7 +35,9 @@ function readOwner(dataDir: string) {
 
 /** Whether another live process on this host has the pid; our own pid is a run replaced by a watch restart. */
 function othersAlive(owner: { pid: number; host: string | undefined }) {
-  if (owner.host !== HOST || owner.pid === process.pid) return false;
+  if (owner.host !== HOST || owner.pid === process.pid) {
+    return false;
+  }
 
   try {
     process.kill(owner.pid, 0);
@@ -49,11 +51,15 @@ function othersAlive(owner: { pid: number; host: string | undefined }) {
 export async function lockDataDir(dataDir: string) {
   const path = resolve(dataDir);
 
-  if (held.has(path)) throw new DataDirLocked(path, process.pid);
+  if (held.has(path)) {
+    throw new DataDirLocked(path, process.pid);
+  }
 
   const owner = readOwner(path);
 
-  if (owner && othersAlive(owner)) throw new DataDirLocked(path, owner.pid);
+  if (owner && othersAlive(owner)) {
+    throw new DataDirLocked(path, owner.pid);
+  }
 
   writeFileSync(ownerFile(path), ownerRecord(process.pid));
   held.add(path);
@@ -61,12 +67,15 @@ export async function lockDataDir(dataDir: string) {
   let released = false;
 
   return async () => {
-    if (released) return;
+    if (released) {
+      return;
+    }
 
     released = true;
     held.delete(path);
 
-    if (readOwner(path)?.pid === process.pid)
+    if (readOwner(path)?.pid === process.pid) {
       rmSync(ownerFile(path), { force: true });
+    }
   };
 }

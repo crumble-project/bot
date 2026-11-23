@@ -1,11 +1,6 @@
 import { SmoothCorners } from "@lisse/react";
-import {
-  type CSSProperties,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { CSSProperties, RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { css, cx } from "styled-system/css";
 import { useColorScheme } from "~/color-scheme";
 
@@ -15,7 +10,7 @@ type Line = When &
   (
     | { kind: "message"; sender: string; text: string }
     | { kind: "desktop" }
-    | { kind: "terminal"; lines: string[] }
+    | { kind: "terminal"; lines: Array<string> }
     | { kind: "webhook"; source: string; text: string; injected: string }
   );
 
@@ -23,7 +18,7 @@ type Option = {
   label: string;
   result: string;
   primary?: boolean;
-  outcome: Line[];
+  outcome: Array<Line>;
 };
 
 type Choice = When &
@@ -31,16 +26,16 @@ type Choice = When &
     | { kind: "held"; action: string; quote: string }
     | { kind: "reply" }
     | { kind: "learned"; skill: string; before: string; after: string }
-  ) & { options: Option[] };
+  ) & { options: Array<Option> };
 
-type Scenario = { name: string; intro: Line[]; choice: Choice };
+type Scenario = { name: string; intro: Array<Line>; choice: Choice };
 
 const mar4 = { date: "2026-03-04", label: "Mar 4" };
 const oct20 = { date: "2026-10-20", label: "Oct 20" };
 const nov1 = { date: "2026-11-01", label: "Nov 1" };
 const nov2 = { date: "2026-11-02", label: "Nov 2" };
 
-const scenarios: Scenario[] = [
+const scenarios: Array<Scenario> = [
   {
     name: "Renew a domain",
     intro: [
@@ -621,21 +616,29 @@ type State = "hidden" | "busy" | "shown";
 type Verdict = "approved" | "declined" | null;
 
 function isBusy(line: Line | Choice) {
-  if (line.kind === "message") return line.sender !== "You";
+  if (line.kind === "message") {
+    return line.sender !== "You";
+  }
 
   return line.kind === "desktop" || line.kind === "terminal";
 }
 
 function pause(line: Line | Choice, index: number) {
-  if (index === 0) return 400;
+  if (index === 0) {
+    return 400;
+  }
 
   return line.kind === "message" && line.sender === "You" ? 900 : 500;
 }
 
 function busyFor(line: Line | Choice) {
-  if (line.kind === "desktop") return 3600;
+  if (line.kind === "desktop") {
+    return 3600;
+  }
 
-  if (line.kind === "terminal") return line.lines.length * 520 + 400;
+  if (line.kind === "terminal") {
+    return line.lines.length * 520 + 400;
+  }
 
   if (line.kind === "message") {
     return 500 + Math.min(line.text.length * 14, 1100);
@@ -644,19 +647,34 @@ function busyFor(line: Line | Choice) {
   return 0;
 }
 
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+
 function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return window.matchMedia(reducedMotionQuery).matches;
 }
 
-function useTimeline(started: boolean, times: number[]) {
+function subscribeReducedMotion(onChange: () => void) {
+  const media = window.matchMedia(reducedMotionQuery);
+  media.addEventListener("change", onChange);
+
+  return () => media.removeEventListener("change", onChange);
+}
+
+// Read during render, so it subscribes instead of touching window on the server.
+function useReducedMotion() {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    prefersReducedMotion,
+    () => false,
+  );
+}
+
+function useTimeline(started: boolean, times: Array<number>) {
   const [step, setStep] = useState(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!started) return;
-
-    if (prefersReducedMotion()) {
-      setStep(times.length);
-
+    if (!started || reducedMotion) {
       return;
     }
 
@@ -665,9 +683,11 @@ function useTimeline(started: boolean, times: number[]) {
     );
 
     return () => timers.forEach(clearTimeout);
-  }, [started, times]);
+  }, [started, reducedMotion, times]);
 
-  return step;
+  // Reduced motion shows the finished timeline at once; started still hides
+  // rows that have not begun.
+  return reducedMotion && started ? times.length : step;
 }
 
 function Dots() {
@@ -731,18 +751,22 @@ const desktopTimes = [
   2500,
 ];
 
-function desktopTarget<T>(
+type CursorTarget = "pay" | "field" | null;
+
+function desktopTarget(
   verdict: Verdict,
   atPay: boolean,
   step: number,
-  payRef: T,
-  fieldRef: T,
-): T | null {
-  if (verdict === "declined") return null;
+): CursorTarget {
+  if (verdict === "declined") {
+    return null;
+  }
 
-  if (atPay) return payRef;
+  if (atPay) {
+    return "pay";
+  }
 
-  return step >= 1 ? fieldRef : null;
+  return step >= 1 ? "field" : null;
 }
 
 function pendingPayment(atPay: boolean, verdict: Verdict) {
@@ -750,9 +774,13 @@ function pendingPayment(atPay: boolean, verdict: Verdict) {
 }
 
 function desktopPayState(verdict: Verdict, pressed: boolean, atPay: boolean) {
-  if (verdict === "declined") return "off";
+  if (verdict === "declined") {
+    return "off";
+  }
 
-  if (pressed) return "pressed";
+  if (pressed) {
+    return "pressed";
+  }
 
   return pendingPayment(atPay, verdict);
 }
@@ -784,14 +812,18 @@ function RenewalResult({
   verdict: Verdict;
   pressed: boolean;
 }) {
-  if (verdict !== "approved" || pressed) return null;
+  if (verdict !== "approved" || pressed) {
+    return null;
+  }
 
   return <div className={success}>✓ Renewed until Oct 24, 2027</div>;
 }
 
 function useCursorPoint(
   pageRef: RefObject<HTMLDivElement | null>,
-  target: { current: HTMLSpanElement | null } | null,
+  payRef: RefObject<HTMLSpanElement | null>,
+  fieldRef: RefObject<HTMLSpanElement | null>,
+  target: CursorTarget,
   verdict: Verdict,
 ) {
   const [point, setPoint] = useState<CSSProperties>({
@@ -802,25 +834,39 @@ function useCursorPoint(
   useEffect(() => {
     const frame = pageRef.current;
 
-    if (!frame) return;
-    setPoint(cursorPosition(frame, target?.current, verdict));
-  }, [pageRef, target, verdict]);
+    if (!frame) {
+      return;
+    }
+
+    const element =
+      target === "pay"
+        ? payRef.current
+        : target === "field"
+          ? fieldRef.current
+          : null;
+
+    setPoint(cursorPosition(frame, element, verdict));
+  }, [pageRef, payRef, fieldRef, target, verdict]);
 
   return point;
 }
 
+// Deriving the press prevents a success flash before the timer starts.
+// Replay remounts Desktop and each choice is final, so completion needs no reset.
 function usePayPress(verdict: Verdict) {
-  const [pressed, setPressed] = useState(false);
+  const [pressDone, setPressDone] = useState(false);
 
   useEffect(() => {
-    if (verdict !== "approved") return;
-    setPressed(true);
-    const timer = setTimeout(() => setPressed(false), 220);
+    if (verdict !== "approved") {
+      return;
+    }
+
+    const timer = setTimeout(() => setPressDone(true), 220);
 
     return () => clearTimeout(timer);
   }, [verdict]);
 
-  return pressed;
+  return verdict === "approved" && !pressDone;
 }
 
 function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
@@ -832,8 +878,8 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
   const filled = Math.min(password.length, Math.max(0, step - 1));
   const atPay = step >= desktopTimes.length;
 
-  const target = desktopTarget(verdict, atPay, step, payRef, fieldRef);
-  const point = useCursorPoint(pageRef, target, verdict);
+  const target = desktopTarget(verdict, atPay, step);
+  const point = useCursorPoint(pageRef, payRef, fieldRef, target, verdict);
   const pressed = usePayPress(verdict);
   const payState = desktopPayState(verdict, pressed, atPay);
 
@@ -878,7 +924,13 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
   );
 }
 
-function Terminal({ started, lines }: { started: boolean; lines: string[] }) {
+function Terminal({
+  started,
+  lines,
+}: {
+  started: boolean;
+  lines: Array<string>;
+}) {
   const [times] = useState(() => lines.map((_, index) => 200 + index * 520));
   const shown = useTimeline(started, times);
 
@@ -905,7 +957,9 @@ function Terminal({ started, lines }: { started: boolean; lines: string[] }) {
 }
 
 function scenarioOutcome(choice: Choice, picked: number | null) {
-  if (picked !== null) return choice.options[picked].outcome;
+  if (picked !== null) {
+    return choice.options[picked].outcome;
+  }
 
   return choice.options.reduce((a, b) =>
     b.outcome.length > a.outcome.length ? b : a,
@@ -913,15 +967,21 @@ function scenarioOutcome(choice: Choice, picked: number | null) {
 }
 
 function choiceVerdict(choice: Choice, picked: number | null): Verdict {
-  if (picked === null) return null;
+  if (picked === null) {
+    return null;
+  }
 
   return choice.options[picked].primary ? "approved" : "declined";
 }
 
 function lineState(index: number, at: number, busy: boolean): State {
-  if (index < at) return "shown";
+  if (index < at) {
+    return "shown";
+  }
 
-  if (index !== at) return "hidden";
+  if (index !== at) {
+    return "hidden";
+  }
 
   return busy ? "busy" : "hidden";
 }
@@ -1015,7 +1075,9 @@ function useSeenOnScroll(ref: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const element = ref.current;
 
-    if (!element) return;
+    if (!element) {
+      return;
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -1045,7 +1107,7 @@ function useLineTimer({
   setBusy,
 }: {
   playing: boolean;
-  lines: (Line | Choice)[];
+  lines: Array<Line | Choice>;
   at: number;
   busy: boolean;
   jumpTo: number;
@@ -1053,7 +1115,9 @@ function useLineTimer({
   setBusy: (busy: boolean) => void;
 }) {
   useEffect(() => {
-    if (!playing) return;
+    if (!playing) {
+      return;
+    }
 
     if (prefersReducedMotion()) {
       setBusy(false);
@@ -1075,7 +1139,7 @@ function useLineTimer({
         );
 
     return () => clearTimeout(timer);
-  });
+  }, [playing, lines, at, busy, jumpTo, setAt, setBusy]);
 }
 
 function usePaneFollow(
@@ -1089,7 +1153,10 @@ function usePaneFollow(
   useEffect(() => {
     const pane = paneRef.current;
 
-    if (!pane) return;
+    if (!pane) {
+      return;
+    }
+
     pane.scrollTo({
       top: pane.scrollHeight,
       behavior: prefersReducedMotion() ? "auto" : "smooth",
@@ -1112,7 +1179,7 @@ function usePlayback() {
 
   const outcome = scenarioOutcome(choice, picked);
 
-  const lines: (Line | Choice)[] = [...intro, choice, ...outcome];
+  const lines: Array<Line | Choice> = [...intro, choice, ...outcome];
   const choiceIndex = intro.length;
   const waiting = at > choiceIndex && picked === null;
   const done = at >= lines.length;
@@ -1194,8 +1261,9 @@ function LineBody({
   const current = revealState(index, playback);
   const started = current !== "hidden";
 
-  if (line.kind === "message")
+  if (line.kind === "message") {
     return <MessageBody line={line} current={current} />;
+  }
 
   if (line.kind === "desktop") {
     const verdict = choiceVerdict(playback.choice, playback.picked);
@@ -1203,13 +1271,14 @@ function LineBody({
     return <Desktop started={started} verdict={verdict} />;
   }
 
-  if (line.kind === "terminal")
+  if (line.kind === "terminal") {
     return <Terminal started={started} lines={line.lines} />;
+  }
 
   return <WebhookBody line={line} struck={playback.at > index + 1} />;
 }
 
-function rowClass(lines: (Line | Choice)[], index: number) {
+function rowClass(lines: Array<Line | Choice>, index: number) {
   return index > 0 && lines[index].date !== lines[index - 1].date
     ? cx(row, gap)
     : row;

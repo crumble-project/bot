@@ -5,10 +5,8 @@ import {
   IconArrowUp,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import {
-  type DisplayDetails,
-  displayDetails,
-} from "@crumble/server/contract/tool-details";
+import { displayDetails } from "@crumble/server/contract/tool-details";
+import type { DisplayDetails } from "@crumble/server/contract/tool-details";
 import { DISPLAY_TOOL_NAME } from "@crumble/server/contract/tools";
 import { toolDetailsOf } from "./tool-details";
 import { messageCard } from "./message-card";
@@ -46,7 +44,7 @@ const TREND = {
   flat: IconArrowRight,
 };
 
-function Stats({ items }: { items: Stat[] }) {
+function Stats({ items }: { items: Array<Stat> }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
       {items.map((item) => {
@@ -94,8 +92,8 @@ function Table({
   columns,
   rows,
 }: {
-  columns: string[];
-  rows: (string | number)[][];
+  columns: Array<string>;
+  rows: Array<Array<string | number>>;
 }) {
   const numeric = columns.map((_, index) =>
     rows.every((row) => isNumber(row[index])),
@@ -154,15 +152,21 @@ const SERIES = Array.from(
 );
 
 function paint(color: string | undefined, fallback: string) {
-  if (!color) return fallback;
+  if (!color) {
+    return fallback;
+  }
 
-  if (color === "foreground") return "var(--foreground)";
+  if (color === "foreground") {
+    return "var(--foreground)";
+  }
 
-  if (color === "background") return "var(--background)";
+  if (color === "background") {
+    return "var(--background)";
+  }
 
   const series = /^series-(\d+)$/.exec(color);
 
-  return series ? SERIES[Number(series[1]) - 1]! : color;
+  return series ? (SERIES[Number(series[1]) - 1] ?? color) : color;
 }
 
 function pathData(commands: Extract<Node, { kind: "path" }>["commands"]) {
@@ -274,7 +278,9 @@ function useContainerWidth() {
   useLayoutEffect(() => {
     const element = box.current;
 
-    if (!element) return;
+    if (!element) {
+      return;
+    }
 
     const observer = new ResizeObserver(([entry]) =>
       setWidth(entry?.contentRect.width ?? 0),
@@ -288,7 +294,12 @@ function useContainerWidth() {
   return { box, width };
 }
 
-function nearestPoint(points: Point[], x: number, y: number, reach: number) {
+function nearestPoint(
+  points: Array<Point>,
+  x: number,
+  y: number,
+  reach: number,
+) {
   let best: Point | null = null;
   let distance = reach;
 
@@ -334,18 +345,20 @@ function ChartTooltip({
   );
 }
 
-function Chart({ layouts }: { layouts: ChartLayout[] }) {
+function Chart({ layouts }: { layouts: Array<ChartLayout> }) {
   const { box, width } = useContainerWidth();
   const [hover, setHover] = useState<Point | null>(null);
-  const clipPrefix = `clip${useId().replace(/\W/g, "")}`;
+  const clipPrefix = `clip${useId().replaceAll(/\W/g, "")}`;
 
   const sorted = [...layouts].sort((a, b) => a.width - b.width);
 
   const layout = sorted.findLast((each) => each.width <= width) ?? sorted[0];
 
-  if (!layout) return null;
+  if (!layout) {
+    return null;
+  }
 
-  const widest = sorted.at(-1)!.width;
+  const widest = sorted.at(-1)?.width ?? 0;
 
   return (
     <div ref={box} className="relative w-full" style={{ maxWidth: widest }}>

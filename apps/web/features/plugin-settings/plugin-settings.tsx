@@ -8,15 +8,12 @@ import { FieldError } from "@/components/ui/field";
 import { EditorSheet } from "@/components/form-fields";
 import {
   SecretSourceField,
-  type SecretInput,
   useSecretDraft,
 } from "@/features/password-managers/secret-source-field";
+import type { SecretInput } from "@/features/password-managers/secret-source-field";
 import { RowMenu, RowTile, SectionError, SettingRow } from "@/components/page";
-import {
-  type PluginSettings,
-  pluginSettingPath,
-  pluginSettingsQuery,
-} from "./api";
+import { pluginSettingPath, pluginSettingsQuery } from "./api";
+import type { PluginSettings } from "./api";
 import {
   passwordManagersQuery,
   invalidateSecrets,
@@ -119,12 +116,13 @@ function SecretSettingActions({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  if (!configured)
+  if (!configured) {
     return (
       <Button variant="outline" size="sm" onClick={onEdit}>
         Add
       </Button>
     );
+  }
 
   return (
     <RowMenu>
@@ -204,10 +202,13 @@ function isSelected(
   plugin: Plugin,
   setting: Setting,
 ) {
-  if ("contributes" in select)
+  if ("contributes" in select) {
     return plugin.contributes.includes(select.contributes);
+  }
 
-  if ("pluginId" in select) return plugin.id === select.pluginId;
+  if ("pluginId" in select) {
+    return plugin.id === select.pluginId;
+  }
 
   return pluginSettingKey(plugin.id, setting.key) === select.secretKey;
 }
@@ -221,8 +222,9 @@ export function PluginSettingRows({
 }) {
   const settings = useQuery(pluginSettingsQuery);
 
-  if (settings.isError)
+  if (settings.isError) {
     return <SectionError>{settings.error.message}</SectionError>;
+  }
 
   return settings.data?.plugins.flatMap((plugin) =>
     plugin.settings

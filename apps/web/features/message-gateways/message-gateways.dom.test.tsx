@@ -2,9 +2,11 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { type MessageGateway, messageGatewaysQuery } from "./api";
+import { messageGatewaysQuery } from "./api";
+import type { MessageGateway } from "./api";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor, waitForIdle } from "@/test/wait-for";
+import { requestPath } from "@/test/request-path";
 
 test("owner validation, refresh, and failed disable preserve edits after its default bot is deleted", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -24,8 +26,9 @@ test("owner validation, refresh, and failed disable preserve edits after its def
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const gateway: MessageGateway = {
     id: "discord",
@@ -46,20 +49,24 @@ test("owner validation, refresh, and failed disable preserve edits after its def
     },
   };
 
-  const bodies: string[] = [];
+  const bodies: Array<string> = [];
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
-        if (path === "/v1/message-gateways")
+        if (path === "/v1/message-gateways") {
           return Response.json({ gateways: [gateway] });
+        }
 
-        if (path === "/v1/agents") return Response.json([]);
+        if (path === "/v1/agents") {
+          return Response.json([]);
+        }
 
-        if (path === "/v1/plugin-settings")
+        if (path === "/v1/plugin-settings") {
           return Response.json({ plugins: [] });
+        }
 
         if (path === "/v1/message-gateways/discord" && init?.method === "PUT") {
           bodies.push(await new Response(init.body).text());
@@ -191,8 +198,11 @@ test("owner validation, refresh, and failed disable preserve edits after its def
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -217,8 +227,9 @@ test("a gateway with channels and aliases renders where crypto.randomUUID is mis
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const gateway: MessageGateway = {
     id: "discord",
@@ -244,15 +255,19 @@ test("a gateway with channels and aliases renders where crypto.randomUUID is mis
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
-        if (path === "/v1/message-gateways")
+        if (path === "/v1/message-gateways") {
           return Response.json({ gateways: [gateway] });
+        }
 
-        if (path === "/v1/agents") return Response.json([]);
+        if (path === "/v1/agents") {
+          return Response.json([]);
+        }
 
-        if (path === "/v1/plugin-settings")
+        if (path === "/v1/plugin-settings") {
           return Response.json({ plugins: [] });
+        }
 
         throw new Error(`Unexpected request: ${path}`);
       },
@@ -300,8 +315,11 @@ test("a gateway with channels and aliases renders where crypto.randomUUID is mis
     consoleError.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

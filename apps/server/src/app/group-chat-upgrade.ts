@@ -1,6 +1,5 @@
 import { Database } from "bun:sqlite";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { DocumentId } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import {
   closeSync,
@@ -19,7 +18,7 @@ import {
   CURRENT_SQLITE_SCHEMA_VERSION,
   SQLITE_MIGRATIONS,
 } from "@earendil-works/pi-durable/storage/sqlite";
-import { formatEntryId } from "../shared/entry-ids";
+import { documentIdOf, formatEntryId } from "../shared/entry-ids";
 
 const LocalId = Schema.Number.check(
   Schema.isInt(),
@@ -53,24 +52,31 @@ type Manifest = typeof Manifest.Type;
 
 type PrivateHistory = typeof PrivateHistory.Type;
 
-function safePath(root: string, ...parts: string[]) {
+function safePath(root: string, ...parts: Array<string>) {
   let path = root;
 
   for (const part of ["", ...parts]) {
     path = join(path, part);
     const stat = lstatSync(path, { throwIfNoEntry: false });
 
-    if (stat?.isSymbolicLink())
+    if (stat?.isSymbolicLink()) {
       throw new Error(`Group chat cleanup refuses symlink: ${path}`);
+    }
   }
 
   return path;
 }
 
-function existingDatabase(root: string, parts: string[], readonly: boolean) {
+function existingDatabase(
+  root: string,
+  parts: Array<string>,
+  readonly: boolean,
+) {
   const path = safePath(root, ...parts);
 
-  if (!lstatSync(path, { throwIfNoEntry: false })) return;
+  if (!lstatSync(path, { throwIfNoEntry: false })) {
+    return;
+  }
   safePath(root, ...parts.slice(0, -1), `${parts.at(-1)}-wal`);
   safePath(root, ...parts.slice(0, -1), `${parts.at(-1)}-shm`);
   // Cold WAL databases may need writable sidecars even for an inventory-only connection.
@@ -80,17 +86,19 @@ function existingDatabase(root: string, parts: string[], readonly: boolean) {
   return db;
 }
 
-function hasColumns(db: Database, table: string, ...columns: string[]) {
+function hasColumns(db: Database, table: string, ...columns: Array<string>) {
   const found = db
     .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
     .all();
 
-  if (!found.length) return false;
+  if (!found.length) {
+    return false;
+  }
 
   return columns.every((column) => found.some((row) => row.name === column));
 }
 
-function ids(db: Database, sql: string): number[] {
+function ids(db: Database, sql: string): Array<number> {
   return db
     .query<{ id: number }, []>(sql)
     .all()
@@ -101,10 +109,11 @@ function validatePi(db: Database) {
   if (
     CURRENT_SQLITE_SCHEMA_VERSION !== 2 ||
     !hasColumns(db, "durable_schema", "version")
-  )
+  ) {
     throw new Error(
       "Unsupported Pi schema for group chat cleanup (expected Pi Durable 1.4.0 / schema 2)",
     );
+  }
 
   const version = db
     .query<{ version: number }, []>(
@@ -112,15 +121,19 @@ function validatePi(db: Database) {
     )
     .get();
 
-  if (version?.version !== 2)
+  if (version?.version !== 2) {
     throw new Error(
       "Unsupported Pi schema for group chat cleanup (expected schema 2); upgrade with a compatible server",
     );
+  }
   const expected = new Database(":memory:");
 
   try {
-    for (const migration of SQLITE_MIGRATIONS)
-      for (const statement of migration.statements) expected.run(statement);
+    for (const migration of SQLITE_MIGRATIONS) {
+      for (const statement of migration.statements) {
+        expected.run(statement);
+      }
+    }
 
     for (const table of [
       "durable_metadata",
@@ -147,8 +160,9 @@ function validatePi(db: Database) {
         JSON.stringify(db.query(sql).all()) !==
           JSON.stringify(expected.query(sql).all()) ||
         definition(db) !== definition(expected)
-      )
+      ) {
         throw new Error(`Unsupported Pi ${table} shape for group chat cleanup`);
+      }
     }
 
     const tables = db
@@ -166,11 +180,13 @@ function validatePi(db: Database) {
           )
           .all(),
       )
-    )
+    ) {
       throw new Error("Unsupported Pi tables for group chat cleanup");
+    }
 
-    if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'trigger'").get())
+    if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'trigger'").get()) {
       throw new Error("Unsupported Pi triggers for group chat cleanup");
+    }
   } finally {
     expected.close();
   }
@@ -183,15 +199,17 @@ function guardInheritance(db: Database, selected: ReadonlySet<number>) {
     )
     .all();
 
-  for (const row of rows)
+  for (const row of rows) {
     if (
       !selected.has(row.id) &&
       row.parent !== null &&
       selected.has(row.parent)
-    )
+    ) {
       throw new Error(
         `Cannot remove group history: retained Pi conversation ${row.id} inherits from group conversation ${row.parent}. Restore a backup and resolve the inherited history before upgrading.`,
       );
+    }
+  }
 }
 
 type ReviewInventory = {
@@ -212,20 +230,23 @@ async function inventoryReviewConversations(
     "SELECT id FROM documents WHERE kind = json_quote('crumble.review-conversation')",
   );
 
-  if (!documents.length) return selected;
+  if (!documents.length) {
+    return selected;
+  }
 
   const storage = await openNodeSqliteStorage(reviews.path);
 
   try {
     for (const id of documents) {
-      // SAFETY: IDs come from the documents table after validating the installed Pi schema.
       const document = await storage.document(
-        id as DocumentId,
+        documentIdOf(id),
         "current",
         BACKGROUND_CONTEXT,
       );
 
-      if (document?.record.scope.kind !== "conversation") continue;
+      if (document?.record.scope.kind !== "conversation") {
+        continue;
+      }
 
       const review = Schema.decodeUnknownSync(
         Schema.Struct({
@@ -237,11 +258,12 @@ async function inventoryReviewConversations(
       if (
         (review.executionId !== null &&
           reviews.executions.has(review.executionId)) ||
-        review.groupId != null
-      )
+        (review.groupId !== null && review.groupId !== undefined)
+      ) {
         selected.add(
           formatEntryId(agentId, document.record.scope.conversationId),
         );
+      }
     }
   } finally {
     await storage.close(BACKGROUND_CONTEXT);
@@ -277,7 +299,9 @@ async function inventoryPi(
       .filter((row) => selected.has(formatEntryId(agentId, row.id)))) {
       conversations.add(row.id);
 
-      if (row.anchor !== null) tasks.add(row.anchor);
+      if (row.anchor !== null) {
+        tasks.add(row.anchor);
+      }
     }
   }
 
@@ -303,27 +327,32 @@ async function inventoryPi(
   while (changed) {
     const size = tasks.size + conversations.size;
 
-    for (const row of conversationRows)
+    for (const row of conversationRows) {
       if (
         (row.owner_task_id !== null && tasks.has(row.owner_task_id)) ||
         (row.owner_conversation_id !== null &&
           conversations.has(row.owner_conversation_id))
-      )
+      ) {
         conversations.add(row.id);
+      }
+    }
 
-    for (const row of taskRows)
+    for (const row of taskRows) {
       if (
         conversations.has(row.conversation_id) ||
         (row.owner !== null && tasks.has(row.owner))
-      )
+      ) {
         tasks.add(row.id);
+      }
+    }
     changed = tasks.size + conversations.size !== size;
   }
 
-  if (conversations.has(1))
+  if (conversations.has(1)) {
     throw new Error(
       "Group chat cleanup refuses to remove the Pi root conversation",
     );
+  }
   guardInheritance(db, conversations);
 
   const selectedRows = (table: string) =>
@@ -363,16 +392,19 @@ function inventoryReviewIds(
   conversations: Set<string>,
   executions: Set<string>,
 ) {
-  if (hasColumns(store, "pending_reviews", "execution_id", "conversation_id"))
+  if (hasColumns(store, "pending_reviews", "execution_id", "conversation_id")) {
     for (const row of store
       .query<{ execution_id: string; conversation_id: string }, []>(
         "SELECT execution_id, conversation_id FROM pending_reviews",
       )
-      .all())
-      if (conversations.has(row.conversation_id))
+      .all()) {
+      if (conversations.has(row.conversation_id)) {
         executions.add(row.execution_id);
+      }
+    }
+  }
 
-  if (hasColumns(store, "review_results", "execution_id"))
+  if (hasColumns(store, "review_results", "execution_id")) {
     for (const row of store
       .query<{ execution_id: string }, []>(
         "SELECT execution_id FROM review_results",
@@ -380,52 +412,69 @@ function inventoryReviewIds(
       .all()) {
       const parts = row.execution_id.split(":");
 
+      const kind = parts[0];
+
       if (
         parts.length === 4 &&
-        parts[0]!.endsWith("-job") &&
+        kind !== undefined &&
+        kind.endsWith("-job") &&
         conversations.has(`${parts[1]}:${parts[2]}`)
-      )
+      ) {
         executions.add(row.execution_id);
+      }
     }
+  }
 }
 
 function inventoryStore(store: Database, conversations: Set<string>) {
   const executions = new Set<string>();
-  const hashes: string[] = [];
+  const hashes: Array<string> = [];
 
-  if (hasColumns(store, "group_members", "conversation_id"))
+  if (hasColumns(store, "group_members", "conversation_id")) {
     for (const row of store
       .query<{ conversation_id: string | null }, []>(
         "SELECT conversation_id FROM group_members",
       )
-      .all())
-      if (row.conversation_id) conversations.add(row.conversation_id);
+      .all()) {
+      if (row.conversation_id) {
+        conversations.add(row.conversation_id);
+      }
+    }
+  }
 
-  if (hasColumns(store, "group_turns", "execution_id"))
+  if (hasColumns(store, "group_turns", "execution_id")) {
     for (const row of store
       .query<{ execution_id: string }, []>(
         "SELECT execution_id FROM group_turns",
       )
-      .all())
+      .all()) {
       executions.add(row.execution_id);
+    }
+  }
 
-  if (hasColumns(store, "executions", "id", "conversation_id"))
+  if (hasColumns(store, "executions", "id", "conversation_id")) {
     for (const row of store
       .query<{ id: string; conversation_id: string }, []>(
         "SELECT id, conversation_id FROM executions",
       )
-      .all())
-      if (conversations.has(row.conversation_id)) executions.add(row.id);
+      .all()) {
+      if (conversations.has(row.conversation_id)) {
+        executions.add(row.id);
+      }
+    }
+  }
 
   inventoryReviewIds(store, conversations, executions);
 
-  if (hasColumns(store, "library_files", "hash", "group_id", "agent_id"))
+  if (hasColumns(store, "library_files", "hash", "group_id", "agent_id")) {
     for (const row of store
       .query<{ hash: string }, []>(
         "SELECT DISTINCT hash FROM library_files WHERE group_id IS NOT NULL",
       )
-      .all())
+      .all()) {
       hashes.push(Schema.decodeUnknownSync(Hash)(row.hash));
+    }
+  }
 
   const reviews = hasColumns(
     store,
@@ -447,14 +496,20 @@ function inventoryStore(store: Database, conversations: Set<string>) {
 }
 
 async function inventory(root: string): Promise<Manifest> {
-  const privateHistories: PrivateHistory[] = [];
+  const privateHistories: Array<PrivateHistory> = [];
   const agents = safePath(root, "agents");
 
   if (lstatSync(agents, { throwIfNoEntry: false })) {
     for (const file of readdirSync(agents)) {
-      if (!file.endsWith(".sqlite")) continue;
+      if (!file.endsWith(".sqlite")) {
+        continue;
+      }
       const agentId = Schema.decodeUnknownSync(Segment)(file.slice(0, -7));
-      const db = existingDatabase(root, ["agents", file], true)!;
+      const db = existingDatabase(root, ["agents", file], true);
+
+      if (!db) {
+        continue;
+      }
 
       try {
         privateHistories.push(await inventoryPi(db, agentId));
@@ -479,7 +534,9 @@ async function inventory(root: string): Promise<Manifest> {
   };
 
   try {
-    if (store) stored = inventoryStore(store, conversations);
+    if (store) {
+      stored = inventoryStore(store, conversations);
+    }
   } finally {
     store?.close();
   }
@@ -491,7 +548,11 @@ async function inventory(root: string): Promise<Manifest> {
       root,
       ["agents", `${history.agentId}.sqlite`],
       true,
-    )!;
+    );
+
+    if (!db) {
+      continue;
+    }
 
     try {
       privateHistories[index] = await inventoryPi(db, history.agentId, {
@@ -504,8 +565,9 @@ async function inventory(root: string): Promise<Manifest> {
         ),
       });
 
-      for (const id of privateHistories[index].conversations)
+      for (const id of privateHistories[index].conversations) {
         conversations.add(formatEntryId(history.agentId, id));
+      }
     } finally {
       db.close();
     }
@@ -515,7 +577,9 @@ async function inventory(root: string): Promise<Manifest> {
   const expandedStore = existingDatabase(root, ["store.sqlite"], true);
 
   try {
-    if (expandedStore) stored = inventoryStore(expandedStore, conversations);
+    if (expandedStore) {
+      stored = inventoryStore(expandedStore, conversations);
+    }
   } finally {
     expandedStore?.close();
   }
@@ -528,7 +592,9 @@ async function inventory(root: string): Promise<Manifest> {
       )
     : [];
 
-  for (const file of groupFiles) safePath(root, "groups", file);
+  for (const file of groupFiles) {
+    safePath(root, "groups", file);
+  }
 
   return Schema.decodeUnknownSync(Manifest)({
     version: 1,
@@ -561,29 +627,36 @@ function persist(root: string, manifest: Manifest) {
   }
 }
 
-function removeFile(root: string, ...parts: string[]) {
+function removeFile(root: string, ...parts: Array<string>) {
   const path = safePath(root, ...parts);
 
-  if (lstatSync(path, { throwIfNoEntry: false })) unlinkSync(path);
+  if (lstatSync(path, { throwIfNoEntry: false })) {
+    unlinkSync(path);
+  }
 }
 
 function deleteIds(
   db: Database,
   table: string,
   column: string,
-  selected: readonly (string | number)[],
+  selected: ReadonlyArray<string | number>,
 ) {
-  if (!hasColumns(db, table, column)) return;
+  if (!hasColumns(db, table, column)) {
+    return;
+  }
   const statement = db.query(`DELETE FROM ${table} WHERE ${column} = ?`);
 
-  for (const id of selected) statement.run(id);
+  for (const id of selected) {
+    statement.run(id);
+  }
 }
 
 function purgePi(root: string, history: PrivateHistory) {
-  if (history.conversations.includes(1))
+  if (history.conversations.includes(1)) {
     throw new Error(
       "Group chat cleanup refuses to remove the Pi root/direct conversation, including on manifest replay",
     );
+  }
 
   const db = existingDatabase(
     root,
@@ -591,7 +664,9 @@ function purgePi(root: string, history: PrivateHistory) {
     false,
   );
 
-  if (!db) return;
+  if (!db) {
+    return;
+  }
 
   try {
     validatePi(db);
@@ -618,19 +693,23 @@ function purgePi(root: string, history: PrivateHistory) {
 function purgePush(root: string) {
   const db = existingDatabase(root, ["push.sqlite"], false);
 
-  if (!db) return;
+  if (!db) {
+    return;
+  }
 
   try {
     db.transaction(() => {
       const events = new Set<string>();
 
-      if (hasColumns(db, "reply_associations", "event_id", "chat_kind"))
+      if (hasColumns(db, "reply_associations", "event_id", "chat_kind")) {
         for (const row of db
           .query<{ event_id: string }, []>(
             "SELECT event_id FROM reply_associations WHERE chat_kind = 'group'",
           )
-          .all())
+          .all()) {
           events.add(row.event_id);
+        }
+      }
 
       if (hasColumns(db, "push_outbox", "id", "event_id", "event_json")) {
         for (const row of db
@@ -638,16 +717,20 @@ function purgePush(root: string) {
             `SELECT id, event_id, EXISTS (SELECT 1 FROM json_tree(event_json) WHERE (key = 'groupId' AND type != 'null') OR (key IN ('origin', 'kind') AND value = 'group')) AS group_event FROM push_outbox`,
           )
           .all()) {
-          if (!events.has(row.event_id) && !row.group_event) continue;
+          if (!events.has(row.event_id) && !row.group_event) {
+            continue;
+          }
           deleteIds(db, "reply_associations", "event_id", [row.event_id]);
           deleteIds(db, "push_delivery", "outbox_id", [row.id]);
           deleteIds(db, "push_outbox", "id", [row.id]);
         }
       }
 
-      for (const table of ["chat_views", "reply_associations"])
-        if (hasColumns(db, table, "chat_kind"))
+      for (const table of ["chat_views", "reply_associations"]) {
+        if (hasColumns(db, table, "chat_kind")) {
           db.run(`DELETE FROM ${table} WHERE chat_kind = 'group'`);
+        }
+      }
     })();
   } finally {
     db.close();
@@ -655,21 +738,25 @@ function purgePush(root: string) {
 }
 
 function normalizeProvenance(db: Database, manifest: Manifest) {
-  if (hasColumns(db, "memories", "source"))
+  if (hasColumns(db, "memories", "source")) {
     db.run(
       "UPDATE memories SET source = NULL WHERE json_extract(source, '$.kind') = 'group'",
     );
+  }
 
-  if (hasColumns(db, "skills", "source_execution_id"))
-    for (const id of manifest.executions)
+  if (hasColumns(db, "skills", "source_execution_id")) {
+    for (const id of manifest.executions) {
       db.query(
         "UPDATE skills SET source_execution_id = NULL WHERE source_execution_id = ?",
       ).run(id);
+    }
+  }
 
   if (
     !hasColumns(db, "learned_changes", "source", "before_state", "after_state")
-  )
+  ) {
     return;
+  }
   db.run(
     "UPDATE learned_changes SET source = json_remove(source, '$.groupId') WHERE source IS NOT NULL",
   );
@@ -677,28 +764,33 @@ function normalizeProvenance(db: Database, manifest: Manifest) {
   for (const [key, selected] of [
     ["executionId", manifest.executions],
     ["conversationId", manifest.conversations],
-  ] as const)
-    for (const id of selected)
+  ] as const) {
+    for (const id of selected) {
       db.query(
         `UPDATE learned_changes SET source = json_remove(source, '$.${key}') WHERE json_extract(source, '$.${key}') = ?`,
       ).run(id);
+    }
+  }
 
   for (const column of ["before_state", "after_state"]) {
     db.run(
       `UPDATE learned_changes SET ${column} = json_set(${column}, '$.source', NULL) WHERE target = 'memory' AND json_extract(${column}, '$.source.kind') = 'group'`,
     );
 
-    for (const id of manifest.executions)
+    for (const id of manifest.executions) {
       db.query(
         `UPDATE learned_changes SET ${column} = json_set(${column}, '$.sourceExecutionId', NULL) WHERE target = 'skill' AND json_extract(${column}, '$.sourceExecutionId') = ?`,
       ).run(id);
+    }
   }
 }
 
 function purgeStore(root: string, manifest: Manifest) {
   const db = existingDatabase(root, ["store.sqlite"], false);
 
-  if (!db) return;
+  if (!db) {
+    return;
+  }
 
   try {
     if (hasColumns(db, "library_files", "group_id", "agent_id", "hash")) {
@@ -709,26 +801,34 @@ function purgeStore(root: string, manifest: Manifest) {
               "SELECT 1 FROM library_files WHERE agent_id IS NOT NULL AND hash = ?",
             )
             .get(hash)
-        )
+        ) {
           continue;
+        }
 
-        for (const suffix of ["", ".txt", ".pdf.txt"])
+        for (const suffix of ["", ".txt", ".pdf.txt"]) {
           removeFile(root, "files", `${hash}${suffix}`);
+        }
       }
     }
 
     db.transaction(() => {
       normalizeProvenance(db, manifest);
 
-      for (const table of ["library_files", "deleted_library_files"])
-        if (hasColumns(db, table, "group_id"))
+      for (const table of ["library_files", "deleted_library_files"]) {
+        if (hasColumns(db, table, "group_id")) {
           db.run(`DELETE FROM ${table} WHERE group_id IS NOT NULL`);
+        }
+      }
 
-      for (const table of ["group_turns", "group_members", "group_chats"])
-        if (hasColumns(db, table)) db.run(`DELETE FROM ${table}`);
+      for (const table of ["group_turns", "group_members", "group_chats"]) {
+        if (hasColumns(db, table)) {
+          db.run(`DELETE FROM ${table}`);
+        }
+      }
 
-      for (const table of ["pending_reviews", "review_results"])
+      for (const table of ["pending_reviews", "review_results"]) {
         deleteIds(db, table, "execution_id", manifest.executions);
+      }
       deleteIds(
         db,
         "pending_reviews",
@@ -746,7 +846,9 @@ function purgeStore(root: string, manifest: Manifest) {
 function completedUpgrade(root: string) {
   const store = existingDatabase(root, ["store.sqlite"], true);
 
-  if (!store) return false;
+  if (!store) {
+    return false;
+  }
 
   try {
     return (
@@ -765,11 +867,14 @@ export async function removeLegacyGroupChats(
 ): Promise<void> {
   const root = resolve(accountDirectory);
 
-  if (!lstatSync(safePath(root), { throwIfNoEntry: false })) return;
+  if (!lstatSync(safePath(root), { throwIfNoEntry: false })) {
+    return;
+  }
   const path = safePath(root, "group-chat-removal.json");
 
-  if (!lstatSync(path, { throwIfNoEntry: false }) && completedUpgrade(root))
+  if (!lstatSync(path, { throwIfNoEntry: false }) && completedUpgrade(root)) {
     return;
+  }
 
   const manifest = lstatSync(path, { throwIfNoEntry: false })
     ? Schema.decodeUnknownSync(Schema.fromJsonString(Manifest))(
@@ -780,7 +885,7 @@ export async function removeLegacyGroupChats(
   const store = existingDatabase(root, ["store.sqlite"], true);
 
   try {
-    if (store && hasColumns(store, "conversations", "id", "chat"))
+    if (store && hasColumns(store, "conversations", "id", "chat")) {
       for (const id of new Set([
         ...manifest.conversations,
         ...manifest.privateHistories.flatMap((history) =>
@@ -788,29 +893,38 @@ export async function removeLegacyGroupChats(
             formatEntryId(history.agentId, local),
           ),
         ),
-      ]))
+      ])) {
         if (
           store
             .query("SELECT 1 FROM conversations WHERE id = ? AND chat = 1")
             .get(id)
-        )
+        ) {
           throw new Error(
             `Group chat cleanup refuses to remove direct conversation ${id}`,
           );
+        }
+      }
+    }
   } finally {
     store?.close();
   }
 
-  for (const history of manifest.privateHistories)
-    if (history.conversations.includes(1))
+  for (const history of manifest.privateHistories) {
+    if (history.conversations.includes(1)) {
       throw new Error(
         "Group chat cleanup refuses to remove the Pi root/direct conversation, including on manifest replay",
       );
+    }
+  }
   persist(root, manifest);
 
-  for (const history of manifest.privateHistories) purgePi(root, history);
+  for (const history of manifest.privateHistories) {
+    purgePi(root, history);
+  }
 
-  for (const file of manifest.groupFiles) removeFile(root, "groups", file);
+  for (const file of manifest.groupFiles) {
+    removeFile(root, "groups", file);
+  }
   purgePush(root);
   purgeStore(root, manifest);
   removeFile(root, "group-chat-removal.json");

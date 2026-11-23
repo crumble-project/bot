@@ -28,7 +28,7 @@ export type IntentStep = {
 export type Place = { page?: string | undefined; host?: string | undefined };
 
 export type ProposedAction = {
-  steps: IntentStep[];
+  steps: Array<IntentStep>;
   host?: string;
   terminal?: boolean;
   command?: string;
@@ -36,8 +36,8 @@ export type ProposedAction = {
 
 /** What the judge reads. Page text is never part of it, so a page can't argue for its own action. */
 export type IntentRequest = {
-  ownerMessages: OwnerMessage[];
-  tasks: string[];
+  ownerMessages: Array<OwnerMessage>;
+  tasks: Array<string>;
   action: ProposedAction;
 };
 
@@ -141,7 +141,7 @@ const COMMIT_WORDS = [
 ];
 
 const COMMIT_NAME = new RegExp(
-  `(?<![\\p{L}\\p{N}])(${COMMIT_WORDS.map((word) => word.replace(/ /g, "\\s+")).join("|")})(?![\\p{L}\\p{N}])`,
+  `(?<![\\p{L}\\p{N}])(${COMMIT_WORDS.map((word) => word.replaceAll(" ", String.raw`\s+`)).join("|")})(?![\\p{L}\\p{N}])`,
   "iu",
 );
 
@@ -198,12 +198,13 @@ export async function checkIntent(
 ): Promise<IntentVerdict> {
   const rulesOnly = isCommitPoint(request.action);
 
-  if (!judge)
+  if (!judge) {
     return {
       ...decide(rulesOnly),
       commitPoint: rulesOnly,
       answer: undefined,
     };
+  }
 
   try {
     const answer = await judge(request, signal);
@@ -257,10 +258,11 @@ export function describeAction(action: ProposedAction) {
   const words = action.steps.map(stepWords).join(", then ");
   const sentence = words.charAt(0).toUpperCase() + words.slice(1);
 
-  if (action.terminal)
+  if (action.terminal) {
     return action.command === undefined
       ? `${sentence} in a terminal`
       : `${sentence} in a terminal, running ${JSON.stringify(action.command)}`;
+  }
 
   return action.host ? `${sentence} on ${action.host}` : sentence;
 }

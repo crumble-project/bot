@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { schedulePreviewInput } from "@crumble/server/contract/schedule-preview";
 import { Link } from "@tanstack/react-router";
 import {
   IconClock,
@@ -28,9 +29,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { BotAvatar } from "@/components/bot-avatar";
 import { EditorSection, EditorSheet } from "@/components/form-fields";
-import { type Bot, capabilitiesQuery } from "@/features/bots/api";
+import { capabilitiesQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { eventSourcesQuery } from "@/features/event-sources/api";
-import { call, send, type RequestBody, type ResponseBody } from "@/lib/api";
+import { call, send } from "@/lib/api";
+import type { RequestBody, ResponseBody } from "@/lib/api";
 import { validTimezone } from "@crumble/server/contract/cron";
 import {
   DEFAULT_SCHEDULE_TIMEOUT_SECONDS,
@@ -40,10 +43,9 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_TIMEOUT_SECONDS,
 } from "@crumble/server/contract/limits";
-import { type Schedule, schedulePath, invalidateSchedules } from "./api";
+import { schedulePath, invalidateSchedules } from "./api";
+import type { Schedule } from "./api";
 import {
-  type Recurrence,
-  type When,
   InlineSelect,
   KINDS,
   RecurrenceParts,
@@ -52,6 +54,7 @@ import {
   recurrenceOf,
   switchedTo,
 } from "./recurrence";
+import type { Recurrence, When } from "./recurrence";
 import { LOCAL_ZONE, fromWallClock, inOneHour, wallClock } from "./timing";
 
 export type Editing = { schedule: Schedule | null; agentId: string };
@@ -129,8 +132,9 @@ function kindFields(
   | { error: string }
   | { fields: Pick<AutomationBody, "prompt" | "command" | "timeoutSeconds"> } {
   if (draft.kind === "prompt") {
-    if (!draft.name.trim() || !draft.prompt.trim())
+    if (!draft.name.trim() || !draft.prompt.trim()) {
       return { error: "Automation name and prompt are required." };
+    }
 
     return {
       fields: {
@@ -141,8 +145,9 @@ function kindFields(
     };
   }
 
-  if (!draft.name.trim() || !draft.command.trim())
+  if (!draft.name.trim() || !draft.command.trim()) {
     return { error: "Automation name and command are required." };
+  }
 
   const timeoutSeconds = Number(draft.timeoutSeconds);
 
@@ -150,10 +155,11 @@ function kindFields(
     !Number.isInteger(timeoutSeconds) ||
     timeoutSeconds < 1 ||
     timeoutSeconds > MAX_SCHEDULE_TIMEOUT_SECONDS
-  )
+  ) {
     return {
       error: `Timeout must be between 1 and ${MAX_SCHEDULE_TIMEOUT_SECONDS} seconds.`,
     };
+  }
 
   return { fields: { prompt: "", command: draft.command, timeoutSeconds } };
 }
@@ -164,15 +170,17 @@ function triggerFields(
   draft: AutomationDraft,
   timezone: string,
 ): { error: string } | { trigger: Trigger } {
-  if (draft.onEvent)
+  if (draft.onEvent) {
     return {
       trigger: { cron: null, runAt: null, eventSourceId: draft.eventSourceId },
     };
+  }
 
-  if (draft.repeat)
+  if (draft.repeat) {
     return {
       trigger: { cron: draft.cron.trim(), runAt: null, eventSourceId: null },
     };
+  }
 
   const instant = fromWallClock(draft.runAt, timezone);
 
@@ -192,12 +200,16 @@ function automationBody(
 ): { error: string } | { body: AutomationBody } {
   const content = kindFields(draft);
 
-  if ("error" in content) return content;
+  if ("error" in content) {
+    return content;
+  }
 
   const timezone = draft.timezone.trim();
   const when = triggerFields(draft, timezone);
 
-  if ("error" in when) return when;
+  if ("error" in when) {
+    return when;
+  }
 
   return {
     body: {
@@ -231,7 +243,7 @@ export function AutomationDialog({
   editing,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   editing: Editing;
   onClose: () => void;
 }) {
@@ -252,12 +264,15 @@ export function AutomationDialog({
       preview.error ||
       !preview.data ||
       preview.data.isProblem
-    )
+    ) {
       return;
+    }
 
     const result = automationBody(draft);
 
-    if ("error" in result) return setError(result.error);
+    if ("error" in result) {
+      return setError(result.error);
+    }
 
     save.mutate(result.body);
   };
@@ -330,7 +345,7 @@ function ScriptFields({
             Send results to the chat
           </FieldLabel>
           <FieldDescription>
-            Each finished run posts its output to the bot's chat.
+            Each finished run posts its output to the bot&apos;s chat.
           </FieldDescription>
         </FieldContent>
         <Switch
@@ -370,10 +385,11 @@ export function useSchedulePreview(draft: AutomationDraft) {
   const preview = useQuery({
     queryKey: ["schedule-preview", debounced],
     queryFn: () =>
-      call<"previewSchedule">(
+      call(
+        "previewSchedule",
         "/v1/schedules/preview",
         "POST",
-        JSON.parse(debounced),
+        schedulePreviewInput.parse(JSON.parse(debounced)),
       ),
     enabled: debounced === key,
   });
@@ -394,7 +410,7 @@ function BotPicker({
   patch,
   canCode,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
   canCode: (agentId: string) => boolean;
@@ -409,7 +425,9 @@ function BotPicker({
         items={items}
         value={draft.agentId}
         onValueChange={(value) => {
-          if (!value) return;
+          if (!value) {
+            return;
+          }
 
           patch({
             agentId: value,
@@ -454,7 +472,9 @@ const whenOf = (
   custom: boolean,
   recurrence: Recurrence | null,
 ): When => {
-  if (!draft.repeat) return "once";
+  if (!draft.repeat) {
+    return "once";
+  }
 
   return custom || !recurrence ? "custom" : recurrence.kind;
 };
@@ -463,7 +483,9 @@ function whenPatch(
   value: string,
   recurrence: Recurrence | null,
 ): Partial<AutomationDraft> {
-  if (value === "once") return { repeat: false };
+  if (value === "once") {
+    return { repeat: false };
+  }
 
   const picked = KINDS.find((each) => each === value);
 
@@ -483,7 +505,7 @@ function WhenDetails({
   recurrence: Recurrence | null;
   patch: (change: Partial<AutomationDraft>) => void;
 }) {
-  if (when === "once")
+  if (when === "once") {
     return (
       <Input
         type="datetime-local"
@@ -493,8 +515,11 @@ function WhenDetails({
         onChange={(event) => patch({ runAt: event.target.value })}
       />
     );
+  }
 
-  if (when === "custom" || !recurrence) return null;
+  if (when === "custom" || !recurrence) {
+    return null;
+  }
 
   return (
     <RecurrenceParts
@@ -513,7 +538,7 @@ function EventSourcePicker({
 }) {
   const sources = useQuery(eventSourcesQuery);
 
-  if (sources.data?.length === 0)
+  if (sources.data?.length === 0) {
     return (
       <span className="text-sm text-muted-foreground">
         Add a source in{" "}
@@ -523,6 +548,7 @@ function EventSourcePicker({
         first.
       </span>
     );
+  }
 
   return (
     <InlineSelect
@@ -756,7 +782,7 @@ export function PreviewStatus({
 }: {
   preview: ReturnType<typeof useSchedulePreview>;
 }) {
-  if (preview.error)
+  if (preview.error) {
     return (
       <div className="flex items-center gap-2 text-sm text-destructive">
         Could not load schedule preview.{" "}
@@ -770,11 +796,13 @@ export function PreviewStatus({
         </Button>
       </div>
     );
+  }
 
-  if (preview.pending)
+  if (preview.pending) {
     return (
       <p className="text-sm text-muted-foreground">Loading schedule preview…</p>
     );
+  }
 
   return null;
 }
@@ -786,7 +814,7 @@ function AutomationFields({
   editingScript,
   preview,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   draft: AutomationDraft;
   patch: (change: Partial<AutomationDraft>) => void;
   editingScript: boolean;

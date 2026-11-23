@@ -3,7 +3,7 @@ import { McpServers } from "../integrations/mcp-servers";
 
 export const checkBotChoices = Effect.fnUntraced(function* (
   provider: { parse(value: string): string },
-  input: { provider: string; mcpServers: readonly string[] },
+  input: { provider: string; mcpServers: ReadonlyArray<string> },
   owner: string | null,
 ) {
   provider.parse(input.provider);

@@ -13,7 +13,7 @@ export function BotToggles({
   disabled,
 }: {
   label: string;
-  bots: Bot[];
+  bots: Array<Bot>;
   isOn: (bot: Bot) => boolean;
   onToggle: (bot: Bot, on: boolean) => void;
   disabled?: boolean | undefined;
@@ -53,13 +53,16 @@ export function BotToggles({
 export function toggled(set: Set<string>, key: string, on: boolean) {
   const next = new Set(set);
 
-  if (on) next.add(key);
-  else next.delete(key);
+  if (on) {
+    next.add(key);
+  } else {
+    next.delete(key);
+  }
 
   return next;
 }
 
-export const botsUsing = (bots: Bot[], skillId: string) =>
+export const botsUsing = (bots: Array<Bot>, skillId: string) =>
   new Set(
     bots.flatMap((bot) =>
       bot.sharedSkills?.includes(skillId) ? [bot.id] : [],
@@ -68,7 +71,7 @@ export const botsUsing = (bots: Bot[], skillId: string) =>
 
 export async function assignSharedSkill(
   skillId: string,
-  bots: Bot[],
+  bots: Array<Bot>,
   selected: Set<string>,
 ) {
   const using = botsUsing(bots, skillId);
@@ -87,11 +90,13 @@ export function UsedByField({
   selected,
   onChange,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   selected: Set<string>;
   onChange: (selected: Set<string>) => void;
 }) {
-  if (!bots.length) return null;
+  if (!bots.length) {
+    return null;
+  }
 
   return (
     <Field>

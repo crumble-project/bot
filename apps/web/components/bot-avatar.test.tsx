@@ -30,8 +30,9 @@ test("static and live avatars update geometry, moods and colors, and honor reduc
     IS_REACT_ACT_ENVIRONMENT: true,
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
   const { createRoot } = await import("react-dom/client");
   const { BotAvatar } = await import("./bot-avatar");
   const container = document.createElement("div");
@@ -46,7 +47,9 @@ test("static and live avatars update geometry, moods and colors, and honor reduc
       const pending = [...frames.values()];
       frames.clear();
 
-      for (const fn of pending) fn(performance.now());
+      for (const fn of pending) {
+        fn(performance.now());
+      }
     });
 
   try {
@@ -70,16 +73,22 @@ test("static and live avatars update geometry, moods and colors, and honor reduc
     expect(container.querySelector('[data-state="working"]')).not.toBeNull();
     media.matches = true;
 
-    for (const fn of changes) fn();
+    for (const fn of changes) {
+      fn();
+    }
 
-    for (let i = 0; i < 4 && frames.size; i++) await tick();
+    for (let i = 0; i < 4 && frames.size; i++) {
+      await tick();
+    }
     expect(frames.size).toBe(0);
     const reduced = container.innerHTML;
     await tick();
     expect(container.innerHTML).toBe(reduced);
     media.matches = false;
 
-    for (const fn of changes) fn();
+    for (const fn of changes) {
+      fn();
+    }
     await tick();
     expect(frames.size).toBe(1);
 
@@ -105,8 +114,11 @@ test("static and live avatars update geometry, moods and colors, and honor reduc
     expect(frames.size).toBe(0);
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     await window.happyDOM.close();

@@ -67,10 +67,11 @@ const connect = Effect.fnUntraced(function* (
 const disconnect = Effect.fnUntraced(function* (id: PasswordManagerId) {
   const using = yield* SecretRepository.use((secrets) => secrets.usedBy(id));
 
-  if (using.length > 0)
+  if (using.length > 0) {
     return yield* new Conflict({
       message: `${using.length} secret${using.length === 1 ? "" : "s"} still read from this password manager`,
     });
+  }
 
   yield* PasswordManagerRepository.use((repository) => repository.delete(id));
   yield* SecretValues.use((values) => values.disconnect(id));

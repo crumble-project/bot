@@ -9,7 +9,7 @@ function Outgoing() {
 }
 
 test("delivery retries the same request and file IDs", async () => {
-  const bodies: string[] = [];
+  const bodies: Array<string> = [];
 
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
@@ -63,8 +63,9 @@ test("resetting the session drops the old account's unsent messages", async () =
     IS_REACT_ACT_ENVIRONMENT: true,
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(async () => new Response("down", { status: 503 }), {
@@ -94,8 +95,11 @@ test("resetting the session drops the old account's unsent messages", async () =
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

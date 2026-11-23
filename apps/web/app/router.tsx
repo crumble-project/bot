@@ -69,7 +69,9 @@ const connectRoute = createRoute({
   beforeLoad: async ({ search }) => {
     const session = await authClient.getSession();
 
-    if (session.data) throw redirect({ href: returnPath(search.next) });
+    if (session.data) {
+      redirect({ href: returnPath(search.next), throw: true });
+    }
   },
   component: Connect,
 });
@@ -80,7 +82,9 @@ const appRoute = createRoute({
   beforeLoad: async ({ location }) => {
     const session = await authClient.getSession();
 
-    if (!session.data) throw redirect({ href: connectPath(location.href) });
+    if (!session.data) {
+      redirect({ href: connectPath(location.href), throw: true });
+    }
   },
   component: Shell,
 });
@@ -221,7 +225,8 @@ const settingsIndexRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/settings/general", replace: true });
+    // `throw: true` throws the redirect Response, which is not an Error.
+    redirect({ to: "/settings/general", replace: true, throw: true });
   },
 });
 

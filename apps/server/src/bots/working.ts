@@ -21,26 +21,37 @@ const searching = new Set([
 export function workingOf(
   status: "idle" | "running" | "failed",
   partial: string,
-  messages: TranscriptMessage[],
+  messages: Array<TranscriptMessage>,
 ): Working {
-  if (status === "failed") return "failed";
+  if (status === "failed") {
+    return "failed";
+  }
 
-  if (status !== "running") return "idle";
+  if (status !== "running") {
+    return "idle";
+  }
 
-  if (partial.trim()) return "writing";
+  if (partial.trim()) {
+    return "writing";
+  }
   const last = messages.at(-1);
 
-  if (last?.role === "toolResult" && last.isError) return "struggling";
+  if (last?.role === "toolResult" && last.isError) {
+    return "struggling";
+  }
 
   const calls =
     last?.role === "assistant"
       ? (last.blocks ?? []).filter((block) => block.type === "toolCall")
       : [];
 
-  if (calls.some((call) => searching.has(call.name ?? ""))) return "searching";
+  if (calls.some((call) => searching.has(call.name ?? ""))) {
+    return "searching";
+  }
 
-  if (calls.some((call) => call.name === MEMORY_TOOL_NAME))
+  if (calls.some((call) => call.name === MEMORY_TOOL_NAME)) {
     return "remembering";
+  }
 
   return calls.length ? "tinkering" : "thinking";
 }

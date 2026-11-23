@@ -1,8 +1,8 @@
 import type { Context } from "@earendil-works/chord/context";
-import {
-  defineDoc,
-  type ConversationId,
-  type DocumentReader,
+import { defineDoc } from "@earendil-works/pi-durable";
+import type {
+  ConversationId,
+  DocumentReader,
 } from "@earendil-works/pi-durable";
 
 export const ReviewConversation = defineDoc<{

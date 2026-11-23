@@ -1,6 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import { DEFAULT_COLOR, DEFAULT_EYE_COLOR, examples } from "open-bot-avatar";
 import { avatarDefinitionSchema as persistedAvatar } from "../shared/avatar-definition";
+import { required } from "../shared/required";
 
 export const avatarDefinitionSchema = z
   .object(persistedAvatar.shape)
@@ -12,11 +13,15 @@ export type BotAvatarDefinition = z.infer<typeof avatarDefinitionSchema>;
 export function defaultAvatarDefinition(botId: string): BotAvatarDefinition {
   let hash = 0;
 
-  for (const character of botId)
-    hash = (Math.imul(hash, 31) + character.codePointAt(0)!) >>> 0;
+  for (const character of botId) {
+    hash = (Math.imul(hash, 31) + (character.codePointAt(0) ?? 0)) >>> 0;
+  }
 
   return {
-    definition: examples[hash % examples.length]!,
+    definition: required(
+      examples[hash % examples.length],
+      "The avatar gallery is empty",
+    ),
     color: DEFAULT_COLOR,
     eyeColor: DEFAULT_EYE_COLOR,
   };

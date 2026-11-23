@@ -1,5 +1,6 @@
 import { IconUsersGroup } from "@tabler/icons-react";
-import { BotAvatar, type AvatarBot } from "@/components/bot-avatar";
+import { BotAvatar } from "@/components/bot-avatar";
+import type { AvatarBot } from "@/components/bot-avatar";
 import type { FilterPill } from "@/components/page";
 import { ALL, SHARED } from "./queries";
 

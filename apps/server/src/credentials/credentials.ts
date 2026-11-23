@@ -3,7 +3,8 @@ import { z } from "zod";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import {
   hostLines,
   hostsText,
@@ -14,7 +15,7 @@ import {
 } from "../bot-secrets/bot-secret-lifecycle";
 import type { credentialSaveInput } from "../contract/secrets";
 import { credentialName, credentialHosts } from "../contract/secrets";
-import { type CredentialTarget } from "../shared/domain";
+import type { CredentialTarget } from "../shared/domain";
 import type {
   AgentCredential,
   CredentialGrant,
@@ -26,20 +27,14 @@ import { Secrets } from "../secrets/secrets";
 import {
   AgentCredentialRepository,
   credentialSecretKey,
-  type CredentialRecord,
 } from "./agent-credential-repository";
+import type { CredentialRecord } from "./agent-credential-repository";
 import { credentialLifecycle } from "./credential-lifecycle";
-import {
-  CredentialSource,
-  type CredentialUnminted,
-} from "./minted-credentials";
+import { CredentialSource } from "./minted-credentials";
+import type { CredentialUnminted } from "./minted-credentials";
 import { guestTrustEnv } from "../shared/guest-env";
-import {
-  Conflict,
-  InvalidInput,
-  NotFound,
-  type AppError,
-} from "../shared/errors";
+import { Conflict, InvalidInput, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { REQUEST_CREDENTIAL_TOOL_NAME } from "../contract/tools";
 
 const credentialRequestInput = z.object({
@@ -69,8 +64,8 @@ export class Credentials extends Context.Service<
   Credentials,
   {
     readonly list: (agentId: string) => Effect.Effect<{
-      credentials: AgentCredential[];
-      requests: CredentialRequest[];
+      credentials: Array<AgentCredential>;
+      requests: Array<CredentialRequest>;
     }>;
     /** Fails when the bot already has the credential for every host it names. */
     readonly request: (
@@ -94,12 +89,12 @@ export class Credentials extends Context.Service<
       agentId: string,
       name: string,
       options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<CredentialUse[], AppError>;
+    ) => Effect.Effect<Array<CredentialUse>, AppError>;
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
     readonly workspaceSection: (
       agentId: string,
     ) => Effect.Effect<string | undefined>;
-    readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    readonly grants: (agentId: string) => Effect.Effect<Array<CredentialGrant>>;
     /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
     readonly value: (
       agentId: string,
@@ -143,13 +138,16 @@ export class Credentials extends Context.Service<
       ) {
         const found = yield* repository.get(agentId, name);
 
-        if (found?.github) return yield* source.value(agentId, target);
+        if (found?.github) {
+          return yield* source.value(agentId, target);
+        }
 
         const secret =
           found && (yield* secrets.read(credentialSecretKey(agentId, name)));
 
-        if (!secret)
+        if (!secret) {
           return yield* new NotFound({ message: `${name} was deleted` });
+        }
 
         return secret;
       });
@@ -225,7 +223,9 @@ export class Credentials extends Context.Service<
         const placeholders = yield* repository.placeholders(agentId);
         const git = yield* source.env(agentId);
 
-        if (!Object.keys(placeholders).length) return git;
+        if (!Object.keys(placeholders).length) {
+          return git;
+        }
 
         return {
           ...git,
@@ -285,7 +285,9 @@ export type CredentialsAccess = Omit<
 export function credentialsAccess(
   runtime: Runner<Credentials>,
 ): CredentialsAccess {
-  const credentials = runtime.runSync(Credentials.use(Effect.succeed));
+  const credentials = runtime.runSync(
+    Effect.flatMap(Credentials, Effect.succeed),
+  );
 
   return {
     ...accessOf(credentials, runtime, SYNC_CREDENTIALS),
@@ -300,10 +302,12 @@ export function credentialsAccess(
 }
 
 function workspaceCredentialSection(
-  credentials: readonly AgentCredential[],
-  sourceLines: readonly string[],
+  credentials: ReadonlyArray<AgentCredential>,
+  sourceLines: ReadonlyArray<string>,
 ) {
-  if (!credentials.length && !sourceLines.length) return;
+  if (!credentials.length && !sourceLines.length) {
+    return;
+  }
 
   return [
     ...(credentials.length
@@ -317,7 +321,7 @@ function workspaceCredentialSection(
   ].join("\n");
 }
 
-const pendingLines = (requests: readonly CredentialRequest[]) =>
+const pendingLines = (requests: ReadonlyArray<CredentialRequest>) =>
   requests.length
     ? [
         "Credentials you asked for that the owner has not answered:",

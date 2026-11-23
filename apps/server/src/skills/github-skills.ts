@@ -7,11 +7,8 @@ import {
   githubFile,
   GitHubUnavailable,
 } from "../github-apps/github-api";
-import {
-  skillDocumentInput,
-  skillInput,
-  type SkillInput,
-} from "../contract/skills";
+import { skillDocumentInput, skillInput } from "../contract/skills";
+import type { SkillInput } from "../contract/skills";
 import type { SkillDocument } from "./skill-repository";
 import { parseSkillMarkdown } from "./skill-markdown";
 import {
@@ -62,19 +59,26 @@ export function parseSkillLocation(input: string): SkillLocation | null {
     .replace(/\/+$/, "")
     .replace(/\.git$/, "");
 
-  if (REPOSITORY.test(text))
+  if (REPOSITORY.test(text)) {
     return { repository: text, branch: null, path: "" };
+  }
 
   const [owner = "", repo = "", kind, branch, ...rest] =
     githubSegments(text) ?? [];
 
   const repository = `${owner}/${repo.replace(/\.git$/, "")}`;
 
-  if (!REPOSITORY.test(repository)) return null;
+  if (!REPOSITORY.test(repository)) {
+    return null;
+  }
 
-  if (!kind) return { repository, branch: null, path: "" };
+  if (!kind) {
+    return { repository, branch: null, path: "" };
+  }
 
-  if (!branch || (kind !== "tree" && kind !== "blob")) return null;
+  if (!branch || (kind !== "tree" && kind !== "blob")) {
+    return null;
+  }
 
   return { repository, branch, path: folderIn(kind, rest.join("/")) };
 }
@@ -90,7 +94,7 @@ const isInside = (path: string, folder: string) =>
 
 const IGNORED = new Set(["node_modules", ".git"]);
 
-export function skillFolders(tree: TreeEntry[], base: string) {
+export function skillFolders(tree: Array<TreeEntry>, base: string) {
   return tree
     .flatMap((entry) =>
       entry.type === "blob" &&
@@ -108,7 +112,7 @@ export function skillFolders(tree: TreeEntry[], base: string) {
 const isDocumentPath = (path: string) =>
   skillDocumentInput.shape.path.safeParse(path).success;
 
-export function skillFiles(tree: TreeEntry[], folder: string) {
+export function skillFiles(tree: Array<TreeEntry>, folder: string) {
   const nested = skillFolders(tree, folder).filter((other) => other !== folder);
 
   const files = tree
@@ -157,8 +161,9 @@ export function skillDigest(
 
   for (const file of [...files].sort((a, b) =>
     a.relative.localeCompare(b.relative),
-  ))
+  )) {
     hash.update(`${file.relative}\0${file.sha}\n`);
+  }
 
   return hash.digest("hex");
 }
@@ -167,12 +172,17 @@ function markdownProblem(
   parsed: ReturnType<typeof parseSkillMarkdown>,
   name: string,
 ) {
-  if (!parsed) return "SKILL.md's frontmatter never closes";
+  if (!parsed) {
+    return "SKILL.md's frontmatter never closes";
+  }
 
-  if (!parsed.body) return "SKILL.md has no instructions";
+  if (!parsed.body) {
+    return "SKILL.md has no instructions";
+  }
 
-  if (parsed.body.length > MAX_INSTRUCTIONS_CHARS)
+  if (parsed.body.length > MAX_INSTRUCTIONS_CHARS) {
     return `Its instructions are longer than ${MAX_INSTRUCTIONS_CHARS.toLocaleString("en")} characters`;
+  }
 
   return name.length > MAX_SKILL_NAME_CHARS
     ? `Its name is longer than ${MAX_SKILL_NAME_CHARS} characters`
@@ -187,13 +197,15 @@ const shortened = (description: string) =>
 export function skillFromMarkdown(
   fallbackName: string,
   markdown: string,
-  documents: SkillDocument[],
+  documents: Array<SkillDocument>,
 ): { skill: SkillInput } | { problem: string } {
   const parsed = parseSkillMarkdown(markdown);
   const name = parsed?.fields.get("name") ?? fallbackName;
   const problem = markdownProblem(parsed, name);
 
-  if (problem || !parsed) return { problem: problem ?? "Invalid SKILL.md" };
+  if (problem || !parsed) {
+    return { problem: problem ?? "Invalid SKILL.md" };
+  }
 
   const result = skillInput.safeParse({
     name,
@@ -226,7 +238,7 @@ export class GitHubSkillReader extends Context.Service<
     readonly tree: (
       repository: string,
       commit: string,
-    ) => Effect.Effect<TreeEntry[], GitHubUnavailable>;
+    ) => Effect.Effect<Array<TreeEntry>, GitHubUnavailable>;
     readonly file: (
       repository: string,
       commit: string,
@@ -262,10 +274,11 @@ export class GitHubSkillReader extends Context.Service<
           treeResponse,
         );
 
-        if (listed.truncated)
+        if (listed.truncated) {
           return yield* new GitHubUnavailable({
             message: "The repository has too many files to list",
           });
+        }
 
         return listed.tree;
       }),

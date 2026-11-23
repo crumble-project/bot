@@ -27,10 +27,18 @@ const deviceOf = (row: typeof pushDevices.$inferSelect): PushDevice => {
     updatedAt: row.updatedAt,
   };
 
-  if (row.bundleId) device.bundleId = row.bundleId;
+  if (row.bundleId) {
+    device.bundleId = row.bundleId;
+  }
 
   return device;
 };
+
+const delivery = (outboxId: string, installationId: string) =>
+  and(
+    eq(pushDelivery.outboxId, outboxId),
+    eq(pushDelivery.installationId, installationId),
+  );
 
 export class PushRepository extends Context.Service<
   PushRepository,
@@ -83,7 +91,9 @@ export class PushRepository extends Context.Service<
           .from(pushSettings)
           .where(eq(pushSettings.key, "server_id"));
 
-        if (row) return row.value;
+        if (row) {
+          return row.value;
+        }
 
         const value = crypto.randomUUID();
         yield* db.insert(pushSettings).values({ key: "server_id", value });
@@ -166,7 +176,9 @@ export class PushRepository extends Context.Service<
               .from(pushDevices)
               .where(eq(pushDevices.enabled, true));
 
-            if (!outbox || !devices.length) return;
+            if (!outbox || !devices.length) {
+              return;
+            }
 
             yield* tx
               .insert(pushDelivery)
@@ -209,12 +221,6 @@ export class PushRepository extends Context.Service<
           .orderBy(asc(pushDelivery.nextAttemptAt))
           .limit(100);
       }, Effect.orDie);
-
-      const delivery = (outboxId: string, installationId: string) =>
-        and(
-          eq(pushDelivery.outboxId, outboxId),
-          eq(pushDelivery.installationId, installationId),
-        );
 
       const markDelivered = Effect.fn("PushRepository.markDelivered")(
         function* (outboxId: string, installationId: string) {

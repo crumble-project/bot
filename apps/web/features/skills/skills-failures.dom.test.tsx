@@ -1,11 +1,13 @@
+import { skillFixture } from "@/test/skill-fixture";
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { botSkillsQuery } from "./api";
+import { requestPath } from "@/test/request-path";
 
 for (const scenario of ["failure", "refresh"] as const) {
   test(`bot skills ${scenario} preserves the rest of the page`, async () => {
@@ -36,8 +38,9 @@ for (const scenario of ["failure", "refresh"] as const) {
       },
     };
 
-    for (const [key, value] of Object.entries(values))
+    for (const [key, value] of Object.entries(values)) {
       Object.defineProperty(globalThis, key, { configurable: true, value });
+    }
 
     let release: ((value: Response) => void) | undefined;
     let requests = 0;
@@ -45,29 +48,24 @@ for (const scenario of ["failure", "refresh"] as const) {
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (input: RequestInfo | URL) => {
-          const path = input instanceof Request ? input.url : input.toString();
+          const path = requestPath(input);
 
-          if (path === "/v1/agents")
+          if (path === "/v1/agents") {
             return Response.json([
-              {
-                id: "bad",
-                name: "Bad Bot",
-                avatar: defaultAvatarDefinition("bad"),
-              },
-              {
-                id: "good",
-                name: "Good Bot",
-                avatar: defaultAvatarDefinition("good"),
-              },
+              agentFixture({ id: "bad", name: "Bad Bot" }),
+              agentFixture({ id: "good", name: "Good Bot" }),
             ]);
+          }
 
-          if (path === "/v1/skills")
+          if (path === "/v1/skills") {
             return Response.json([
               {
                 id: "shared",
                 name: "Shared skill",
                 source: "shared",
                 instructions: "Shared instructions",
+                createdAt: "2026-01-01",
+                updatedAt: "2026-01-01",
               },
               {
                 id: "default",
@@ -77,25 +75,30 @@ for (const scenario of ["failure", "refresh"] as const) {
                 path: "/default",
               },
             ]);
+          }
 
-          if (path === "/v1/agents/good/skills")
+          if (path === "/v1/agents/good/skills") {
             return Response.json([
-              {
+              skillFixture({
                 id: "own",
                 name: "Own skill",
                 instructions: "Own instructions",
-              },
+                agentId: "good",
+              }),
             ]);
+          }
 
           if (path === "/v1/agents/bad/skills") {
-            if (scenario === "failure")
+            if (scenario === "failure") {
               return new Response("unavailable", { status: 500 });
+            }
             requests++;
 
-            if (requests > 1)
+            if (requests > 1) {
               return new Promise<Response>((resolve) => {
                 release = resolve;
               });
+            }
 
             return Response.json([]);
           }
@@ -145,7 +148,9 @@ for (const scenario of ["failure", "refresh"] as const) {
           (button) => button.textContent?.includes("Bad Bot"),
         );
 
-        if (!badPill) throw new Error("Expected a Bad Bot pill");
+        if (!badPill) {
+          throw new Error("Expected a Bad Bot pill");
+        }
         await act(async () => {
           badPill.click();
         });
@@ -176,8 +181,11 @@ for (const scenario of ["failure", "refresh"] as const) {
       fetch.mockRestore();
 
       for (const key of Object.keys(values)) {
-        if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-        else Reflect.deleteProperty(globalThis, key);
+        if (globals[key]) {
+          Object.defineProperty(globalThis, key, globals[key]);
+        } else {
+          Reflect.deleteProperty(globalThis, key);
+        }
       }
 
       window.close();

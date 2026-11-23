@@ -5,7 +5,7 @@ const options = z
   .object({
     baseUrl: z.string(),
     dataDir: z.string().min(1),
-    port: z.number().int().min(0).max(65535),
+    port: z.number().int().min(0).max(65_535),
   })
   .parse(JSON.parse(process.argv[2] ?? "{}"));
 
@@ -17,17 +17,22 @@ const running = await startServer({
   emulate: { baseUrl: options.baseUrl },
 });
 
-console.log(JSON.stringify({ type: "ready", url: running.server.url.origin }));
+process.stdout.write(
+  `${JSON.stringify({ type: "ready", url: running.server.url.origin })}\n`,
+);
 
 let closing = false;
 
 const close = async () => {
-  if (closing) return;
+  if (closing) {
+    return;
+  }
+
   closing = true;
   await running.close();
   process.exit(0);
 };
 
-process.once("SIGINT", close);
+process.once("SIGINT", () => void close());
 
-process.once("SIGTERM", close);
+process.once("SIGTERM", () => void close());

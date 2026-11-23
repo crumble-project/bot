@@ -1,11 +1,12 @@
-import { type ReactNode, useState } from "react";
-import {
-  type InfiniteData,
-  type UseInfiniteQueryResult,
-  useInfiniteQuery,
-  useQuery,
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type {
+  InfiniteData,
+  UseInfiniteQueryResult,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useNow } from "@/lib/use-now";
 import {
   IconBrain,
   IconChevronRight,
@@ -14,8 +15,8 @@ import {
   IconMessages,
   IconPlug,
   IconTool,
-  type TablerIcon,
 } from "@tabler/icons-react";
+import type { TablerIcon } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +37,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { ActivityFeed } from "./api";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { api, queryClient } from "@/lib/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { StateDiff } from "@/components/state-diff";
@@ -71,10 +73,10 @@ const KIND_ORDER = [
   "mcp-call",
   "bot-message",
   "change",
-] satisfies Activity["kind"][];
+] satisfies Array<Activity["kind"]>;
 
 const previewOf = (text = "") =>
-  text.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS);
+  text.replaceAll(/\s+/g, " ").slice(0, PREVIEW_CHARS);
 
 function toolLabel(toolName: string | undefined, name: string | undefined) {
   return toolName ?? name ?? "a tool";
@@ -105,8 +107,9 @@ function sentenceOf(activity: Operational) {
 function previewText(activity: Operational) {
   const { content, arguments: args, args: argText, error } = details(activity);
 
-  if (activity.kind === "tool-result" || activity.kind === "bot-message")
+  if (activity.kind === "tool-result" || activity.kind === "bot-message") {
     return previewOf(content);
+  }
 
   return previewOf(error ?? argText ?? args);
 }
@@ -114,7 +117,9 @@ function previewText(activity: Operational) {
 function detailText(activity: Operational) {
   const { content } = details(activity);
 
-  if (activity.kind === "bot-message" && content) return content;
+  if (activity.kind === "bot-message" && content) {
+    return content;
+  }
 
   return JSON.stringify(activity.details, null, 2);
 }
@@ -126,39 +131,58 @@ function useActivityFeed(kind: string, agentId: string) {
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
 
-      if (kind !== ALL) params.set("kind", kind);
+      if (kind !== ALL) {
+        params.set("kind", kind);
+      }
 
-      if (agentId !== ALL) params.set("agentId", agentId);
+      if (agentId !== ALL) {
+        params.set("agentId", agentId);
+      }
 
-      if (pageParam) params.set("cursor", pageParam);
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
 
-      return api<"activity">(`/v1/activity/feed?${params}`, { signal });
+      return api("activity", `/v1/activity/feed?${params}`, { signal });
     },
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }
 
 function dayKey(timestamp: number | undefined) {
-  if (timestamp === undefined) return "undated";
+  if (timestamp === undefined) {
+    return "undated";
+  }
 
   const date = new Date(timestamp);
 
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
+function midnight(value: Date) {
+  return new Date(
+    value.getFullYear(),
+    value.getMonth(),
+    value.getDate(),
+  ).getTime();
+}
+
 function dayLabel(timestamp: number | undefined, now: Date) {
-  if (timestamp === undefined) return "Earlier";
+  if (timestamp === undefined) {
+    return "Earlier";
+  }
 
   const date = new Date(timestamp);
 
-  const midnight = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-
   const days = Math.round((midnight(now) - midnight(date)) / 86_400_000);
 
-  if (days === 0) return "Today";
+  if (days === 0) {
+    return "Today";
+  }
 
-  if (days === 1) return "Yesterday";
+  if (days === 1) {
+    return "Yesterday";
+  }
 
   return date.toLocaleDateString(undefined, {
     weekday: "long",
@@ -168,8 +192,8 @@ function dayLabel(timestamp: number | undefined, now: Date) {
   });
 }
 
-function byDay(activities: Activity[], now: Date) {
-  const days = new Map<string, { label: string; items: Activity[] }>();
+function byDay(activities: Array<Activity>, now: Date) {
+  const days = new Map<string, { label: string; items: Array<Activity> }>();
 
   for (const activity of activities) {
     const key = dayKey(activity.timestamp);
@@ -241,7 +265,7 @@ function BotFilter({
   value,
   onChange,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   value: string;
   onChange: (agentId: string) => void;
 }) {
@@ -321,17 +345,23 @@ function ActivityBody({
   botsById: Map<string, Bot>;
 }) {
   const activities = feed.data?.pages.flatMap((page) => page.activities) ?? [];
+  const now = new Date(useNow(60_000));
 
-  if (feed.isPending) return <Skeleton className="h-40 rounded-xl" />;
+  if (feed.isPending) {
+    return <Skeleton className="h-40 rounded-xl" />;
+  }
 
-  if (feed.isError) return <ErrorAlert>{feed.error.message}</ErrorAlert>;
+  if (feed.isError) {
+    return <ErrorAlert>{feed.error.message}</ErrorAlert>;
+  }
 
-  if (activities.length === 0 && !feed.hasNextPage)
+  if (activities.length === 0 && !feed.hasNextPage) {
     return <ActivityEmpty kind={kind} />;
+  }
 
   return (
     <>
-      {byDay(activities, new Date()).map(([key, day]) => (
+      {byDay(activities, now).map(([key, day]) => (
         <section key={key} className="flex flex-col gap-2">
           <h2 className="text-sm font-medium text-muted-foreground">
             {day.label}
@@ -390,7 +420,7 @@ function ActivityMark({
 }
 
 function Headline({ activity }: { activity: Activity }) {
-  if (activity.kind === "change")
+  if (activity.kind === "change") {
     return (
       <>
         <span className="font-medium">
@@ -402,6 +432,7 @@ function Headline({ activity }: { activity: Activity }) {
         </span>
       </>
     );
+  }
 
   const { verb, object } = sentenceOf(activity);
 
@@ -427,11 +458,15 @@ function Headline({ activity }: { activity: Activity }) {
 }
 
 function Preview({ activity }: { activity: Activity }) {
-  if (activity.kind === "change") return null;
+  if (activity.kind === "change") {
+    return null;
+  }
 
   const text = previewText(activity);
 
-  if (!text) return null;
+  if (!text) {
+    return null;
+  }
 
   return (
     <p
@@ -457,7 +492,9 @@ function timeOf(activity: Activity) {
 }
 
 function failed(activity: Activity) {
-  if (activity.kind === "change") return false;
+  if (activity.kind === "change") {
+    return false;
+  }
 
   const { isError, error } = details(activity);
 
@@ -522,8 +559,9 @@ function ActivityDetails({ activity }: { activity: Activity }) {
 }
 
 function ActivityAction({ activity }: { activity: Activity }): ReactNode {
-  if (activity.kind === "change")
+  if (activity.kind === "change") {
     return <RevertChange change={activity.change} />;
+  }
 
   return (
     <Button

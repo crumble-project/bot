@@ -11,7 +11,8 @@ import {
   ReviewConversation,
   reviewOf,
 } from "../learned-changes/review-conversation";
-import { reviewInstructions, type ReviewScope } from "./review-instructions";
+import { reviewInstructions } from "./review-instructions";
+import type { ReviewScope } from "./review-instructions";
 
 export const REVIEW_EXTENSION = "learning-review";
 
@@ -38,7 +39,9 @@ function reviewExtension() {
     beforeRequest: async (request, api, context) => {
       const review = await reviewOf(api, api.conversationId, context);
 
-      if (!review?.budgetChars) return;
+      if (!review?.budgetChars) {
+        return;
+      }
       const key = String(api.conversationId);
       const used = spent.get(key) ?? 0;
       const next = used + JSON.stringify(request.messages).length;
@@ -72,7 +75,9 @@ export function reviewConversations(): ConversationKind {
     recognize: async (reader, conversationId, context) => {
       const review = await reviewOf(reader, conversationId, context);
 
-      if (!review) return;
+      if (!review) {
+        return;
+      }
 
       return {
         tools: (parts) => [

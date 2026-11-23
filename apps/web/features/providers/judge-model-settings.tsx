@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { IconScale } from "@tabler/icons-react";
 import { RowTile, Section, SectionError, Page } from "@/components/page";
-import { type JudgeModel, judgeModelQuery } from "./api";
+import { judgeModelQuery } from "./api";
+import type { JudgeModel } from "./api";
 import { call, queryClient } from "@/lib/api";
 import { ModelChoiceRow } from "./model-choice";
 import { DEFAULT_JUDGE_MODEL_NAME } from "@crumble/server/contract/tools";
@@ -9,8 +10,9 @@ import { DEFAULT_JUDGE_MODEL_NAME } from "@crumble/server/contract/tools";
 function effectiveText(data: JudgeModel) {
   const { effective } = data;
 
-  if (!effective)
+  if (!effective) {
     return `No model is available, so only commit points such as Pay or Send are held. Add an OpenAI API key for ${DEFAULT_JUDGE_MODEL_NAME}.`;
+  }
 
   return effective.kind === "chat"
     ? `${effective.name} judges as a chat model: no provider key reaches a classifier.`
@@ -34,7 +36,7 @@ function JudgeModelRow({ data }: { data: JudgeModel }) {
       choices={data.choices}
       description={effectiveText(data)}
       save={async (judgeModel) => {
-        const next = await call<"updateJudgeModel">("/v1/judge-model", "PUT", {
+        const next = await call("updateJudgeModel", "/v1/judge-model", "PUT", {
           judgeModel,
         });
 

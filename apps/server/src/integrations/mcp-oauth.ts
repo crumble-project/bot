@@ -3,12 +3,16 @@ import {
   adaptOAuthProvider,
   authorizeMcp,
   McpOAuthProvider,
-  type McpOAuthProviderOptions,
-  type McpOAuthState,
-  type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
-import { McpServerRepository, type MCPServer } from "./mcp-server-repository";
+import type {
+  McpOAuthProviderOptions,
+  McpOAuthState,
+  McpOAuthStateStore,
+} from "@earendil-works/pi-mcp/oauth";
+import { McpServerRepository } from "./mcp-server-repository";
+import type { MCPServer } from "./mcp-server-repository";
 import { Effect } from "effect";
+import { z } from "zod";
 import { MCP_OAUTH_WEB_PATH } from "../contract/mcp-oauth";
 import { secretKey } from "../secrets/secret-key";
 import { Secrets, secretText } from "../secrets/secrets";
@@ -16,16 +20,74 @@ import { ServerSecrets } from "../secrets/server-secrets";
 import type { Runner } from "../shared/runner";
 import { InvalidInput, isAppError, errorText } from "../shared/errors";
 
+/** The value a schema validated, typed as the library's interface so its optional members keep their shape. */
+const validatedAs = <T>(schema: z.ZodType) =>
+  z.custom<T>((value) => schema.safeParse(value).success);
+
+const oauthTokensSchema = z
+  .object({
+    access_token: z.string(),
+    token_type: z.string(),
+    expires_in: z.number().optional(),
+    scope: z.string().optional(),
+    refresh_token: z.string().optional(),
+    id_token: z.string().optional(),
+  })
+  .loose();
+
+const clientInformationSchema = z
+  .object({
+    client_id: z.string(),
+    client_secret: z.string().optional(),
+    client_id_issued_at: z.number().optional(),
+    client_secret_expires_at: z.number().optional(),
+  })
+  .loose();
+
+const discoverySchema = z
+  .object({
+    authorizationServerUrl: z.string(),
+    authorizationServerMetadata: z
+      .object({
+        issuer: z.string(),
+        authorization_endpoint: z.string(),
+        token_endpoint: z.string(),
+        response_types_supported: z.array(z.string()),
+      })
+      .loose()
+      .optional(),
+    resourceMetadata: z.looseObject({ resource: z.string() }).optional(),
+    resourceMetadataUrl: z.string().optional(),
+  })
+  .loose();
+
+const oauthStateSchema = z
+  .object({
+    serverUrl: z.string(),
+    clientInformation: clientInformationSchema.optional(),
+    tokens: oauthTokensSchema.optional(),
+    tokensExpireAt: z.number().optional(),
+    codeVerifier: z.string().optional(),
+    oauthState: z.string().optional(),
+    discovery: discoverySchema.optional(),
+  })
+  .loose();
+
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
  * plus the redirect URL it was registered for. Stored encrypted, as a server secret.
  */
-type SavedOAuth = {
-  redirectUrl: string;
-  generation: string;
-  state: McpOAuthState;
-  clientId: string | null;
-};
+const savedOAuthSchema = z
+  .object({
+    redirectUrl: z.string(),
+    /** Empty in records written before identities, which the next read upgrades. */
+    generation: z.string().default(""),
+    clientId: z.string().nullable(),
+    state: validatedAs<McpOAuthState>(oauthStateSchema),
+  })
+  .loose();
+
+type SavedOAuth = z.infer<typeof savedOAuthSchema>;
 
 const oauthStateKey = (serverId: string) => secretKey("mcp-oauth", serverId);
 
@@ -75,7 +137,7 @@ const NATIVE_REDIRECTS = [
  * Crumble's OAuth Client ID Metadata Document (CIMD): its https URL is the client ID, so authorization
  * servers without dynamic registration accept Crumble by fetching it. Only a publicly reachable server has one.
  */
-export type ClientDocument = { url: string; redirectUris: string[] };
+export type ClientDocument = { url: string; redirectUris: Array<string> };
 
 export function clientDocument(publicUrl: URL): ClientDocument {
   const base = publicUrl.href.replace(/\/+$/, "");
@@ -106,10 +168,12 @@ export const secretStorage = (
   run: Runner<ServerSecrets | Secrets | McpServerRepository>,
 ): SecretStorage => ({
   currentServer: (serverId) =>
-    run.runSync(McpServerRepository.use((servers) => servers.get(serverId))),
+    run.runSync(
+      Effect.flatMap(McpServerRepository, (servers) => servers.get(serverId)),
+    ),
   clientSecret: (serverId) =>
     run.runPromise(
-      Secrets.use((secrets) =>
+      Effect.flatMap(Secrets, (secrets) =>
         secretText(secrets)(clientSecretKey(serverId)),
       ).pipe(
         Effect.mapError(
@@ -118,11 +182,16 @@ export const secretStorage = (
         ),
       ),
     ),
-  get: (key) => run.runSync(ServerSecrets.use((secrets) => secrets.get(key))),
+  get: (key) =>
+    run.runSync(Effect.flatMap(ServerSecrets, (secrets) => secrets.get(key))),
   set: (key, value) =>
-    run.runSync(ServerSecrets.use((secrets) => secrets.set(key, value))),
+    run.runSync(
+      Effect.flatMap(ServerSecrets, (secrets) => secrets.set(key, value)),
+    ),
   delete: (key) =>
-    run.runSync(ServerSecrets.use((secrets) => secrets.delete(key))),
+    run.runSync(
+      Effect.flatMap(ServerSecrets, (secrets) => secrets.delete(key)),
+    ),
 });
 
 function read(
@@ -131,12 +200,13 @@ function read(
 ): SavedOAuth | undefined {
   const raw = storage.get(oauthStateKey(serverId));
 
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
 
   try {
-    // SAFETY: write() serializes SavedOAuth under this private key;
-    // only this module writes that key, and malformed JSON is rejected below.
-    return JSON.parse(raw) as SavedOAuth;
+    // Only this module writes this key; anything else it finds is rejected.
+    return savedOAuthSchema.parse(JSON.parse(raw));
   } catch {
     return undefined;
   }
@@ -165,8 +235,9 @@ function checkServer(storage: SecretStorage, server: MCPServer) {
     !current ||
     current.oauthClientId !== server.oauthClientId ||
     new URL(current.url).href !== new URL(server.url).href
-  )
+  ) {
     expired();
+  }
 }
 
 function capture(
@@ -176,9 +247,13 @@ function capture(
   checkServer(storage, server);
   const saved = read(storage, server.id);
 
-  if (!saved) return undefined;
+  if (!saved) {
+    return undefined;
+  }
 
-  if (saved.generation) return saved;
+  if (saved.generation) {
+    return saved;
+  }
   const upgraded = { ...saved, generation: crypto.randomUUID() };
   write(storage, server.id, upgraded);
 
@@ -198,8 +273,9 @@ function guarded(
     saved.generation !== generation ||
     saved.clientId !== server.oauthClientId ||
     new URL(saved.state.serverUrl).href !== new URL(server.url).href
-  )
+  ) {
     return expired();
+  }
 
   return saved;
 }
@@ -236,7 +312,9 @@ function provider(
     onRedirect,
   };
 
-  if (!server.oauthClientId) return new McpOAuthProvider(options);
+  if (!server.oauthClientId) {
+    return new McpOAuthProvider(options);
+  }
 
   return new OwnerClientProvider(options, {
     client_id: server.oauthClientId,
@@ -256,7 +334,9 @@ export async function connectionAuth(
 ): Promise<AuthProvider | undefined> {
   const saved = capture(storage, server);
 
-  if (!saved?.state.tokens?.access_token) return undefined;
+  if (!saved?.state.tokens?.access_token) {
+    return undefined;
+  }
   guarded(storage, server, saved.generation);
   const secret = await ownerSecret(storage, server);
   guarded(storage, server, saved.generation);
@@ -279,7 +359,9 @@ function unavailable(
   cause: unknown,
   step: "start" | "finish" = "start",
 ): never {
-  if (isAppError(cause)) throw cause;
+  if (isAppError(cause)) {
+    throw cause;
+  }
   const reason = errorText(cause);
   throw new InvalidInput({
     message: `${server.name} could not ${step} OAuth sign-in: ${reason}`,
@@ -290,14 +372,19 @@ function registrationHint(
   document: ClientDocument | undefined,
   redirectUrl: string,
 ) {
-  if (!document)
+  if (!document) {
     return "If it supports client metadata documents, set CRUMBLE_PUBLIC_URL to the server's public https address; otherwise add the server with a token";
+  }
 
   // The document already covered this sign-in, so the authorization server accepts neither registration method.
-  if (document.redirectUris.includes(redirectUrl))
+  if (document.redirectUris.includes(redirectUrl)) {
     return "It doesn't accept client metadata documents either, so add the server with a token";
+  }
 
-  const web = document.redirectUris[0]!.replace(/\/oauth\/callback$/, "");
+  const web = (document.redirectUris[0] ?? "").replace(
+    /\/oauth\/callback$/,
+    "",
+  );
 
   return `Sign in from ${web}, or from the Mac or iOS app, if it supports client metadata documents; otherwise add the server with a token`;
 }
@@ -317,8 +404,9 @@ function restartIfChanged(
     saved?.redirectUrl === redirectUrl &&
     saved.state.serverUrl === server.url &&
     saved.clientId === server.oauthClientId
-  )
+  ) {
     return saved;
+  }
 
   const next = {
     redirectUrl,
@@ -363,20 +451,25 @@ export async function startAuthorization(
     if (
       error instanceof Error &&
       error.message.includes("does not support dynamic client registration")
-    )
+    ) {
       unavailable(
         server,
         `${error.message}. ${registrationHint(document, redirectUrl)}`,
       );
+    }
 
     unavailable(server, error);
   }
 
   guarded(storage, server, saved.generation);
 
-  if (result === "AUTHORIZED") return { authorized: true };
+  if (result === "AUTHORIZED") {
+    return { authorized: true };
+  }
 
-  if (!authorizationUrl) unavailable(server, "no authorization URL");
+  if (!authorizationUrl) {
+    unavailable(server, "no authorization URL");
+  }
 
   return { authorizationUrl: authorizationUrl.toString() };
 }
@@ -395,10 +488,11 @@ export async function finishAuthorization(
 ) {
   const saved = capture(storage, server);
 
-  if (!saved?.state.oauthState || saved.state.oauthState !== state)
+  if (!saved?.state.oauthState || saved.state.oauthState !== state) {
     throw new InvalidInput({
       message: "This sign-in has expired; start again",
     });
+  }
 
   guarded(storage, server, saved.generation);
   const secret = await ownerSecret(storage, server);
@@ -427,10 +521,11 @@ export async function finishAuthorization(
     unavailable(server, error, "finish");
   }
 
-  if (result !== "AUTHORIZED")
+  if (result !== "AUTHORIZED") {
     throw new InvalidInput({
       message: `${server.name} did not accept the sign-in`,
     });
+  }
   // The state and verifier answer one attempt only.
   const done = guarded(storage, server, saved.generation);
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;

@@ -10,7 +10,7 @@ import { desktopFills } from "./schema";
 export class DesktopFillRepository extends Context.Service<
   DesktopFillRepository,
   {
-    readonly list: (agentId: string) => Effect.Effect<DesktopFill[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<DesktopFill>>;
     readonly add: (agentId: string, fill: DesktopFill) => Effect.Effect<void>;
   }
 >()("crumble/bot-desktop/DesktopFillRepository") {
@@ -57,7 +57,9 @@ export function desktopFillsAccess(
   runtime: Runner<DesktopFillRepository>,
   agentId: string,
 ): DesktopFills {
-  const repository = runtime.runSync(DesktopFillRepository.use(Effect.succeed));
+  const repository = runtime.runSync(
+    Effect.flatMap(DesktopFillRepository, Effect.succeed),
+  );
 
   return {
     list: () => runtime.runPromise(repository.list(agentId)),

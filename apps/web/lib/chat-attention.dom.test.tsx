@@ -1,3 +1,4 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
@@ -11,10 +12,11 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor } from "@/test/wait-for";
+import { requestPath } from "@/test/request-path";
+import { defined } from "@/test/defined";
 
 type RequestState = {
   failSeen: boolean;
@@ -23,21 +25,26 @@ type RequestState = {
 };
 
 function recordRequests(credentials: Promise<Response>) {
-  const requests: { path: string; body: unknown }[] = [];
+  const requests: Array<{ path: string; body: unknown }> = [];
   const state: RequestState = { failSeen: false };
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
-        if (path === "/v1/agents/bot/credentials") return credentials;
+        if (path === "/v1/agents/bot/credentials") {
+          return credentials;
+        }
         const answer = state.answers?.get(path);
 
-        if (answer) return answer;
+        if (answer) {
+          return answer;
+        }
 
-        if (init?.method !== "PUT" && init?.method !== "POST")
+        if (init?.method !== "PUT" && init?.method !== "POST") {
           return new Response("unexpected request", { status: 500 });
+        }
 
         const body: unknown = JSON.parse(z.string().parse(init.body));
         requests.push({ path, body });
@@ -66,12 +73,22 @@ function recordRequests(credentials: Promise<Response>) {
 
 async function checkChatLoadingGate(
   state: RequestState,
-  requests: { path: string; body: unknown }[],
+  requests: Array<{ path: string; body: unknown }>,
 ) {
   queryClient.clear();
   const bots = Promise.withResolvers<Response>();
 
   const snapshot = {
+    conversationId: "bot:bot",
+    agentId: "bot",
+    conversation: {
+      id: "bot:bot",
+      agentId: "bot",
+      title: "Bot",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+    updatedAt: 0,
     messages: [
       {
         id: "bot:1:0",
@@ -145,17 +162,7 @@ async function checkChatLoadingGate(
     await settle();
     expect(views()).toHaveLength(before);
     await act(async () =>
-      bots.resolve(
-        Response.json([
-          {
-            id: "bot",
-            name: "Bot",
-            avatar: defaultAvatarDefinition("bot"),
-            enabled: true,
-            tools: [],
-          },
-        ]),
-      ),
+      bots.resolve(Response.json([agentFixture({ id: "bot", name: "Bot" })])),
     );
     await waitFor(
       () => container.textContent?.includes("Loaded snapshot") === true,
@@ -178,27 +185,75 @@ test("reports only active views and ready visible reply surfaces", async () => {
   const globals = Object.getOwnPropertyDescriptors(globalThis);
   let focused = true;
   let visible = true;
-  const observers = new Map<Element, IntersectionObserverCallback>();
+  const observers = new Map<
+    Element,
+    { callback: IntersectionObserverCallback; observer: Observer }
+  >();
 
-  class Observer {
+  class Observer implements IntersectionObserver {
+    readonly root: Element | Document | null = null;
+    readonly rootMargin = "";
+    readonly scrollMargin = "";
+    readonly thresholds: ReadonlyArray<number> = [];
     private elements = new Set<Element>();
     constructor(private callback: IntersectionObserverCallback) {}
     observe(element: Element) {
-      observers.set(element, this.callback);
+      observers.set(element, { callback: this.callback, observer: this });
       this.elements.add(element);
     }
     unobserve(element: Element) {
       observers.delete(element);
     }
     disconnect() {
-      for (const element of this.elements) observers.delete(element);
+      for (const element of this.elements) {
+        observers.delete(element);
+      }
+    }
+    takeRecords(): Array<IntersectionObserverEntry> {
+      return [];
     }
   }
+
+  const intervals = new Map<number, () => void>();
+  const retryCallbacks: Array<() => void> = [];
+  const retryHandles: Array<ReturnType<typeof setTimeout>> = [];
+  const nativeTimeout = globalThis.setTimeout;
+  let nextInterval = 0;
+
+  // The controller only schedules no-argument heartbeat callbacks.
+  const fakeSetInterval = (callback: () => void, delay?: number) => {
+    if (delay !== 30_000) {
+      throw new Error(`Unexpected interval ${delay}`);
+    }
+    const id = ++nextInterval;
+    intervals.set(id, callback);
+
+    return id;
+  };
+
+  const fakeClearInterval = (id: number) => {
+    intervals.delete(id);
+  };
+
+  // The tested timers use no-argument callbacks and no extra arguments.
+  const fakeSetTimeout = (callback: () => void, delay?: number) => {
+    if (delay !== 1000) {
+      return nativeTimeout(callback, delay);
+    }
+    retryCallbacks.push(callback);
+    const handle = nativeTimeout(() => {}, 60_000);
+    retryHandles.push(handle);
+
+    return handle;
+  };
 
   const values = {
     window,
     document: window.document,
     navigator: window.navigator,
+    setInterval: fakeSetInterval,
+    clearInterval: fakeClearInterval,
+    setTimeout: fakeSetTimeout,
     HTMLElement: window.HTMLElement,
     Element: window.Element,
     Node: window.Node,
@@ -227,8 +282,9 @@ test("reports only active views and ready visible reply surfaces", async () => {
     },
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
   Object.defineProperty(document, "hasFocus", {
     configurable: true,
     value: () => focused,
@@ -238,51 +294,13 @@ test("reports only active views and ready visible reply surfaces", async () => {
     get: () => (visible ? "visible" : "hidden"),
   });
 
-  const intervals = new Map<number, () => void>();
-  let nextInterval = 0;
-
-  // SAFETY: The controller only schedules no-argument heartbeat callbacks.
-  const interval = spyOn(globalThis, "setInterval").mockImplementation(((
-    callback: () => void,
-    delay?: number,
-  ) => {
-    if (delay !== 30_000) throw new Error(`Unexpected interval ${delay}`);
-    const id = ++nextInterval;
-    intervals.set(id, callback);
-
-    return id;
-  }) as typeof setInterval);
-
-  // SAFETY: This mock only receives the numeric handles returned above.
-  const clear = spyOn(globalThis, "clearInterval").mockImplementation(((
-    id: number,
-  ) => {
-    intervals.delete(id);
-  }) as typeof clearInterval);
-
-  let resolveCredentials: (response: Response) => void = () => {};
+  let resolveCredentials: ((response: Response) => void) | undefined;
 
   const credentials = new Promise<Response>((resolve) => {
     resolveCredentials = resolve;
   });
 
   const { requests, state, fetch } = recordRequests(credentials);
-  const retryCallbacks: (() => void)[] = [];
-  const retryHandles: ReturnType<typeof setTimeout>[] = [];
-  const nativeTimeout = globalThis.setTimeout;
-
-  // SAFETY: The tested timers use no-argument callbacks and no extra arguments.
-  const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((
-    callback: () => void,
-    delay?: number,
-  ) => {
-    if (delay !== 1000) return nativeTimeout(callback, delay);
-    retryCallbacks.push(callback);
-    const handle = nativeTimeout(() => {}, 60_000);
-    retryHandles.push(handle);
-
-    return handle;
-  }) as typeof setTimeout);
 
   const { createRoot } = await import("react-dom/client");
 
@@ -330,7 +348,9 @@ test("reports only active views and ready visible reply surfaces", async () => {
     replyReferences: [reference],
   });
 
-  if (!card) throw new Error("Expected credential card");
+  if (!card) {
+    throw new Error("Expected credential card");
+  }
 
   const chat = {
     botId: "bot",
@@ -348,19 +368,27 @@ test("reports only active views and ready visible reply surfaces", async () => {
     requests.filter(({ path }) => path.startsWith("/v1/chat-attention/views/"));
 
   const intersect = (element: Element, isIntersecting: boolean) => {
-    const callback = observers.get(element);
+    const observed = observers.get(element);
 
-    if (!callback) throw new Error("Expected observed element");
-    // SAFETY: The boundary reads only these entry fields and ignores the observer.
-    callback(
+    if (!observed) {
+      throw new Error("Expected observed element");
+    }
+
+    const box = element.getBoundingClientRect();
+
+    observed.callback(
       [
         {
           target: element,
           isIntersecting,
           intersectionRatio: isIntersecting ? 1 : 0,
-        } as IntersectionObserverEntry,
+          boundingClientRect: box,
+          intersectionRect: box,
+          rootBounds: null,
+          time: 0,
+        },
       ],
-      {} as IntersectionObserver,
+      observed.observer,
     );
   };
 
@@ -394,9 +422,9 @@ test("reports only active views and ready visible reply surfaces", async () => {
     expect(seen()).toEqual([]);
     await act(async () => intersect(element, false));
     await act(async () => {
-      resolveCredentials(
-        Response.json({ credentials: [], requests: [request] }),
-      );
+      const respond = defined(resolveCredentials, "the credential response");
+
+      respond(Response.json({ credentials: [], requests: [request] }));
     });
     await waitFor(
       () => container.textContent?.includes("Add credential") === true,
@@ -420,7 +448,9 @@ test("reports only active views and ready visible reply surfaces", async () => {
     expect(views()[2]!.body).toEqual({ chat: bot });
     expect(seen()[0]?.body).toEqual({ chat: bot, eventIds: ["card-event"] });
     await act(async () => {
-      for (const callback of intervals.values()) callback();
+      for (const callback of intervals.values()) {
+        callback();
+      }
     });
     await waitFor(() => views().length === 4);
     expect(views()[3]!.body).toEqual({ chat: bot });
@@ -458,7 +488,9 @@ test("reports only active views and ready visible reply surfaces", async () => {
     const serialPath = views()[8]!.path;
     const serialViews = () => views().filter(({ path }) => path === serialPath);
 
-    for (const callback of intervals.values()) callback();
+    for (const callback of intervals.values()) {
+      callback();
+    }
     focused = false;
     window.dispatchEvent(new window.Event("blur"));
     delayed.resolve(new Response(null, { status: 204 }));
@@ -508,15 +540,17 @@ test("reports only active views and ready visible reply surfaces", async () => {
     resetSession();
     queryClient.clear();
     fetch.mockRestore();
-    interval.mockRestore();
-    clear.mockRestore();
 
-    for (const handle of retryHandles) clearTimeout(handle);
-    timeout.mockRestore();
+    for (const handle of retryHandles) {
+      clearTimeout(handle);
+    }
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

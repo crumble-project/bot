@@ -1,4 +1,5 @@
 import net from "node:net";
+import { logError } from "../shared/process-log";
 
 // Spawned by pi-env's Connection as `<runtime> workspace-bridge.ts <socket> serve --token <hex>`: it carries the
 // protocol on stdio to the relay, which runs the daemon inside the guest. Only the process that owns a sandbox runs
@@ -15,6 +16,6 @@ socket.on("connect", () => {
 socket.on("close", () => process.exit(0));
 
 socket.on("error", (error) => {
-  console.error(`workspace bridge: ${error.message}`);
+  logError(`workspace bridge: ${error.message}`);
   process.exit(1);
 });

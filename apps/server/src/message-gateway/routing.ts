@@ -1,8 +1,6 @@
 import type { GatewayMessage } from "./adapter";
-import {
-  normalizeGatewayHandle,
-  type GatewayConfig,
-} from "../contract/message-gateway";
+import { normalizeGatewayHandle } from "../contract/message-gateway";
+import type { GatewayConfig } from "../contract/message-gateway";
 
 export type GatewayBot = { id: string; name: string; enabled: boolean };
 
@@ -20,7 +18,7 @@ export const authorizedMessage = (
 export function selectGatewayBot(
   config: GatewayConfig,
   text: string,
-  bots: readonly GatewayBot[],
+  bots: ReadonlyArray<GatewayBot>,
   replyBotId: string | null,
 ): GatewayBot {
   const prefix = /^\s*@([^\s]+)(?:\s|$)/u.exec(text)?.[1];
@@ -32,8 +30,9 @@ export function selectGatewayBot(
         normalizeGatewayHandle(entry.handle) === normalizeGatewayHandle(prefix),
     );
 
-    if (alias) selected = bots.find((bot) => bot.id === alias.botId);
-    else {
+    if (alias) {
+      selected = bots.find((bot) => bot.id === alias.botId);
+    } else {
       const input = normalizeGatewayHandle(text.trimStart());
 
       const candidates = bots.filter((bot) => {
@@ -41,7 +40,8 @@ export function selectGatewayBot(
 
         return (
           input.startsWith(name) &&
-          (input.length === name.length || /\s/u.test(input[name.length]!))
+          (input.length === name.length ||
+            /\s/u.test(input.charAt(name.length)))
         );
       });
 
@@ -53,32 +53,38 @@ export function selectGatewayBot(
         (bot) => normalizeGatewayHandle(bot.name).length === length,
       );
 
-      if (matches.length === 1) selected = matches[0];
+      if (matches.length === 1) {
+        selected = matches[0];
+      }
     }
-  } else
+  } else {
     selected = bots.find(
       (bot) => bot.id === (replyBotId ?? config.defaultBotId),
     );
+  }
 
-  if (!selected)
+  if (!selected) {
     throw new Error(
       prefix
         ? `Unknown or ambiguous bot @${prefix}. Configure an alias in Message gateways.`
         : "No recipient is configured. Choose a default bot or use @handle.",
     );
+  }
 
-  if (!selected.enabled)
+  if (!selected.enabled) {
     throw new Error(
       `Bot ${selected.name} is disabled. Enable it before sending messages.`,
     );
+  }
 
   return selected;
 }
 
-export function gatewayChunks(text: string, maxLength: number): string[] {
-  if (!Number.isInteger(maxLength) || maxLength < 2)
+export function gatewayChunks(text: string, maxLength: number): Array<string> {
+  if (!Number.isInteger(maxLength) || maxLength < 2) {
     throw new Error("Invalid adapter message limit");
-  const chunks: string[] = [];
+  }
+  const chunks: Array<string> = [];
   let chunk = "";
 
   for (const character of text) {
@@ -90,7 +96,9 @@ export function gatewayChunks(text: string, maxLength: number): string[] {
     chunk += character;
   }
 
-  if (chunk) chunks.push(chunk);
+  if (chunk) {
+    chunks.push(chunk);
+  }
 
   return chunks;
 }
