@@ -40,6 +40,7 @@ import {
   SettingRow,
   Page,
 } from "@/components/page";
+import { Appearance } from "./appearance";
 import { settingsSections } from "./sections";
 
 export function SettingsLayout() {
@@ -448,6 +449,7 @@ function Server() {
 export function GeneralSettings() {
   return (
     <Page title="General">
+      <Appearance />
       <Account />
       <Notifications />
       <Passkeys />

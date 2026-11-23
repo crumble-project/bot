@@ -81,16 +81,18 @@ onSessionReset(() => {
   showUnread();
 });
 
-export function useUnreadCount() {
-  return useSyncExternalStore(
-    (listener) => {
-      unreadListeners.add(listener);
+function useUnreadStore(read: () => number) {
+  return useSyncExternalStore((listener) => {
+    unreadListeners.add(listener);
 
-      return () => unreadListeners.delete(listener);
-    },
-    () => unreadTotal,
-  );
+    return () => unreadListeners.delete(listener);
+  }, read);
 }
+
+export const useUnreadCount = () => useUnreadStore(() => unreadTotal);
+
+export const useUnread = (path: string) =>
+  useUnreadStore(() => unread.get(path) ?? 0);
 
 export function markSeen() {
   for (const path of unread.keys()) {

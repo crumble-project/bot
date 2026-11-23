@@ -37,8 +37,9 @@ choice. Live avatars respect your system's reduced-motion setting.
 
 An avatar shows what its bot is doing. While the bot thinks, its body turns
 into three hopping dots. While it writes, searches, remembers, or uses tools, it
-bends over the work. When it retries, it shows an exclamation mark. When a reply
-finishes, it celebrates for a few seconds.
+bends over the work, including while it retries. When it has a question for you,
+needs your decision, or its last reply failed, it shows an exclamation mark.
+When a reply finishes, it celebrates for a few seconds.
 
 Bots without a saved definition get a fresh gallery avatar with default colors.
 The bot ID selects the shape; previous avatar shapes and colors don't affect it.

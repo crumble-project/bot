@@ -20,16 +20,13 @@ import { setTheme, useTheme } from "@/lib/theme";
 import { BotAvatar } from "@/components/bot-avatar";
 import { settingsSections } from "@/features/settings/sections";
 import { useIsAdmin } from "@/lib/auth-client";
-import { THEME_OPTIONS, PAGES } from "./navigation";
+import { THEME_OPTIONS } from "@/features/settings/appearance";
+import { PAGES } from "./navigation";
 
 const filter = (value: string, search: string, keywords?: Array<string>) =>
   keywords?.length
     ? defaultFilter(keywords.join(" "), search)
     : defaultFilter(value, search);
-
-export const PALETTE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent)
-  ? "⌘K"
-  : "Ctrl K";
 
 type Run = (action: () => void) => void;
 

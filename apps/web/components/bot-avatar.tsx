@@ -7,7 +7,14 @@ import type { MountedAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
-export type BotState = AvatarState;
+export type BotState = AvatarState | "question";
+
+type StateOptions = { state: AvatarState; mark?: "question" | undefined };
+
+const avatarOptions = (state: BotState): StateOptions =>
+  state === "question"
+    ? { state: "blocked", mark: "question" }
+    : { state, mark: undefined };
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
 
@@ -22,7 +29,7 @@ export function botStyle(color: string): CSSProperties {
 function useLiveAvatar(
   still: boolean,
   look: BotAvatarDefinition,
-  state: AvatarState,
+  state: BotState,
 ) {
   const host = useRef<HTMLSpanElement>(null);
   const avatar = useRef<MountedAvatar | null>(null);
@@ -35,7 +42,7 @@ function useLiveAvatar(
 
     const mounted = mountAvatar(host.current, {
       ...look,
-      state: latest.current,
+      ...avatarOptions(latest.current),
       reducedMotion: "system",
       followPointer: true,
       label: "",
@@ -51,7 +58,7 @@ function useLiveAvatar(
 
   useLayoutEffect(() => {
     latest.current = state;
-    avatar.current?.update({ state });
+    avatar.current?.update(avatarOptions(state));
   }, [state]);
 
   return host;
@@ -81,7 +88,7 @@ export function BotAvatar({
         ? renderAvatarSvg(look.definition, {
             color: look.color,
             eyeColor: look.eyeColor,
-            state,
+            ...avatarOptions(state),
             reducedMotion: true,
           })
         : "",
