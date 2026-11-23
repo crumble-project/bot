@@ -34,8 +34,9 @@ When the web app loses its connection to the server, the sidebar shows
 Memory, theme, and sign-out live in **Settings**:
 
 - **Settings** > **General** > **Appearance** sets the theme to System, Light,
-  or Dark. The choice is saved to your account, so your other devices use it
-  too.
+  or Dark, and **Avatars** to Flat or Fluffy. Fluffy gives larger, animated
+  avatars fur in browsers with WebGL2. Small avatars, and the Apple and Android
+  apps, stay flat. Both choices are saved to your account.
 - **Settings** > **Memory** shows every bot's memories and your shared
   memories. Edit or delete them there. The old `/memory` address redirects to
   it.
