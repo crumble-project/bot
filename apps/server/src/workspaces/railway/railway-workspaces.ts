@@ -78,7 +78,6 @@ const GUEST_TUNNEL = `${GUEST_HELPERS}/workspace-tunnel.py`;
 const TUNNEL_RESTART_MS = 1000;
 const GUEST_PROXY = `http://127.0.0.1:${GUEST_PROXY_PORT}`;
 
-// Railway has no egress hook: jobs reach the workspace proxy only through the tunnel, by these variables.
 const PROXY_ENV = {
   HTTPS_PROXY: GUEST_PROXY,
   https_proxy: GUEST_PROXY,
@@ -93,16 +92,12 @@ const GUEST_ENV = { ...BASE_ENV, ...DESKTOP_ENV };
 
 const DEFAULT_CHECKPOINT_DELAY_MS = 30_000;
 
-// Railway destroys a sandbox after this much idle time. The heartbeat keeps a running workspace alive, so it only
-// bites a sandbox whose server died, and bounds how long a restarted server can still reconnect to it.
 const RAILWAY_IDLE_TIMEOUT_MINUTES = 30;
 
-// Also how soon a sandbox Railway destroyed is noticed: its exec streams do not end by themselves.
 const HEARTBEAT_MS = 10_000;
 
 const GH_ARCHIVE = `gh_${GH.version}_linux_amd64`;
 
-// Recipes hold text, so each file of the git template travels as base64 inside its step. Sorted: the recipe names the image.
 const gitTemplateSteps = readdirSync(GIT_TEMPLATE_SOURCES, {
   recursive: true,
   withFileTypes: true,
@@ -119,10 +114,6 @@ const gitTemplateSteps = readdirSync(GIT_TEMPLATE_SOURCES, {
     return `mkdir -p ${path.posix.dirname(target)} && echo ${readFileSync(source).toString("base64")} | base64 -d > ${target} && chmod 755 ${target}`;
   });
 
-/**
- * The base workspace image from the manifest. Railway's sandboxes are x86_64. Node is the gap: Railway's Ubuntu has its
- * own, which we leave.
- */
 export const BASE_RECIPE = {
   packages: BASE_PACKAGES,
   steps: [
@@ -143,26 +134,21 @@ type Recipe = typeof BASE_RECIPE;
 
 const PLAYWRIGHT_VERSION = "1.64.1";
 
-// The Chromium project's own build closest after the Stable 156 branch point; Playwright now ships Chrome for Testing.
 const CHROMIUM_REVISION = "1706547";
 
 const CHROMIUM_SHA256 =
   "4388c45a42d73f45141d22d08518393b52a2398933521a6ce67482e59284a69c";
 
-/**
- * The base image plus the bot desktop, as in the Dockerfile's desktop stage. Ubuntu ships Chromium only as a snap, which
- * a sandbox cannot run, so the browser is a pinned Chromium snapshot build.
- */
 export const DESKTOP_RECIPE: Recipe = {
   packages: [...BASE_RECIPE.packages, ...DESKTOP_PACKAGES],
   steps: [
     ...BASE_RECIPE.steps,
-    // Playwright knows the libraries Chromium needs on Ubuntu; it installs nothing else here.
+
     `bash -lc 'npx -y playwright@${PLAYWRIGHT_VERSION} install-deps chromium'`,
     `curl -fsSLo /tmp/chromium.zip https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/${CHROMIUM_REVISION}/chrome-linux.zip`,
     `echo "${CHROMIUM_SHA256}  /tmp/chromium.zip" | sha256sum -c -`,
     "unzip -q /tmp/chromium.zip -d /tmp && rm /tmp/chromium.zip",
-    // cua-driver attaches its page tools only to a Chromium it recognizes by path, as Debian installs it.
+
     "rm -rf /usr/lib/chromium && mv /tmp/chrome-linux /usr/lib/chromium && mv /usr/lib/chromium/chrome /usr/lib/chromium/chromium",
     "ln -sf /usr/lib/chromium/chromium /usr/local/bin/chromium",
     `curl -fsSLo /tmp/cua-driver.tgz https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER.version}/cua-driver-rs-${CUA_DRIVER.version}-linux-x86_64-binary.tar.gz`,
@@ -179,15 +165,10 @@ export type RailwayWorkspacesOptions = Omit<
   WorkspaceBackendOptions,
   "baseImage"
 > & {
-  /** Region of new sandboxes; one that already has a checkpoint stays where it is. */
   region?: string;
   checkpointDelayMs?: number;
 };
 
-/**
- * The workspaces when `CRUMBLE_WORKSPACE_BACKEND` is `railway`, otherwise undefined. The Railway SDK reads its
- * credentials itself: `RAILWAY_TOKEN` or `RAILWAY_API_TOKEN`, and `RAILWAY_ENVIRONMENT_ID`.
- */
 export function railwayWorkspacesFromEnv(
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
@@ -197,19 +178,12 @@ export function railwayWorkspacesFromEnv(
   }
 
   const region = env["CRUMBLE_RAILWAY_REGION"];
-  // Railway builds its images from recipes, so the admin's image setting does not apply.
+
   const { baseImage: _unused, ...railway } = options;
 
   return new RailwayWorkspaces({ ...railway, ...(region && { region }) });
 }
 
-/**
- * Railway-backed workspaces: one Railway sandbox per bot. Railway has no volumes, so a bot's files outlive its machine
- * as a named checkpoint of the whole disk: taken after `checkpointDelayMs` without a sync, and before every stop. A
- * server that dies leaves the sandbox running; the next server reconnects to it. Railway has no egress hook, so
- * connections are not filtered; sandboxes are isolated from the environment's private network. A bot gaining or losing
- * its bot desktop moves to the other image with its `/workspace`.
- */
 export class RailwayWorkspaces extends MachineWorkspaces {
   constructor(options: RailwayWorkspacesOptions) {
     const machines = new RailwayMachines(options);
@@ -246,7 +220,7 @@ export class RailwayMachines implements WorkspaceMachines {
   private readonly intercept:
     | ((agentId: string) => WorkspaceInterceptor)
     | undefined;
-  // Railway runs x86_64 sandboxes whatever the host is.
+
   private readonly daemon = daemonPath("x64");
 
   constructor(options: RailwayWorkspacesOptions) {
@@ -326,7 +300,6 @@ export class RailwayMachines implements WorkspaceMachines {
       });
     }
 
-    // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
     return (
       reconnected ??
       (yield* untilBooted(
@@ -361,7 +334,6 @@ export class RailwayMachines implements WorkspaceMachines {
     });
   }
 
-  // Each write and command is a request to Railway; in parallel they cost one round trip.
   private ops(machine: Sandbox): GuestOps {
     return {
       writeStep: "Writing the guest files",
@@ -416,7 +388,6 @@ export class RailwayMachines implements WorkspaceMachines {
       return sandbox;
     }
 
-    // Only template sandboxes take a region: checkpoints boot where their data lives and reject another one.
     const sandbox = await Sandbox.create(await this.buildTemplate(image), {
       ...options,
       ...(this.region && { region: this.region }),
@@ -425,7 +396,7 @@ export class RailwayMachines implements WorkspaceMachines {
     try {
       if (saved) {
         await copyWorkspace(name, sandbox, options);
-        // The checkpoint must hold the new image before the record says so.
+
         await checkpoint(sandbox, name);
       }
 
@@ -438,7 +409,6 @@ export class RailwayMachines implements WorkspaceMachines {
     return sandbox;
   }
 
-  /** Railway caches a template by its content, so later builds return at once. */
   private buildTemplate(image: string) {
     let template = this.templates.get(image);
 
@@ -525,9 +495,7 @@ class RailwayMachine implements WorkspaceMachine {
 
       this.tunnel = tunnel;
       await tunnel.done;
-    } catch {
-      // Retried below, like a tunnel that ended.
-    }
+    } catch {}
 
     if (this.stopped) {
       return;
@@ -535,11 +503,10 @@ class RailwayMachine implements WorkspaceMachine {
     setTimeout(() => void this.openTunnel(proxy), TUNNEL_RESTART_MS).unref();
   }
 
-  /** Ends the streams of a sandbox Railway destroyed, so pi-env reconnects to a new one instead of waiting. */
   private async beat() {
     const alive = await this.sandbox.heartbeat().then(
       (sandbox) => sandbox.status === "RUNNING",
-      // A sandbox of unknown state keeps its streams until the next beat.
+
       () => this.alive().catch(() => true),
     );
 
@@ -580,7 +547,6 @@ class RailwayMachine implements WorkspaceMachine {
     });
   }
 
-  /** Rejects when Railway cannot tell, so a failed request never counts as a gone sandbox. */
   private alive() {
     return this.sandbox.refresh().then(
       (sandbox) => sandbox.status === "RUNNING",
@@ -637,10 +603,6 @@ class RailwayMachine implements WorkspaceMachine {
     };
   }
 
-  /**
-   * Schedules a checkpoint instead of waiting for one: a checkpoint takes seconds, and a server crash loses nothing
-   * while the sandbox runs on and the next server reconnects.
-   */
   get sync() {
     return Effect.sync(() => {
       clearTimeout(this.checkpointTimer);
@@ -657,10 +619,6 @@ class RailwayMachine implements WorkspaceMachine {
     });
   }
 
-  /**
-   * Destroys the sandbox only after a checkpoint succeeded or Railway confirmed it gone; otherwise it keeps running,
-   * for the next boot to reconnect to or Railway's idle timeout to end.
-   */
   get stop() {
     return Effect.tryPromise({
       try: async () => {
@@ -684,7 +642,6 @@ class RailwayMachine implements WorkspaceMachine {
     });
   }
 
-  /** One checkpoint at a time; a request during one takes another after it, so it covers every earlier write. */
   private checkpoint() {
     const next = this.checkpointing
       .catch(() => {})
@@ -732,7 +689,6 @@ const startDesktop = Effect.fn("startDesktop")(function* (
   }
 });
 
-/** A checkpoint snapshots the disk, not the guest's page cache, so recent writes need a `sync` first. */
 async function checkpoint(sandbox: Sandbox, name: string) {
   await run(sandbox, "sync");
   await sandbox.checkpoint(name);

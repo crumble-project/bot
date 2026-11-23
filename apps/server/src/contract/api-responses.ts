@@ -527,7 +527,6 @@ export const scheduleRunResponse = z
   })
   .openapi("ScheduleRun");
 
-// One object with optional fields rather than a union, so client generators keep it.
 const memorySourceResponse = z
   .object({
     kind: z.enum(MEMORY_SOURCE_KINDS),
@@ -747,7 +746,6 @@ export const memoryResponse = z
     id: z.string(),
     agentId: z.string().nullable(),
     content: z.string(),
-    // Null for memories saved before sources were recorded. A bare nullable union keeps generators' projection simple.
     source: z.union([memorySourceResponse, z.null()]),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -787,8 +785,6 @@ export const skillUpdateResponse = z
     description: "The newer upstream commit of an installed skill.",
   });
 
-// The published shape of a skill, kept as is: ListedSkill refers to it, and a changed member of that union would be
-// a breaking change. Responses permit additional properties, so handlers return the full package anyway.
 export const skillResponse = z
   .object({
     id: z.string(),
@@ -799,7 +795,6 @@ export const skillResponse = z
   })
   .openapi("Skill");
 
-/** A skill as a full package, with its documents, provenance, usage, and lifecycle. A plain object, not an extension of Skill, so generators see one typed object. */
 export const skillPackageResponse = z
   .object({
     id: z.string(),
@@ -807,7 +802,6 @@ export const skillPackageResponse = z
     instructions: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
-    // The bot that owns the skill; null for a shared skill.
     agentId: z.string().nullable(),
     description: z.string(),
     documents: z.array(skillDocumentResponse),
@@ -851,7 +845,6 @@ const changeSourceResponse = z
 export const learnedChangeResponse = z
   .object({
     id: z.string(),
-    // The bot whose skill or memory changed; null for a shared one.
     agentId: z.string().nullable(),
     actor: z.enum(CHANGE_ACTORS),
     target: z.enum(CHANGE_TARGETS),
@@ -916,7 +909,6 @@ const operationalActivity = z
 const changeActivity = z
   .object({
     id: z.string(),
-    // Null for a change to the shared library.
     agentId: z.string().nullable(),
     agentName: z.string().nullable(),
     timestamp: z.number(),
@@ -959,11 +951,9 @@ export const providerResponse = z
     name: z.string(),
     configured: z.boolean(),
     authMethods: z.array(loginMethod),
-    /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
     apiKey: secretStatusResponse,
     activeLoginId: z.string().nullable(),
-    /** Set for providers whose sign-in happens outside Crumble; they have no `authMethods`. */
     externalAuth: externalAuthResponse.nullable(),
   })
   .openapi("Provider");
@@ -988,13 +978,11 @@ export const usageResponse = z
   })
   .openapi("Usage");
 
-/** One object rather than a union, so generated clients keep the nullable prompt. */
 export const loginPrompt = z.object({
   id: z.string(),
   type: z.enum(["text", "secret", "select", "manual_code"]),
   message: z.string(),
   placeholder: z.string().optional(),
-  /** Present exactly for `select`; answer with an option's `id`. */
   options: z
     .array(
       z.object({
@@ -1190,8 +1178,6 @@ export const learnedEvent = z
       "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record.",
   });
 
-// LearnedEvent is its own `learned` SSE event, not a member of this union: adding a member would be a breaking
-// change for clients that read the union as closed, while a new event name is ignored by every client.
 export const activityEvent = z
   .discriminatedUnion("type", [replyEvent, chatPreviewEvent])
   .openapi("ActivityEvent");

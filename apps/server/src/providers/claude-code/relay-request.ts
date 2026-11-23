@@ -1,10 +1,7 @@
-// Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { z } from "zod";
 
 const UNCACHEABLE = new Set(["thinking", "redacted_thinking"]);
 
-// Anthropic's cache lookup checks at most this many positions back from a breakpoint, the breakpoint itself
-// included, and allows this many breakpoints across tools, system and messages.
 const LOOKBACK = 20;
 const MAX_BREAKPOINTS = 4;
 
@@ -40,14 +37,9 @@ type Native = z.infer<ReturnType<typeof z.json>>;
 
 type Position = { message: number; index: number; block: Block };
 
-/** Whether the schema accepts the parsed request, proven by parsing it rather than by its TypeScript type. */
 const isBody = <T>(value: T): value is T & Body =>
   body.safeParse(value).success;
 
-/**
- * The native request, validated; the parsed object itself is returned so its key order survives re-encoding, which is
- * what `body.parse` would reorder.
- */
 function decode(payload: string): Body | undefined {
   let raw: Native;
 
@@ -105,10 +97,6 @@ const before = (
   left.message < right.message ||
   (left.message === right.message && left.index < right.index);
 
-/**
- * Put the host's first user turn ahead of the context native prepends to it, on the conversation's first request
- * only, so the frame becomes a prefix the next request replays unchanged.
- */
 function frameFirst(messages: Array<Message>, queried: ReadonlyArray<Block>) {
   if (messages.some((item) => item.role === "assistant")) {
     return false;
@@ -138,7 +126,6 @@ function frameFirst(messages: Array<Message>, queried: ReadonlyArray<Block>) {
   return true;
 }
 
-// The only trailing system text moved: native's date line, exactly as its opening request ends the environment.
 const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
 
 function singleBlock(content: Message["content"] | undefined) {
@@ -264,11 +251,6 @@ function dropHistoricalContext(
   return true;
 }
 
-/**
- * Keep native's per-request context in the prefix later requests replay: append the trailing date line to the
- * environment message, and drop plain text before the queried frame on later user turns. Anything unexpected
- * forwards unchanged.
- */
 export function stableRequestContext(
   payload: string,
   queried: ReadonlyArray<Block> | undefined,
@@ -284,7 +266,6 @@ export function stableRequestContext(
   return relocated || dropped ? encode(value) : payload;
 }
 
-// A top-level message mark, which the schema leaves among the unread fields.
 const cacheControlOf = (item: Message) => {
   const parsed = cacheControl.safeParse(item["cache_control"]);
 
@@ -359,12 +340,6 @@ function moveTurnMark(
   return true;
 }
 
-/**
- * Keep a breakpoint where the open turn's thinking starts, so the next turn still reads it: after a tool loop longer
- * than the cache lookback, the recurring breakpoint cannot reach that entry. The mark goes on the last cacheable
- * block of the user message right before the turn's first assistant message with thinking, only within the
- * breakpoint limit; at the limit a spare native mark moves there instead.
- */
 function keepTurnMark(
   value: Body,
   messages: Array<Message>,
@@ -457,11 +432,6 @@ function foldMarks(
   return true;
 }
 
-/**
- * Keep the recurring message `cache_control` on content the next request replays unchanged: everything through the
- * last assistant message, plus the leading blocks of the newest turn equal to the queried frame. Marks after that
- * span fold onto its last block; system and tools marks are never touched, and the count never grows past four.
- */
 export function pinMessageBreakpoint(
   payload: string,
   queried: ReadonlyArray<Block> | undefined,
@@ -522,10 +492,6 @@ export function dropMessageBreakpoints(payload: string) {
   return dropped ? encode(value) : payload;
 }
 
-/**
- * Ask the API to stream tool arguments as the model writes them. Native turns this on only for a first-party base
- * URL, so behind the relay a large argument arrives only when complete. A value native already set wins.
- */
 export function streamToolInput(payload: string) {
   const value = decode(payload);
 
@@ -590,7 +556,6 @@ function restoreContent(sent: Block["content"], host: Block["content"]) {
 }
 
 function restoreToolResult(sent: Block, host: Block, restored: Block) {
-  // Missing means false.
   if ((sent.is_error ?? false) !== (host.is_error ?? false)) {
     return unmatched();
   }
@@ -707,10 +672,6 @@ function queriedResultIds(queried: ReadonlyArray<Block>) {
   return ids;
 }
 
-/**
- * Restore the host's exact tool-result frame in the newest user message, anchored by its unique ordered result IDs.
- * Only trailing bare text native added is dropped; anything that cannot be proven lossless throws.
- */
 export function restoreQueriedTurn(
   payload: string,
   queried: ReadonlyArray<Block> | undefined,

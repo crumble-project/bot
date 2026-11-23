@@ -96,9 +96,6 @@ async function assignBot(skill: SelectableSkill, bot: Bot, assigned: boolean) {
   }
 }
 
-/** Different bots are independent; cap requests at four and retain input-order results.
- * Skills still run in order so two operations never race on the same bot's assignments.
- */
 async function assignBots(
   skill: SelectableSkill,
   bots: Array<Bot>,
@@ -171,10 +168,8 @@ export async function applyBulkAction(
     apply = updater(await checkUpdates(), messages);
   }
 
-  // Skills run in order, so two operations never race on one bot's assignments.
   for (const skill of picked) {
     try {
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       if (await apply(skill)) {
         failed.add(skill.id);
       }

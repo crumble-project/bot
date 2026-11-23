@@ -34,7 +34,6 @@ type FakeQuery = {
 };
 
 function fakeHarness(entries: FakeEntry[]): Harness {
-  // SAFETY: The fake harness only implements the root conversation's reads, which transcript helpers use.
   return Object.assign({} as Harness, {
     root: async () => ({
       entries: async (query: FakeQuery, limit: number, cursor?: Cursor) => {

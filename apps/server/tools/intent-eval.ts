@@ -1,8 +1,3 @@
-// Runs the intent check's judge on labeled desktop actions and reports latency, tokens, cost, and how often each
-// in-intent threshold holds what the owner asked for or lets through what they didn't. Makes paid calls; run locally,
-// not in CI, with the provider's key in the environment (such as TYPESAFE_API_KEY in apps/server/.env.local):
-//   bun tools/intent-eval.ts [provider/model ...] [--out results.json]
-// Defaults to typesafe/jev-latest.
 import { writeFileSync } from "node:fs";
 import { logInfo } from "../src/shared/process-log";
 import type {
@@ -109,7 +104,6 @@ async function judged(
   };
 }
 
-// The same decision as `decide`, with the in-intent bar as a parameter.
 const held = (result: Result, threshold: number) =>
   (result.commitPoint || result.irreversible >= 0.5) &&
   result.inIntent < threshold;
@@ -182,7 +176,6 @@ for (const ref of refs.length ? refs : ["typesafe/jev-latest"]) {
   const model = await classifier(ref);
   const results: Array<Result> = [];
 
-  // One at a time, so each latency is the judge's own.
   for (const each of INTENT_CASES) {
     results.push(await judged(model, each));
   }

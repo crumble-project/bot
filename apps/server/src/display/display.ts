@@ -114,7 +114,6 @@ function showTool(charts: ChartCompiler) {
     name: DISPLAY_TOOL_NAME,
     description: SHOW_DESCRIPTION,
     parameters: Type.Object({ component }),
-    // Scripts cannot render to the owner, so code mode keeps this as a direct model tool.
     callers: ["model"],
     replay: "safe",
     execute: async ({ component }, _api, context) => {
@@ -133,7 +132,6 @@ function showTool(charts: ChartCompiler) {
         };
       }
 
-      // Clients receive the compiled layouts, never the code.
       const { code, height, ...chart } = component;
 
       const layouts = await charts.compile(
@@ -143,7 +141,6 @@ function showTool(charts: ChartCompiler) {
 
       const details = {
         ...chart,
-        // The layouts are stored as JSON: the style keys they leave undefined stay out of it.
         layouts: copyJson(layouts, { omitUndefinedProperties: true }),
       };
 

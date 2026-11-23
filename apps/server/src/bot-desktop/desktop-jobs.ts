@@ -48,8 +48,6 @@ export type DesktopLogins = {
 
 type DesktopJobs = {
   desktop: JobKind;
-  // One tool per bot: the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running job must
-  // keep its snapshots and the lease change count it last saw.
   tools: Map<string, ComputerUseTool>;
   control: DesktopControlAccess;
   logins: DesktopLogins;
@@ -89,7 +87,6 @@ function desktopExtensions(
       workspaceNotesSection(desktop.isJob, false),
       {
         key: "desktop_logins",
-        // Installed job extensions render in the bot's chat too; only a job needs this.
         render: async (input, context) =>
           (await desktop.isJob(input.read, input.conversationId, context))
             ? jobLoginSection(logins.access.list(agent.id))

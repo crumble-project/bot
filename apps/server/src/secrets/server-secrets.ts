@@ -27,7 +27,7 @@ export class PendingStates extends Context.Service<
       state: string,
       data: Record<string, string>,
     ) => Effect.Effect<void>;
-    /** The saved data; undefined when unknown or older than `ttlMs`. */
+
     readonly read: <T extends { createdAt: number }>(
       flow: string,
       state: string,

@@ -146,7 +146,6 @@ export function memoryExtension(
       ),
       shared: Type.Optional(Type.Boolean()),
     }),
-    // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
     replay: "unsafe",
     execute: async (args, api, callContext) => {
       const live = await api.snapshot(LiveDoc, api.conversationId, callContext);

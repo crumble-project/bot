@@ -2,7 +2,6 @@ import type net from "node:net";
 import path from "node:path";
 import type { MachineStream } from "../machine-workspaces";
 
-/** The guest program; frames are described there. */
 export const TUNNEL_SCRIPT = path.join(import.meta.dir, "workspace-tunnel.py");
 
 export const GUEST_PROXY_PORT = 3128;
@@ -49,7 +48,6 @@ async function readFrames(
 
 export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   const sockets = new Map<number, net.Socket>();
-  // Writes to the guest are async; chaining keeps frames whole and in order.
   let writes = Promise.resolve();
 
   const write = (data: Buffer) => {
@@ -105,9 +103,7 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
     async close() {
       try {
         await stream.end();
-      } catch {
-        // The stream may already be gone with its machine.
-      }
+      } catch {}
 
       for (const socket of sockets.values()) {
         socket.destroy();

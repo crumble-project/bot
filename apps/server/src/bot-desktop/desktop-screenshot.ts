@@ -62,7 +62,6 @@ async function passwordCheck(
 }
 
 async function grab(shell: DesktopShell, context: Context) {
-  // Unique per call: a file left by another capture can never stand in for this one.
   const jpg = `/tmp/desktop-screenshot-${randomUUID()}.jpg`;
 
   try {
@@ -105,7 +104,6 @@ export async function captureDesktop(
     return { error: NO_DESKTOP_IMAGE };
   }
 
-  // Held before the check, so the idle stop can't come between it and the capture.
   const release = workspaces.keepAwake(agentId);
 
   try {
@@ -138,7 +136,6 @@ export function desktopScreenshotExtension(
       "Show the owner a screenshot of your bot desktop's whole screen inline in the chat, and see it yourself. Use it when the owner asks to see the desktop or when a picture of it answers better than words. " +
       "It only captures a desktop that is already running and never starts one. Your turn ends once it is shown, so call it last and write any text before the call.",
     parameters: Type.Object({}),
-    // Scripts cannot render to the owner, so code mode keeps this as a direct model tool.
     callers: ["model"],
     replay: "safe",
     execute: async (_args, _api, context) => {

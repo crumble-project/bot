@@ -54,12 +54,10 @@ const storedSettings = Schema.Array(
   Schema.Struct({ key: Schema.String, value: Schema.String }),
 );
 
-/** Each setting's own schema, so a stored value decodes to the type of the setting it belongs to. */
 const settingSchemas: {
   readonly [K in keyof ServerSettings]: z.ZodType<ServerSettings[K]>;
 } = serverSettingsSchema.shape;
 
-/** One decode per key: a value stored by an older or newer server can't reset the settings beside it. */
 function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
   const stored = new Map(rows.map((row) => [row.key, row.value]));
 

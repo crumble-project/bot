@@ -164,9 +164,8 @@ describe("Store", () => {
       replyTo: "assistant@example.com",
     });
 
-    // SAFETY: The execution row includes the optional replyTo field.
     expect((execution as any).replyTo).toBe("assistant@example.com");
-    // SAFETY: The update payload intentionally exercises the nullable field.
+
     expect(
       (store.updateExecution(execution.id, { replyTo: null } as any) as any)
         .replyTo,
@@ -422,7 +421,6 @@ describe("Store", () => {
   test("persists inference settings through updates and duplication", () => {
     const store = new Store(make());
 
-    // SAFETY: This fixture supplies the inference extension accepted by the store schema.
     const agent = store.createAgent({
       ...input,
       inference: {
@@ -432,21 +430,18 @@ describe("Store", () => {
       },
     } as any);
 
-    // SAFETY: The created agent includes the persisted inference field.
     expect((agent as any).inference).toEqual({
       thinkingLevel: "max",
       temperature: 0.2,
       maxOutputTokens: 400,
     });
 
-    // SAFETY: This fixture supplies the inference extension accepted by the store schema.
     const updated = store.updateAgent(agent.id, {
       inference: { thinkingLevel: "minimal" },
     } as any)!;
 
-    // SAFETY: The updated agent includes the persisted inference field.
     expect((updated as any).inference).toEqual({ thinkingLevel: "minimal" });
-    // SAFETY: Duplicated agents preserve the persisted inference field.
+
     expect((store.duplicateAgent(agent.id) as any).inference).toEqual({
       thinkingLevel: "minimal",
     });
@@ -463,14 +458,13 @@ describe("Store", () => {
       title: "Archive me",
     });
 
-    // SAFETY: Conversations expose the optional archived field.
     expect((conversation as any).archived).toBe(false);
     expect(store.archiveConversation(conversation.id)?.archived).toBe(true);
     expect(store.listConversations(agent.id)).toHaveLength(0);
     expect(store.listConversations(agent.id, true)).toHaveLength(1);
     store.close();
     const reopened = new Store(dir);
-    // SAFETY: Reopened conversations expose the optional archived field.
+
     expect((reopened.getConversation(conversation.id) as any)?.archived).toBe(
       true,
     );

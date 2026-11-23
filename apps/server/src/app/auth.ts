@@ -49,7 +49,6 @@ export const adminCount = (adapter: Pick<DBAdapter, "count">) =>
     where: [{ field: "role", value: ADMIN_ROLE }],
   });
 
-/** Promotes the oldest user on a server that has users but no admin, as one upgraded from before roles. */
 async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
   if (await adminCount(adapter)) {
     return;
@@ -70,10 +69,6 @@ async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
   }
 }
 
-/**
- * The origin passkeys are bound to. WebAuthn rejects IP addresses as relying
- * party IDs, so a loopback origin maps to `localhost` on the same port.
- */
 export function passkeyOriginFor(baseURL: string) {
   const url = new URL(baseURL);
 
@@ -93,7 +88,6 @@ const isFirstUser = async <O extends BetterAuthOptions>(
 ) => (await adapter.count({ model: "user" })) === 0;
 
 function signUpGate() {
-  // Set once Better Auth is up; hooks only run on requests, after that.
   let settings: ServerSettingsStore;
   let inviteStore: Invites;
 
@@ -122,13 +116,10 @@ function signUpGate() {
 
 type SignUpGate = ReturnType<typeof signUpGate>;
 
-/** What the server does when an account changes, beyond saving it. */
 export type AccountHooks = {
-  /** Every saved account update, with the pins it now has: a theme change reports unchanged pins. */
   onPinsChanged?: (userId: string, pins: Array<string>) => void;
 };
 
-/** The pins on a saved user row: Better Auth hands hooks the stored JSON text, not the array. */
 const storedPins = fallingBackTo(
   z
     .string()
@@ -157,7 +148,6 @@ const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
         },
       },
       create: {
-        // Every way to create a user passes here: the gate for closed sign-up and the first admin.
         async before(user, context) {
           if (!context) {
             throw signUpClosed();
@@ -198,7 +188,6 @@ const userDatabaseHooks = (gate: SignUpGate, hooks: AccountHooks) =>
 
 const passkeyRegistration = (gate: SignUpGate) =>
   ({
-    // A signed-in owner adds passkeys as before; without a session, a passkey alone signs up.
     requireSession: false,
     async resolveUser({ ctx, context }) {
       const signUp = Schema.decodeUnknownOption(PasskeySignUp)(context);

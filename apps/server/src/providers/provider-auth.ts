@@ -109,11 +109,6 @@ export type ProviderSignInsAccess = Pick<
   | "status"
 >;
 
-/**
- * Relays Pi AI login flows to clients. Sessions live in memory only: a restart ends them, while saved credentials stay
- * encrypted in the database. Raw provider errors never leave this module, because Pi AI can put token responses into
- * them.
- */
 export class ProviderSignIns extends Context.Service<
   ProviderSignIns,
   ProviderSignInsAccess
@@ -198,13 +193,11 @@ class SignInSessions {
     return this.project(session);
   }
 
-  /** Replaces the saved credential with an API key; a pending sign-in for the provider can no longer save its result. */
   async setApiKey(providerId: string, key: SecretInput) {
     this.invalidate(providerId);
     await this.credentials.setApiKey(providerId, key);
   }
 
-  /** Removes the saved credential. The provider's grant and any ambient credential stay as they are. */
   async signOut(providerId: string) {
     this.invalidate(providerId);
     await this.credentials.delete(providerId);
@@ -515,7 +508,6 @@ class SignInSessions {
     this.end(session, "failed");
   }
 
-  /** Synchronous, so a commit guard that has passed cannot be overtaken by a cancellation. */
   private end(
     session: Session,
     status: Exclude<LoginSession["status"], "pending">,
@@ -532,7 +524,7 @@ class SignInSessions {
     }
     session.controller.abort(new Error("Login ended"));
     session.prompt = null;
-    // Links and codes authorize only this attempt; keep them no longer than it runs.
+
     session.events = session.events.filter(
       (event) => event.type !== "auth_url" && event.type !== "device_code",
     );
@@ -676,7 +668,6 @@ function copyEvent(event: AuthEvent): LoginEvent {
 }
 
 function trimEvents(events: Array<LoginEvent>) {
-  // The current authorization link or device code outlives older messages.
   while (events.length > MAX_EVENTS) {
     const index = events.findIndex(
       (item) => item.type !== "auth_url" && item.type !== "device_code",

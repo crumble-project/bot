@@ -98,7 +98,6 @@ export const botsNotifications = (context: BotsContext) => {
   ) {
     const owner = yield* agents.get(answer.agentId);
 
-    // Bots of another server in the same process are not this account's.
     if (!owner) {
       return;
     }

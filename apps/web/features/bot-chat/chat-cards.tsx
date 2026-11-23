@@ -51,7 +51,6 @@ export function shownInChat(message: Message) {
     case "toolResult":
       return cardOf(message) !== null;
     case "event":
-      // An outside call shows as one card where its end notice is.
       return message.content.trim() !== "" && !message.call?.callee;
     default:
       return false;

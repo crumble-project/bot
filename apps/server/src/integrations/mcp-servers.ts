@@ -53,10 +53,6 @@ export class McpServers extends Context.Service<
       input: z.output<typeof mcpCreateInput>,
       owner: Agent | null,
     ) => Effect.Effect<McpServerSecrets, AppError>;
-    /**
-     * Saves the secrets an edit sends. A new token, or another OAuth app, closes the open connection; another OAuth app
-     * also signs the server out, since tokens belong to the client that obtained them.
-     */
     readonly update: (
       old: MCPServer,
       input: z.output<typeof mcpInput>,
@@ -157,7 +153,6 @@ export class McpServers extends Context.Service<
         yield* integrations.disconnect(id);
       });
 
-      // A bot's personal servers go with it in the delete's cascade, so they are listed first.
       yield* deletion.register((agentId) =>
         Effect.map(servers.list, (all) =>
           Effect.forEach(

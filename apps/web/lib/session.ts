@@ -10,7 +10,6 @@ export function resetSession() {
   }
 }
 
-/** Where sign-in returns to: a path on this site, never another origin or the sign-in page. */
 export function returnPath(next: string | null | undefined): string {
   if (!next?.startsWith("/")) {
     return "/";
@@ -27,7 +26,6 @@ export function returnPath(next: string | null | undefined): string {
   return next;
 }
 
-/** The sign-in page, returning to `path` afterwards. */
 export function connectPath(path: string): string {
   const next = returnPath(path);
 

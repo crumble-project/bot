@@ -50,7 +50,6 @@ const reviewScope = (
 export class LearningReview extends Context.Service<
   LearningReview,
   {
-    /** A review interrupted by a restart is dropped: its conversation is aborted and forgotten. */
     readonly recover: Effect.Effect<void>;
     readonly afterExecution: (execution: Execution) => Effect.Effect<void>;
     readonly afterJob: (finished: JobFinished) => Effect.Effect<void>;
@@ -235,7 +234,6 @@ export class LearningReview extends Context.Service<
         ) {
           const { submissionId } = execution;
 
-          // A callee's words must never reach a conversation that writes memory or skills.
           if (isCallTurn(execution)) {
             return;
           }

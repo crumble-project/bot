@@ -19,7 +19,6 @@ function getServerSnapshot(): ColorScheme {
   return "light";
 }
 
-// Lisse and the highlighter read colors once in JS, so CSS media queries alone can't restyle them.
 export function useColorScheme() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

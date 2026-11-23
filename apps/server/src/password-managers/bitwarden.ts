@@ -10,7 +10,6 @@ import type { PasswordManagerVendor, SecretRead } from "./password-manager";
 
 const NAME = "Bitwarden";
 
-// The native SDK has no Linux arm64 build; importing it on first use keeps the server starting there.
 const sdk = Effect.tryPromise({
   try: () => import("@bitwarden/sdk-napi"),
   catch: (cause) =>
@@ -29,7 +28,6 @@ export const bitwarden: PasswordManagerVendor = {
       const { BitwardenClient } = yield* sdk;
       const client = new BitwardenClient();
 
-      // The SDK rejects a malformed token locally; the server's answer to a revoked one is UNKNOWN, so it reads as unreachable.
       yield* Effect.tryPromise({
         try: () => client.auth().loginAccessToken(Redacted.value(token)),
         catch: (cause) =>
@@ -44,7 +42,6 @@ export const bitwarden: PasswordManagerVendor = {
       });
 
       return {
-        // Errors are untyped messages, and how a missing secret differs from a network failure is UNKNOWN.
         read: (references) =>
           Effect.tryPromise({
             try: () => client.secrets().getByIds([...references]),
@@ -55,7 +52,6 @@ export const bitwarden: PasswordManagerVendor = {
               }),
           }).pipe(
             Effect.map(({ data }) => {
-              // UUIDs match in any case, and the reference check accepts any case.
               const values = new Map(
                 data.map((secret) => [secret.id.toLowerCase(), secret.value]),
               );

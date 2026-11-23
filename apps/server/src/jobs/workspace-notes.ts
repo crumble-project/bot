@@ -13,7 +13,6 @@ export const WORKSPACE_NOTES_MAX_BYTES = 4096;
 
 export const WORKSPACE_NOTES_SECTION = "workspace_notes";
 
-/** The bot's own workspace section, in its chat; job sections use other keys, which it must not shadow. */
 export const WORKSPACE_SECTION = "workspace";
 
 const NOTES_PATH = `${WORKSPACE_PATH}/${WORKSPACE_NOTES_FILE}`;
@@ -75,10 +74,6 @@ export async function readWorkspaceNotes(
   }
 }
 
-/**
- * The workspace notes in a job's prompt. `writable` jobs are told to keep them current. Installed job extensions render
- * in the bot's chat too, where `chatWorkspaceSection` shows the notes instead: there this reads and renders nothing.
- */
 export const workspaceNotesSection = (
   isJob: (
     reader: DocumentReader,
@@ -112,10 +107,6 @@ export const workspaceNotesSection = (
 
 const SERVERS = `To leave a server or other long-running program running, start it in its own session with its output in a log file: ${SETSID_COMMAND}`;
 
-/**
- * The workspace in the bot's own conversations. Rendering never boots the machine: the notes show only while it runs,
- * and otherwise a pointer to them does.
- */
 export const chatWorkspaceSection = (
   running: () => boolean,
 ): PromptSection => ({

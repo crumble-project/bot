@@ -1,7 +1,4 @@
 #!/usr/bin/env bun
-// A stand-in for Claude Code's stream-json mode: acknowledges replayed frames, sends one Messages request through
-// ANTHROPIC_BASE_URL, echoes the reply as stream-json, and ends a tool call with `error_max_turns` like the real CLI.
-// No credentials or network beyond the loopback relay.
 import {
   appendFileSync,
   existsSync,
@@ -13,7 +10,6 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 
-// Claude Code gets an allowlisted environment, so test settings travel in a file in its config directory.
 const settingsFile = `${process.env["CLAUDE_CONFIG_DIR"] ?? ""}/fake.json`;
 
 const env = {
@@ -190,7 +186,6 @@ if (env["FAKE_MODE"] === "hang") {
   emit({ type: "assistant", message: { role: "assistant", content: [] } });
 
   if (stopReason === "max_tokens" && env["FAKE_RECOVER"] === "1") {
-    // Claude Code asks again after a cut-off reply; the relay must refuse.
     const again = await request();
 
     emit({
@@ -205,7 +200,6 @@ if (env["FAKE_MODE"] === "hang") {
   }
 
   if (stopReason === "tool_use") {
-    // dontAsk mode denies the call before the turn limit, with `message` as a string.
     emit({
       type: "system",
       subtype: "permission_denied",

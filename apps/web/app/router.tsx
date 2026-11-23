@@ -172,7 +172,6 @@ const activityRoute = createRoute({
   component: ActivityPage,
 });
 
-// Not linked from the navigation: a place to hear the notification sounds.
 const soundsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/sounds",
@@ -225,7 +224,6 @@ const settingsIndexRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/",
   beforeLoad: () => {
-    // `throw: true` throws the redirect Response, which is not an Error.
     redirect({ to: "/settings/general", replace: true, throw: true });
   },
 });
@@ -388,7 +386,7 @@ export const router = createRouter({
   ),
   defaultPreload: "intent",
   defaultViewTransition: true,
-  // Query owns caching; the router only triggers loads.
+
   defaultPreloadStaleTime: 0,
   defaultErrorComponent: ({ error }) => (
     <Empty>

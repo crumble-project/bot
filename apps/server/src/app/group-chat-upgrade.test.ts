@@ -26,6 +26,7 @@ import {
   fauxProvider,
 } from "@earendil-works/pi-ai/providers/faux";
 import { migrateFile, migrationsFolder } from "../shared/database";
+import { readCommentFreeMigrations } from "../shared/migration-files";
 import { removeLegacyGroupChats } from "./group-chat-upgrade";
 import { openReviewConversation, ReviewAnchor } from "../learning/review-kind";
 import { defineDoc } from "@earendil-works/pi-durable";
@@ -261,10 +262,9 @@ async function fixture() {
     "20261111195518_file_library_deleted",
     "20261112101421_library_file_descriptions",
   ])
-    for (const statement of readFileSync(
-      join(migrationsFolder("store"), migration, "migration.sql"),
-      "utf8",
-    ).split("--> statement-breakpoint"))
+    for (const statement of readCommentFreeMigrations(
+      migrationsFolder("store"),
+    ).find((entry) => entry.name === migration)!.sql)
       db.run(statement);
   db.run(
     "DELETE FROM __drizzle_migrations WHERE name = '20261122205418_remove_group_chats'; INSERT INTO group_chats (id, name, created_at, updated_at) VALUES ('live-group', 'Legacy', 'now', 'now'); INSERT INTO group_members (group_id, agent_id, joined_at, conversation_id) VALUES ('live-group', 'member', 'now', 'member:3'); INSERT INTO group_turns VALUES ('member-execution-3', 'live-group', 'member', 1, 0, 'settled', 'now')",

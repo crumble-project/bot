@@ -46,7 +46,6 @@ const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
 
 const addressed = (recipient: string) => recipient.trim().replace(/^@/, "");
 
-/** Throws the abort reason once the tool call is cancelled, as Pi tools do. */
 const checkAborted = (context: PiContext) =>
   Effect.sync(() => context.abortSignal?.throwIfAborted());
 
@@ -140,14 +139,9 @@ export class BotMessaging extends Context.Service<
       executionId: string,
       options?: { waitMs?: number; context?: PiContext },
     ) => Effect.Effect<DelegationResult, AppError>;
-    /**
-     * Passes a job's question to the bot that delegated the job's task, as a turn in that bot's chat. False when the
-     * job's work came from no delegation, or its bot may no longer message the job's bot: the owner answers then.
-     */
     readonly relayQuestion: (
       asked: JobAsked,
     ) => Effect.Effect<boolean, AppError>;
-    /** The delegating bot's answer to a job question relayed to it; fails once the question was answered. */
     readonly answerQuestion: (
       sourceId: string,
       input: { questionId: string; answer: string },
@@ -255,7 +249,6 @@ export class BotMessaging extends Context.Service<
         };
       });
 
-      /** Writes the exchange's message into the transcript of `sourceId`, the bot that sent the request. */
       const record = Effect.fnUntraced(function* (
         sourceId: string,
         execution: Execution,
@@ -344,8 +337,6 @@ export class BotMessaging extends Context.Service<
         return work;
       });
 
-      // Only completed answers belong to the caller. Partial output and other
-      // turns in the recipient's chat remain private.
       const turnResponse = (
         answering: Agent,
         { status, submissionId, conversationId }: Execution,
@@ -363,8 +354,6 @@ export class BotMessaging extends Context.Service<
             )
           : Effect.succeed([]);
 
-      // Reserve the destination before awaiting chat admission. A replay cannot send
-      // the same tool invocation to a second bot or change its message.
       const reserveTarget = Effect.fnUntraced(function* (
         from: Agent,
         addressee: string,
@@ -374,7 +363,6 @@ export class BotMessaging extends Context.Service<
         const saved = yield* delegations.request(requestId);
         const recipient = normalize(addressed(addressee));
 
-        // An in-flight tool keeps its resolved destination if the bot is renamed.
         const target =
           saved?.recipient === recipient
             ? yield* bots.agent(saved.targetAgentId)
@@ -456,7 +444,6 @@ export class BotMessaging extends Context.Service<
 
           const chat = yield* bots.chat(target.id);
           yield* checkAborted(context);
-          // Opening a chat may yield: recheck permissions and capacity immediately before send.
           yield* authorize(
             yield* source(from.id),
             yield* bots.agent(target.id),

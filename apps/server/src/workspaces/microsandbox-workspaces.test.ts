@@ -23,7 +23,6 @@ const vmTests = process.env["CRUMBLE_VM_TESTS"] === "1" && IMAGE !== "";
 
 const OTHER_IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE_OTHER"] ?? "";
 
-// Sandboxes and volumes are global to the Microsandbox home, so each run gets its own names.
 const namePrefix = `crumble-test-${process.pid}`;
 const size = () => ({ cpus: 2, memoryMib: 4096 });
 

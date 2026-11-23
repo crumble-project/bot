@@ -5,13 +5,10 @@ export const THEMES = ["system", "light", "dark"] as const;
 
 export type Theme = (typeof THEMES)[number];
 
-/** Messages allows nine pins: three rows of three. */
 export const MAX_PINS = 9;
 
-/** A pinned bot chat: `agent:<botId>`. */
 export const pinKey = z.string().regex(/^agent:\S+$/);
 
-/** The pinned conversations in order, first pin first. */
 export const pinnedConversations = z
   .array(pinKey)
   .max(MAX_PINS)
@@ -19,7 +16,6 @@ export const pinnedConversations = z
     message: "A conversation is pinned once",
   });
 
-/** Per-person settings stored as columns on Better Auth's user table and returned with the session. */
 export const userPreferenceFields = {
   theme: {
     type: [...THEMES],
@@ -29,15 +25,11 @@ export const userPreferenceFields = {
     validator: { input: z.enum(THEMES) },
   },
   pinnedConversations: {
-    // Not "string[]": SQLite stores that as TEXT, which Better Auth then reports as a type mismatch
-    // on every start. "json" is also TEXT, and comes back as the array.
     type: "json",
     required: false,
     defaultValue: [],
     input: true,
     validator: { input: pinnedConversations },
-    // Accounts from before this field hold NULL, not the default; they have no pins yet. Clients
-    // read a missing field as a server too old to keep pins, so NULL must not look like that.
     transform: { output: (value) => value ?? [] },
   },
 } satisfies Record<string, DBFieldAttribute>;

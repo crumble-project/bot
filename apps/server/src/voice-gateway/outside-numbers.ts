@@ -1,4 +1,3 @@
-// German premium and service numbers, international premium, and satellite networks; the voice gateway mirrors it.
 const BLOCKED_PREFIXES = [
   "0900",
   "0137",
@@ -19,10 +18,6 @@ const normalized = (raw: string) =>
 
 const refused = (refusal: string) => ({ number: null, refusal });
 
-/**
- * The number rules for an outside call, checked when the bot asks and again at approval. The owner approves the exact
- * digits, so these stop only mistakes and the costliest abuse.
- */
 export function outsideNumber(
   raw: string,
   ownerNumbers: ReadonlyArray<string>,

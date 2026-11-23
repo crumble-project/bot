@@ -54,7 +54,6 @@ test("client-secret updates fence old exchanges and deletion rejects old snapsho
   const secretMutation = gate();
   const realSecrets = Context.get(context, Secrets);
 
-  // Wraps `save` with the same two call shapes: fenced writes stay fenced whether they verify or not.
   function gatedSave(
     key: string,
     input: SecretInput,

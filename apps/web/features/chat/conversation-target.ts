@@ -6,7 +6,6 @@ import type { ReactionTarget } from "./transcript";
 export type HistoryRoute = "history";
 
 export type ConversationTarget<S extends HistoryPage> = {
-  /** `bot:<id>`, which keys its drafts and outgoing messages. */
   key: string;
   path: `/v1/agents/${string}`;
   history: RoutePath<HistoryRoute>;

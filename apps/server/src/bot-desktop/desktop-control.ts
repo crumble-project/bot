@@ -35,7 +35,6 @@ export class DesktopControl extends Context.Service<
     readonly subscribeAll: (
       listener: (agentId: string, state: ControlState) => void,
     ) => () => void;
-    /** Succeeds once the bot holds control: at once, or when the owner hands it back. */
     readonly untilBot: (agentId: string) => Effect.Effect<ControlState>;
   }
 >()("crumble/bot-desktop/DesktopControl") {
@@ -93,7 +92,6 @@ export class DesktopControl extends Context.Service<
       ) {
         const handedBack = yield* Deferred.make<ControlState>();
 
-        // Listening before reading, so a hand-back between the two is not missed.
         const stop = listeners.add(agentId, (state) => {
           if (state.holder === "bot") {
             Deferred.doneUnsafe(handedBack, Effect.succeed(state));
@@ -130,7 +128,6 @@ export type DesktopControlAccess = Omit<
   Access<DesktopControl["Service"], (typeof SYNC_DESKTOP_CONTROL)[number]>,
   "untilBot"
 > & {
-  /** Resolves once the bot holds control; cancelling `context` stops the wait. */
   untilBot(agentId: string, context: PiContext): Promise<ControlState>;
 };
 

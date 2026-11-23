@@ -8,7 +8,7 @@ CREATE TABLE `github_app_users` (
 	`refresh_expires_at` integer NOT NULL,
 	CONSTRAINT `fk_github_app_users_app_id_github_apps_id_fk` FOREIGN KEY (`app_id`) REFERENCES `github_apps`(`id`) ON DELETE CASCADE
 );
---> statement-breakpoint
-ALTER TABLE `github_apps` ADD `client_secret` text;--> statement-breakpoint
-DROP TABLE `github_account_bots`;--> statement-breakpoint
+
+ALTER TABLE `github_apps` ADD `client_secret` text;
+DROP TABLE `github_account_bots`;
 DROP TABLE `github_accounts`;

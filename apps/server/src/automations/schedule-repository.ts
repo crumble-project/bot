@@ -30,7 +30,6 @@ const columns = (
   nextRunAt,
 });
 
-/** One-time and recurring automations, each run in one bot's chat. `Scheduler` is the only writer of what one does and when. */
 export class ScheduleRepository extends Context.Service<
   ScheduleRepository,
   {

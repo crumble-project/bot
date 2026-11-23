@@ -34,7 +34,6 @@ function Amount({ totals }: { totals: Totals }) {
   );
 }
 
-/** The usage's models by provider, in the order of each provider's first, and so largest, model. */
 function byProvider(models: Usage["models"]) {
   const groups = new Map<string, Usage["models"]>();
 
@@ -134,7 +133,6 @@ function UsageSections({
   );
 }
 
-/** Tokens and cost of the account's bots, grouped by provider, then by model. */
 export function UsageView({
   usage,
   providers,

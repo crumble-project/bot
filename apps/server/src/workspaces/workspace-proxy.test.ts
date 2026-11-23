@@ -27,7 +27,6 @@ async function upstream() {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanups.push(() => new Promise((resolve) => server.close(() => resolve())));
 
-  // SAFETY: listen completed on a TCP port, not a Unix socket.
   const address = server.address() as net.AddressInfo;
 
   return { port: address.port, requests };
@@ -52,7 +51,6 @@ async function proxy(overrides: Partial<WorkspaceProxyOptions> = {}) {
   return { address: started.address, asked };
 }
 
-// Microsandbox sends the IP it resolved; 203.0.113.7 is unroutable, so reaching upstream proves the proxy used the name.
 async function tunnel(address: string, port: number) {
   const [host, proxyPort] = address.split(":");
   const socket = net.connect(Number(proxyPort), host);

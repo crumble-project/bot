@@ -15,7 +15,6 @@ export class Store {
 
   constructor(source: string | Runner<CoreServices>) {
     if (Predicate.isString(source)) {
-      // Built in this fiber, unlike a ManagedRuntime's forked build, so runSync outlasts a long migration's yields.
       this.owned = Scope.makeUnsafe();
       this.runtime = runnerOf(
         Effect.runSync(Layer.buildWithScope(coreLayer(source), this.owned)),

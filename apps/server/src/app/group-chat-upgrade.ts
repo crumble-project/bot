@@ -79,7 +79,7 @@ function existingDatabase(
   }
   safePath(root, ...parts.slice(0, -1), `${parts.at(-1)}-wal`);
   safePath(root, ...parts.slice(0, -1), `${parts.at(-1)}-shm`);
-  // Cold WAL databases may need writable sidecars even for an inventory-only connection.
+
   const db = new Database(path, { create: false, strict: true });
   db.run(readonly ? "PRAGMA query_only = ON" : "PRAGMA foreign_keys = ON");
 
@@ -573,7 +573,6 @@ async function inventory(root: string): Promise<Manifest> {
     }
   }
 
-  // Reviews can have their own executions and pending rows, too.
   const expandedStore = existingDatabase(root, ["store.sqlite"], true);
 
   try {

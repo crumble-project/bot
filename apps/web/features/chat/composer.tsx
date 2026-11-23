@@ -565,7 +565,6 @@ function useExpanded(draft: string) {
 
   const expanded = draft.includes("\n") || (wrapped && draft !== "");
 
-  // Measured while the field is still one row, before this change re-renders it.
   const measure = (element: HTMLTextAreaElement | null) => {
     if (element?.value && !expanded && element.scrollHeight > ONE_ROW_PX) {
       setWrapped(true);
@@ -617,7 +616,7 @@ type ComposerProps = {
   onCancelReply?: () => void;
   mentionable?: Array<Mentionable>;
   actions?: ReactNode;
-  /** Shown above the composer for the files attached so far. */
+
   notice?: (uploads: Array<Upload>) => ReactNode;
   onSend: (content: string, uploads: Array<Upload>) => Promise<boolean>;
   onStop: () => void;

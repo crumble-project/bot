@@ -1,4 +1,3 @@
-// Bound by name, not re-exported: `web` may import `contract`, never `shared`.
 export {
   attachmentKind,
   MAX_ATTACHMENTS,

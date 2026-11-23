@@ -51,7 +51,6 @@ const refused = (text: string): ComputerUseResult =>
 const noLoginFor = (host: string) =>
   `No login of this bot covers ${host}. Say so in your answer, naming ${host}, so the bot can ask the owner for a login.`;
 
-/** The page the ref belongs to: the latest read's, since cua-driver refuses a ref once its page navigated. */
 function pageOf(
   state: ComputerUseState,
   ref: string,
@@ -193,7 +192,6 @@ async function readValue(logins: LoginFill, target: Target) {
     : { refused: error ?? "unreadable" };
 }
 
-// Stored before typing: once typed, the password is on the desktop even if this job ends right after.
 async function remember(state: ComputerUseState, fill: DesktopFill) {
   if (state.filled.has(fill.value) && state.browsers.has(fill.browser)) {
     return;
@@ -261,7 +259,6 @@ export async function fillLogin(
     return refused(read.refused);
   }
 
-  // Only a password is a secret here; usernames and one-time codes may reach the model.
   if (target.field === "password") {
     await remember(state, {
       value: read.value,
@@ -310,7 +307,6 @@ export function scrubFilled(
   };
 }
 
-/** Refresh passwords typed on this desktop: Chromium can outlive the job that filled them. */
 export async function restoreFilled(state: ComputerUseState) {
   for (const fill of (await state.fills?.list()) ?? []) {
     state.filled.set(fill.value, fill.label);

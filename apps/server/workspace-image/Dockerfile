@@ -1,6 +1,3 @@
-# Guest images for workspaces. Debian (glibc), which cua-driver needs.
-#   base:    every bot with a workspace (coding jobs)
-#   desktop: base plus the bot desktop for desktop jobs: Xvnc, XFCE (xfwm4, panel, Thunar, terminal), Chromium, cua-driver
 FROM debian:trixie-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /uvx /usr/local/bin/
 COPY --from=oven/bun:1.4.4-debian /usr/local/bin/bun /usr/local/bin/
@@ -10,7 +7,6 @@ RUN apt-get update \
     bash build-essential ca-certificates curl file git jq make openssh-client procps python3 python3-venv ripgrep \
     unzip xz-utils \
   && rm -rf /var/lib/apt/lists/*
-# gh reads GH_TOKEN, the bot GitHub App's credential; Debian's package lags the API.
 ARG TARGETARCH
 ARG GH_VERSION=2.103.3
 ARG GH_SHA256_AMD64=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
@@ -24,7 +20,6 @@ RUN set -eu; \
   install -m 755 "/tmp/$dir/bin/gh" /usr/local/bin/gh; \
   rm -rf "/tmp/$dir" "/tmp/$dir.tar.gz"
 ENV GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1
-# npm packages' bins run under `#!/usr/bin/env node`, even in Bun projects. The official build; Debian's lags.
 ARG NODE_VERSION=26.13.0
 ARG NODE_SHA256_AMD64=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
 ARG NODE_SHA256_ARM64=406fe3fbde1c054adff8b297c16fdb5af6659db327c1ac8acd46b56ef1af9a92
@@ -37,7 +32,6 @@ RUN set -eu; \
   rm "/tmp/$file" /usr/local/CHANGELOG.md /usr/local/README.md; \
   node --version
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
-# Clones get a hook that marks commits a bot makes as its owner (init.templateDir, set per job).
 COPY git-template /opt/crumble/git-template
 WORKDIR /workspace
 
@@ -46,8 +40,6 @@ ARG TARGETARCH
 ARG CUA_DRIVER_VERSION=0.38.0
 ARG CUA_DRIVER_SHA256_ARM64=80c9ae66bc7322052dd426c6133c96086b33894bf06c972bca8215384400b33d
 ARG CUA_DRIVER_SHA256_X86_64=31ab9709dd91ce73677e49b9f3e75c6f0d3e4d9625c286c9e58262bfbea698dd
-# XFCE's parts without xfce4-session, gvfs (needs udisks2), or power and screensaver daemons; xfdesktop draws only the wallpaper.
-# librsvg2-common: the Adwaita icons Thunar shows are SVGs.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     tigervnc-standalone-server xfwm4 xfce4-panel xfdesktop4 thunar xfce4-terminal mousepad ristretto librsvg2-common wmctrl xclip \
@@ -63,6 +55,5 @@ RUN set -eu; \
   rm "/tmp/$file"; \
   CUA_DRIVER_RS_TELEMETRY_ENABLED=0 cua-driver telemetry disable
 ENV CUA_DRIVER_RS_TELEMETRY_ENABLED=0 DO_NOT_TRACK=1
-# desktop-start.sh installs the configuration files from here, as on Railway, which uploads this folder at boot.
 COPY desktop/ /opt/crumble/
 RUN chmod 755 /opt/crumble/*.sh

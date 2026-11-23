@@ -12,14 +12,11 @@ try {
       localStorage.removeItem(key);
     }
   }
-} catch {
-  // Storage unavailable: the saved drafts are best effort and never block the app.
-}
+} catch {}
 
 export const readDraft = (chat: string) =>
   localStorage.getItem(`${PREFIX}${chat}`) ?? "";
 
-/** Best effort: full or blocked storage loses only the saved copy, never the text being typed. */
 export function saveDraft(chat: string, text: string) {
   try {
     if (text) {
@@ -32,7 +29,6 @@ export function saveDraft(chat: string, text: string) {
   }
 }
 
-// Another person may sign in on this browser.
 onSessionReset(() => {
   const keys = Array.from({ length: localStorage.length }, (_, index) =>
     localStorage.key(index),

@@ -1,10 +1,9 @@
 export type JobKindFacts = {
-  /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
   kind: string;
   toolName: string;
   label: string;
   extension: string;
-  /** One job works at a time: a message to a job waits while another job of this kind works. */
+
   exclusive?: boolean;
   ownerRequest?: boolean;
 };

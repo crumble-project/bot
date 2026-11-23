@@ -52,8 +52,6 @@ import type { WorkspaceInterceptor, WorkspaceProxy } from "./workspace-proxy";
 
 const DISK_MIB = 8192;
 
-// The proxy carries only TCP; UDP would leave the machine past it. DNS goes to the sandbox's resolver.
-// Bump TCP_THROUGH_PROXY_VERSION on a change: settings are fixed at creation, so older machines are created anew.
 const TCP_THROUGH_PROXY_VERSION = 1;
 
 const TCP_THROUGH_PROXY: NetworkPolicy = {
@@ -83,10 +81,6 @@ export function microsandboxWorkspacesFromEnv(
     : undefined;
 }
 
-/**
- * Microsandbox-backed workspaces: one microVM per bot, with the bot's files on a named, journaled disk volume at
- * `/workspace`. The volume survives machine stops and image changes. Outbound TCP goes through a per-workspace proxy.
- */
 export class MicrosandboxWorkspaces extends MachineWorkspaces {
   private readonly microsandbox: MicrosandboxMachines;
 
@@ -121,10 +115,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
     return machineName(this.namePrefix, agentId);
   }
 
-  /**
-   * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
-   * when the image changed, the machine does not start, or its proxy port is taken.
-   */
   readonly boot = Effect.fn("MicrosandboxMachines.boot")(function* (
     this: MicrosandboxMachines,
     agentId: string,
@@ -222,7 +212,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
       return;
     }
 
-    // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
     return yield* untilBooted(
       Effect.promise(() =>
         startWorkspaceProxy({ intercept, port: record.proxyPort }).catch(
@@ -252,7 +241,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
       closeProxy,
     );
 
-    // replace() also takes over a machine that could not be resumed.
     const sandbox = yield* untilBooted(
       bootStep("Creating the sandbox", () =>
         Sandbox.builder(name)
@@ -315,7 +303,6 @@ class MicrosandboxMachine implements WorkspaceMachine {
     });
   }
 
-  /** A killed machine loses what the guest had not synced. */
   get sync() {
     return Effect.tryPromise({
       try: () => flush(this.sandbox),
@@ -402,7 +389,6 @@ const startDesktop = (sandbox: Sandbox, args: ReadonlyArray<string>) =>
       }),
   });
 
-/** The bot's workspace volume, created on first use. Disk volumes are ext4 with a journal. */
 async function ensureVolume(name: string) {
   try {
     await Volume.get(name);
@@ -455,10 +441,6 @@ async function removeVolume(name: string) {
   }
 }
 
-/**
- * Starts the bot's existing machine, first stopping it if a server that died left it running. Undefined when there is
- * none or it does not start: the caller then creates a new one.
- */
 async function resume(name: string): Promise<Sandbox | undefined> {
   try {
     await stopHandle(await Sandbox.get(name));

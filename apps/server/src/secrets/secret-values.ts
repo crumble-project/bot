@@ -24,7 +24,6 @@ export type SecretSource =
       readonly reference: string;
     };
 
-/** A read value is used without asking the password manager again for this long. */
 const keyOf = (id: PasswordManagerId, reference: string) =>
   `${id}\u0000${reference}`;
 
@@ -48,10 +47,8 @@ const readThrough = (client: ConnectedClient, reference: string) =>
 
 export const FRESH_FOR = Duration.hours(1);
 
-/** A use after this refreshes the value in the background, so requests rarely wait for a read. */
 export const REFRESH_AFTER = Duration.minutes(55);
 
-/** While the password manager is unreachable, a value read this long ago is still used. */
 export const STALE_UNTIL = Duration.hours(2);
 
 const CLIENT_IDLE = Duration.hours(1);
@@ -77,23 +74,18 @@ type ReadFailure = {
   kind?: "missing-field" | undefined;
 };
 
-// Only an unreachable password manager leaves a cached value usable; anything else means it may be revoked.
 const readFailure = (error: { readonly message: string }): ReadFailure => ({
   reason: error.message,
   retainCache: Predicate.isTagged(error, "PasswordManagerUnreachable"),
 });
 
-/**
- * The value behind every secret: stored ones as they are, password manager ones read through one signed-in client per
- * password manager and cached in memory only. See `FRESH_FOR`, `REFRESH_AFTER`, and `STALE_UNTIL`.
- */
 export class SecretValues extends Context.Service<
   SecretValues,
   {
     readonly read: (
       source: SecretSource,
     ) => Effect.Effect<Redacted.Redacted, SecretUnavailable>;
-    /** Asks the password manager now, ignoring any cached value, and caches what it answers; use to check a reference. */
+
     readonly readNow: (source: {
       readonly passwordManager: PasswordManagerId;
       readonly reference: string;
@@ -102,7 +94,7 @@ export class SecretValues extends Context.Service<
       passwordManager: PasswordManagerId,
       reference: string,
     ) => Effect.Effect<void>;
-    /** Closes the password manager's client, interrupting its reads, and drops its cached values; use on a new token or disconnect. */
+
     readonly disconnect: (
       passwordManager: PasswordManagerId,
     ) => Effect.Effect<void>;
@@ -116,9 +108,9 @@ export class SecretValues extends Context.Service<
       const layerScope = yield* Scope.Scope;
 
       const cache = new Map<string, CachedValue>();
-      // Each client's own scope: closing it interrupts reads that still hold the client, which RcMap.invalidate doesn't.
+
       const connections = new Map<PasswordManagerId, Scope.Closeable>();
-      // Bumped by forget and disconnect, so a read that started before them doesn't cache its value.
+
       let epoch = 0;
 
       const clients = yield* RcMap.make({
@@ -153,7 +145,6 @@ export class SecretValues extends Context.Service<
         idleTimeToLive: CLIENT_IDLE,
       });
 
-      // A failed sign-in stays in the RcMap until it is invalidated, so the next read signs in again.
       const fetch = (id: PasswordManagerId, reference: string) =>
         Effect.scoped(
           RcMap.get(clients, id).pipe(

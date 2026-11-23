@@ -26,12 +26,10 @@ const values = {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
 };
 
-/** The account's list on the stub server, and every list written to it. */
 let stored: Array<string> = [];
 let written: Array<Array<string>> = [];
 let failWrites = false;
 
-/** Answers sessions without a pins list, as before it loads or from an older server. */
 let omitPins = false;
 
 let release = () => {};
@@ -99,7 +97,6 @@ const current = () => {
 const shows = (keys: Array<string>) => () =>
   JSON.stringify(current().pinned) === JSON.stringify(keys);
 
-/** Loads `keys` as the session's list and waits for the hook to show `expected`. */
 async function load(keys: Array<string>, expected = keys) {
   stored = keys;
   await act(async () => notifySession());
@@ -141,7 +138,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await act(async () => root.unmount());
-  // The auth client stops a second after its last consumer, and needs the window to.
+
   await waitFor(
     () => removedListeners.mock.calls.some(([type]) => type === "storage"),
     "the session store to stop",

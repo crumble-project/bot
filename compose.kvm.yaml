@@ -1,6 +1,3 @@
-# Coding workspaces on a Linux host with KVM:
-#   CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3) CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:<tag> \
-#     docker compose -f compose.yaml -f compose.kvm.yaml up -d
 services:
   crumble:
     devices:

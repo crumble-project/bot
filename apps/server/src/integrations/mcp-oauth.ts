@@ -20,7 +20,6 @@ import { ServerSecrets } from "../secrets/server-secrets";
 import type { Runner } from "../shared/runner";
 import { InvalidInput, isAppError, errorText } from "../shared/errors";
 
-/** The value a schema validated, typed as the library's interface so its optional members keep their shape. */
 const validatedAs = <T>(schema: z.ZodType) =>
   z.custom<T>((value) => schema.safeParse(value).success);
 
@@ -73,14 +72,9 @@ const oauthStateSchema = z
   })
   .loose();
 
-/**
- * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
- * plus the redirect URL it was registered for. Stored encrypted, as a server secret.
- */
 const savedOAuthSchema = z
   .object({
     redirectUrl: z.string(),
-    /** Empty in records written before identities, which the next read upgrades. */
     generation: z.string().default(""),
     clientId: z.string().nullable(),
     state: validatedAs<McpOAuthState>(oauthStateSchema),
@@ -96,10 +90,6 @@ export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
 export const clientSecretKey = (serverId: string) =>
   secretKey("mcp-oauth-client", serverId);
 
-/**
- * Uses the owner's OAuth app as the client. It sends its secret in the token request body, which GitHub
- * documents and every authorization server that takes client secrets accepts, rather than pi-mcp's default of HTTP Basic.
- */
 class OwnerClientProvider extends McpOAuthProvider {
   constructor(
     options: McpOAuthProviderOptions,
@@ -126,17 +116,12 @@ const CLIENT_METADATA = {
 
 export const CLIENT_DOCUMENT_PATH = "/oauth/client-metadata.json";
 
-/** The native apps' sign-in callbacks; their system sign-in sheets watch these schemes. */
 const NATIVE_REDIRECTS = [
   "ng.crumbli.mac:/oauth/callback",
   "ng.crumbli.mac.dev:/oauth/callback",
   "ng.crumbli.ios:/oauth/callback",
 ];
 
-/**
- * Crumble's OAuth Client ID Metadata Document (CIMD): its https URL is the client ID, so authorization
- * servers without dynamic registration accept Crumble by fetching it. Only a publicly reachable server has one.
- */
 export type ClientDocument = { url: string; redirectUris: Array<string> };
 
 export function clientDocument(publicUrl: URL): ClientDocument {
@@ -148,14 +133,12 @@ export function clientDocument(publicUrl: URL): ClientDocument {
   };
 }
 
-/** The document an authorization server fetches; its `client_id` must be its own URL. */
 export const clientDocumentBody = (document: ClientDocument) => ({
   client_id: document.url,
   ...CLIENT_METADATA,
   redirect_uris: document.redirectUris,
 });
 
-/** Encrypted values by key, as the OAuth flows read and write them synchronously, and the owner's client secret. */
 export type SecretStorage = {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
@@ -205,7 +188,6 @@ function read(
   }
 
   try {
-    // Only this module writes this key; anything else it finds is rejected.
     return savedOAuthSchema.parse(JSON.parse(raw));
   } catch {
     return undefined;
@@ -301,7 +283,6 @@ function provider(
     serverUrl: server.url,
     redirectUrl,
     clientMetadata: CLIENT_METADATA,
-    // Without dynamic registration, identify by the document when the server fetches them and it lists this callback.
     clientMetadataDocument: (metadata) =>
       document &&
       metadata?.client_id_metadata_document_supported &&
@@ -323,10 +304,6 @@ function provider(
   });
 }
 
-/**
- * The auth a live connection uses: pi-mcp sends the access token and refreshes it. When the
- * refresh fails it cannot open a browser, so the call fails and the owner signs in again.
- */
 export async function connectionAuth(
   storage: SecretStorage,
   server: MCPServer,
@@ -376,7 +353,6 @@ function registrationHint(
     return "If it supports client metadata documents, set CRUMBLE_PUBLIC_URL to the server's public https address; otherwise add the server with a token";
   }
 
-  // The document already covered this sign-in, so the authorization server accepts neither registration method.
   if (document.redirectUris.includes(redirectUrl)) {
     return "It doesn't accept client metadata documents either, so add the server with a token";
   }
@@ -392,7 +368,6 @@ function registrationHint(
 const ownerSecret = async (storage: SecretStorage, server: MCPServer) =>
   server.oauthClientId ? storage.clientSecret(server.id) : undefined;
 
-/** A registration names its redirect URL and server, so a change of either starts over. */
 function restartIfChanged(
   storage: SecretStorage,
   server: MCPServer,
@@ -474,10 +449,6 @@ export async function startAuthorization(
   return { authorizationUrl: authorizationUrl.toString() };
 }
 
-/**
- * Exchanges the code from the owner's sign-in for tokens, after checking it answers this attempt.
- * `iss` is the issuer the callback carried, which servers that promise one must send (RFC 9207).
- */
 export async function finishAuthorization(
   storage: SecretStorage,
   server: MCPServer,
@@ -526,7 +497,6 @@ export async function finishAuthorization(
       message: `${server.name} did not accept the sign-in`,
     });
   }
-  // The state and verifier answer one attempt only.
   const done = guarded(storage, server, saved.generation);
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;
   write(storage, server.id, { ...done, state: rest });

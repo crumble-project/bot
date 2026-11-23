@@ -82,7 +82,6 @@ export type BotMessageEvent = {
 export type TranscriptMessage = {
   id: string;
   entryId: string;
-  /** Stable admission ID copied from the durable input metadata for optimistic reconciliation. */
   requestId?: string | undefined;
   role: string;
   content: string;
@@ -352,7 +351,6 @@ function attachmentsOf(value: JsonValue | undefined): Array<AttachmentInfo> {
   });
 }
 
-/** Image bytes stay out of snapshots and pages; clients fetch them by attachment index instead. */
 function withoutImageData(
   content: ModelContent,
 ): Array<z.infer<typeof transcriptBlock>> {
@@ -627,7 +625,6 @@ function normalizeModelEntry(
   });
 }
 
-/** A job that ended without an answer has no report to relay, so the owner sees the failure as an event. */
 function normalizeJobFailure(
   entryId: string,
   entry: EntryRecord,
@@ -698,7 +695,6 @@ async function collectEntries(
   const query: TranscriptEntryQuery = { order: "descending" };
 
   if (before !== undefined) {
-    // Parsed entry IDs are positive, so the entry before one is still a valid bound.
     query.maxEntryId = entryIdOf(before - 1);
   }
 
@@ -752,7 +748,6 @@ async function earlierCitationContext(
   return context;
 }
 
-/** Newest-first page over one conversation. */
 async function readPage(
   agentId: string,
   conversation: Conversation | undefined,
@@ -774,7 +769,6 @@ async function readPage(
   const messages: Array<TranscriptMessage> = [];
   let consumed = 0;
 
-  // Pages end on entry boundaries so a cursor never splits one entry's messages.
   for (const entry of entries) {
     if (messages.length >= limit) {
       break;
@@ -859,7 +853,6 @@ const trimQuoted = <Quote extends { content: string }>(
   }
 };
 
-/** Bounds the target and its neighbours before admission so retries and restarts reuse one durable input. */
 export async function prepareReply(
   harness: Harness,
   agentId: string,

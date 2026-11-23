@@ -37,16 +37,11 @@ const NO_TRANSCRIPT = { messages: [], hasMore: false, oldestEntryId: null };
 export class CallRequests extends Context.Service<
   CallRequests,
   {
-    /** Stores a pending call request after the number rules; Conflict while another one is pending. */
     readonly request: (
       agentId: string,
       input: CallRequestInput,
     ) => Effect.Effect<CallRequest, AppError>;
     readonly list: (agentId: string) => Effect.Effect<Array<CallRequest>>;
-    /**
-     * Opens the call conversation and dials at once, so no bot turn runs between approval and dialing. Conflict, with
-     * the request pending again, when the number or the line refuses the call.
-     */
     readonly approve: (
       agentId: string,
       requestId: string,
@@ -55,7 +50,6 @@ export class CallRequests extends Context.Service<
       agentId: string,
       requestId: string,
     ) => Effect.Effect<CallRequest, AppError>;
-    /** The call conversation's messages; none before the call, or once the callee objected. */
     readonly transcript: (
       agentId: string,
       requestId: string,
@@ -65,13 +59,11 @@ export class CallRequests extends Context.Service<
       AppError
     >;
     readonly byCall: (callId: string) => Effect.Effect<CallRequest | null>;
-    /** Ends a calling request with its outcome; false when it no longer calls. */
     readonly finish: (
       requestId: string,
       end: CallRequestEnd,
     ) => Effect.Effect<boolean>;
     readonly calling: Effect.Effect<Array<CallRequest>>;
-    /** Whether the callee objected, so the call's transcript is withheld. */
     readonly objected: (request: CallRequest) => Effect.Effect<boolean>;
   }
 >()("crumble/voice-gateway/CallRequests") {
@@ -125,7 +117,6 @@ export class CallRequests extends Context.Service<
         );
       });
 
-      // One atomic update moves a pending request on, so a second approval finds none.
       const claim = Effect.fnUntraced(function* (
         agentId: string,
         requestId: string,
@@ -204,7 +195,6 @@ export class CallRequests extends Context.Service<
         const id = crypto.randomUUID();
         const requestedAt = yield* nowIso;
 
-        // One transaction checks and inserts, so two requests at once leave one pending.
         const stored = yield* db
           .transaction(() =>
             Effect.gen(function* () {
@@ -247,7 +237,6 @@ export class CallRequests extends Context.Service<
         return rows.map(requestOf);
       });
 
-      // The refusal, or null once the call event is sent.
       const dial = Effect.fnUntraced(function* (claimed: CallRequest) {
         const { number, refusal } = outsideNumber(
           claimed.number,

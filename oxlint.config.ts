@@ -3,6 +3,10 @@ import { defineConfig } from "oxlint";
 
 export default defineConfig({
   ...cloudflare,
+  rules: {
+    ...cloudflare.rules,
+    "no-empty": ["error", { allowEmptyCatch: true }],
+  },
   ignorePatterns: [
     ...cloudflare.ignorePatterns,
     ".agent/**",

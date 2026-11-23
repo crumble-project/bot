@@ -7,7 +7,6 @@ import {
 } from "../shared/domain";
 
 export const reviewResults = sqliteTable("review_results", {
-  // The reviewed turn: an execution's ID, or a job turn's `jobTurnId`, which no execution has. So in `pending_reviews`.
   executionId: text("execution_id").primaryKey(),
   agentId: text("agent_id")
     .notNull()
@@ -16,7 +15,6 @@ export const reviewResults = sqliteTable("review_results", {
   createdAt: text("created_at").notNull(),
 });
 
-// Changes outlive their targets and bots, so they carry the bot ID without a foreign key.
 export const learnedChanges = sqliteTable(
   "learned_changes",
   {

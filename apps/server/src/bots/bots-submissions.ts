@@ -56,7 +56,6 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
   const { forkPreview } = deps.announcements;
   const { admit, chat } = deps;
 
-  // Refuses before the turn is recorded, so the owner sees one error and the message goes back to the composer.
   const refuseUnreadableImages = Effect.fnUntraced(function* (
     owner: Agent,
     files: ReadonlyArray<string>,

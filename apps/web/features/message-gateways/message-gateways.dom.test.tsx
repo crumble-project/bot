@@ -288,7 +288,6 @@ test("a gateway with channels and aliases renders where crypto.randomUUID is mis
 
   const root = createRoot(container);
 
-  // The error is thrown in render, so without this React unmounts the tree and reports it.
   const consoleError = spyOn(console, "error").mockImplementation(() => {});
 
   try {

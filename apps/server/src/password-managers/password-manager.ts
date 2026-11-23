@@ -4,17 +4,13 @@ import type { Scope } from "effect";
 import type { LoginField, PasswordManagerId } from "../contract/secrets";
 import { InvalidInput } from "../shared/errors";
 
-/** How long a sign-in or read may take; the 1Password SDK otherwise waits minutes when the network is gone. */
 export const PASSWORD_MANAGER_TIMEOUT = "10 seconds";
-
-// Error messages follow the password manager's name, as in "1Password could not be reached: ...".
 
 export class PasswordManagerTokenRejected extends Schema.TaggedError<PasswordManagerTokenRejected>()(
   "PasswordManagerTokenRejected",
   { message: Schema.String },
 ) {}
 
-/** The password manager did not answer in time, or limited the account's requests. A cached value stays usable. */
 export class PasswordManagerUnreachable extends Schema.TaggedError<PasswordManagerUnreachable>()(
   "PasswordManagerUnreachable",
   { message: Schema.String, cause: Schema.Defect() },
@@ -49,7 +45,6 @@ export type SecretRead = Result.Result<Redacted.Redacted, SecretUnreadable>;
 export interface PasswordManagerClient<
   E = PasswordManagerTokenRejected | PasswordManagerUnreachable,
 > {
-  /** Reads every reference, in one request where the password manager allows it. */
   read(
     references: ReadonlyArray<string>,
   ): Effect.Effect<ReadonlyMap<string, SecretRead>, E>;
@@ -66,9 +61,9 @@ export interface PasswordManagerVendor {
   readonly name: string;
   readonly reference: Schema.Decoder<string>;
   readonly itemFields?: (item: string) => Record<LoginField, string>;
-  /** Whether the value changes by the second, such as a computed one-time code, so it must never be cached. */
+
   readonly isVolatile?: (reference: string) => boolean;
-  /** Signs in with the owner's token, which also checks it. `PasswordManagers.connect` owns the client's lifetime. */
+
   signIn(
     token: Redacted.Redacted,
   ): Effect.Effect<PasswordManagerClient, PasswordManagerError>;
@@ -88,10 +83,6 @@ const timed = <A, E>(effect: Effect.Effect<A, E>) =>
     }),
   );
 
-/**
- * Signs in and keeps the client until the scope closes. Closing it fails later reads, interrupts running ones, and
- * drops the SDK client; neither SDK can close one, so it is released when garbage-collected.
- */
 const connected = (
   vendor: PasswordManagerVendor,
   token: Redacted.Redacted,
@@ -137,7 +128,7 @@ export class PasswordManagers extends Context.Service<
   {
     readonly ids: ReadonlyArray<PasswordManagerId>;
     readonly name: (id: PasswordManagerId) => string;
-    /** Fails with `InvalidInput` unless `reference` has the password manager's reference format. */
+
     readonly checkReference: (
       id: PasswordManagerId,
       reference: string,

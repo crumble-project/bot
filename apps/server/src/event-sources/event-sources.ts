@@ -19,7 +19,6 @@ export class EventSources extends Context.Service<
       url: string | null,
     ) => Effect.Effect<RelayStatusResponse>;
     readonly list: Effect.Effect<Array<ListedEventSource>>;
-    /** The address carries the source's secret; nothing stores it, so it is shown only now. */
     readonly create: (
       name: string,
     ) => Effect.Effect<ListedEventSource & { address: string }, AppError>;

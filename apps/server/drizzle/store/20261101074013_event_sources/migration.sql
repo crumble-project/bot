@@ -3,7 +3,7 @@ CREATE TABLE `event_sources` (
 	`name` text NOT NULL,
 	`created_at` text NOT NULL
 );
---> statement-breakpoint
+
 CREATE TABLE `relay_events` (
 	`id` text PRIMARY KEY,
 	`source_id` text NOT NULL,
@@ -14,6 +14,6 @@ CREATE TABLE `relay_events` (
 	`body` text NOT NULL,
 	`stored_at` text NOT NULL
 );
---> statement-breakpoint
-ALTER TABLE `schedules` ADD `event_source_id` text;--> statement-breakpoint
+
+ALTER TABLE `schedules` ADD `event_source_id` text;
 CREATE INDEX `relay_events_by_stored_at` ON `relay_events` (`stored_at`);

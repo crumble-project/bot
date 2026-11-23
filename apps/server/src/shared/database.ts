@@ -4,7 +4,8 @@ import { SqlClient } from "effect/sql";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { makeWithDefaults } from "drizzle-orm/effect-sqlite-bun";
 import type { EffectSQLiteBunDatabase } from "drizzle-orm/effect-sqlite-bun";
-import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator";
+import { migrate } from "drizzle-orm/sqlite-core/effect/session";
+import { readCommentFreeMigrations } from "./migration-files";
 
 export const migrationsFolder = (database: "store" | "push") =>
   fileURLToPath(new URL(`../../drizzle/${database}`, import.meta.url));
@@ -16,7 +17,7 @@ export const migrateDatabase = Effect.fn("migrateDatabase")(function* (
   yield* sql`PRAGMA foreign_keys = ON`;
 
   const db = yield* makeWithDefaults();
-  yield* migrate(db, { migrationsFolder: folder });
+  yield* migrate(readCommentFreeMigrations(folder), db._.session);
 });
 
 export const migrateFile = (filename: string, folder: string) =>

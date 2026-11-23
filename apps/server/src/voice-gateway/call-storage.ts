@@ -15,7 +15,6 @@ const outsideCall = z.object({
   callee: z.string(),
 });
 
-/** The active calls, the IDs of ended ones, and the outside calls' IDs, kept across a restart. */
 const storedCalls = z.object({
   active: z.array(
     z.object({

@@ -24,7 +24,6 @@ const requiredBody = (definition: RouteConfig) => {
   return isZodSchema(schema) ? schema : undefined;
 };
 
-/** A contract's params, query, and JSON bodies parse to objects, which is what hono's validated data takes. */
 const validatedObject = (schema: z.ZodType, value: unknown) => {
   const parsed = schema.parse(value);
 

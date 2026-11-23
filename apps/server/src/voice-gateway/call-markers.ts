@@ -42,7 +42,6 @@ const mark = Effect.fnUntraced(function* (
   );
 });
 
-/** Writes each call's markers into its bot's chat, and wakes the bot when a call ends. */
 export const callMarkers = Layer.effectDiscard(
   Effect.gen(function* () {
     const gateway = yield* VoiceGateway;

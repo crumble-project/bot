@@ -249,7 +249,6 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     error: null,
     droppedBytes: 0,
   });
-  // stdout and stderr are separate pipes, so their chunks interleave in any order.
   expect(run.output).toContain(":err");
   expect(run.output.replace(":err", "")).toMatch(
     /^out:crumble-credential-[0-9a-f]{48}$/,

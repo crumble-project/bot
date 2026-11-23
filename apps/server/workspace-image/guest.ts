@@ -1,18 +1,13 @@
 import path from "node:path";
 
-// What a workspace guest holds, for the server and for Railway's recipes. The Dockerfile and desktop-start.sh can't
-// import it, so src/workspaces/guest-image.test.ts fails when they drift.
-
 export const WORKSPACE_PATH = "/workspace";
 
 export const GUEST_FILES = "/opt/crumble";
 
 export const GUEST_HELPERS = "/usr/local/lib/crumble";
 
-/** `init.templateDir` of every job: its hook marks commits a bot makes as its owner. */
 export const GIT_TEMPLATE_DIR = `${GUEST_FILES}/git-template`;
 
-/** Started at boot on a desktop image, not through pi-env: its daemon kills what it started when the connection closes. */
 export const DESKTOP_START = `${GUEST_FILES}/desktop-start.sh`;
 
 export const DESKTOP_DISPLAY_ONLY = "--display";
@@ -21,7 +16,6 @@ export const DESKTOP_ENV_FILE = "/run/crumble-desktop.env";
 
 export const VNC_PORT = 5900;
 
-/** The panel and the wallpaper, which list as windows. */
 export const DESKTOP_CHROME_APPS = ["xfce4-panel", "xfdesktop"];
 
 export const FILES_PROGRAM = "thunar";
@@ -30,7 +24,6 @@ export const TERMINAL_PROGRAM = "xfce4-terminal";
 
 export const GUEST_DAEMON = "/usr/local/bin/pi-env";
 
-/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
 export const GUEST_CA_PATH =
   "/usr/local/share/ca-certificates/crumble-credentials.crt";
 
@@ -108,7 +101,6 @@ export const BASE_ENV = {
   NPM_CONFIG_UPDATE_NOTIFIER: "false",
 };
 
-/** cua-driver's telemetry is on by default. */
 export const DESKTOP_ENV = {
   CUA_DRIVER_RS_TELEMETRY_ENABLED: "0",
   DO_NOT_TRACK: "1",

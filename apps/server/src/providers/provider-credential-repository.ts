@@ -33,7 +33,7 @@ export class ProviderCredentialRepository extends Context.Service<
       credential: Credential,
     ) => Effect.Effect<void>;
     readonly delete: (providerId: string) => Effect.Effect<boolean>;
-    /** Metadata only: listing never decrypts a credential. */
+
     readonly list: Effect.Effect<Array<CredentialInfo>>;
   }
 >()("crumble/providers/ProviderCredentialRepository") {

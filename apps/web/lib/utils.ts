@@ -1,10 +1,8 @@
 export { cn } from "cn";
 
-// crypto.randomUUID exists only in secure contexts; plain http on a LAN address lacks it.
 export function randomId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
 
-  // Version 4 sets bits 4 to 7 of byte 6; the variant sets bits 6 and 7 of byte 8.
   bytes[6] = ((bytes.at(6) ?? 0) & 0x0f) | 0x40;
   bytes[8] = ((bytes.at(8) ?? 0) & 0x3f) | 0x80;
 

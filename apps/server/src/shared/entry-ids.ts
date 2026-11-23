@@ -8,11 +8,9 @@ import type {
 import { InvalidInput } from "./errors";
 import type { NotFound } from "./errors";
 
-/** pi-durable mints every record ID as a non-negative safe integer and erases the brand at runtime. */
 const isDurableId = <I extends Id<string>>(value: number): value is I =>
   Number.isSafeInteger(value) && value >= 0;
 
-/** What a number becomes once it is one of pi-durable's record IDs again: a stored ID, or a bound derived from one. */
 export const durableId = <I extends Id<string>>(value: number): I => {
   if (!isDurableId<I>(value)) {
     throw new Error(`Invalid durable record ID: ${value}`);
@@ -40,16 +38,11 @@ export const positiveId = (raw: string) =>
     ? Number(raw)
     : undefined;
 
-/** `<owner>:<n>`: a durable entry or conversation of a bot. Entry numbers are unique across its conversations. */
 export const formatEntryId = (owner: string, id: number) => `${owner}:${id}`;
 
 export const formatMessageId = (entryId: string, index: number) =>
   `${entryId}:${index}`;
 
-/**
- * Lenient: the number after the last colon, whoever owns the ID, and `NaN` when there is none. Orders IDs that were
- * read back from a transcript. Strict: `owner`'s positive safe integer, or why `value` isn't one.
- */
 export function parseEntryId(value: string): number;
 export function parseEntryId(
   value: string,

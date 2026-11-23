@@ -547,7 +547,6 @@ export function useSecretActions<I>(
     onSettled: (_result, _error, { botId }) => invalidate(botId),
   });
 
-  // Never DELETE: a saved item and a request for more under its name can coexist.
   const decline = useMutation({
     mutationFn: ({ botId, item }: Target<string>) =>
       send<"declineAgentCredential" | "declineAgentLogin">(

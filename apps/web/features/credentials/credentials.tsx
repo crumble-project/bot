@@ -24,7 +24,6 @@ function CredentialRow({
   onUses,
   onDelete,
 }: SecretRowProps<Credential>) {
-  // A GitHub token follows its App or machine account; the server refuses to change it here.
   const managed = credential.github;
 
   return (

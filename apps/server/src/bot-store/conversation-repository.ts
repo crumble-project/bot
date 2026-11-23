@@ -28,7 +28,6 @@ const conversationOf = (
 export class ConversationRepository extends Context.Service<
   ConversationRepository,
   {
-    /** Most recently updated first; archived ones only when asked for. */
     readonly list: (
       agentId?: string,
       includeArchived?: boolean,

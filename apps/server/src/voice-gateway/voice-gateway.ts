@@ -86,7 +86,6 @@ const servedLines = (config: VoiceGatewayConfig, bots: Array<Agent>) =>
       })
     : [];
 
-/** Carries the token hash and line generation its request was checked against. */
 type VoiceLineStream = {
   hash: string;
   username: string;
@@ -100,7 +99,6 @@ type VoiceGatewayEvent =
   | { event: "cancel"; data: { callId: string } }
   | { event: "replaced"; data: Record<string, never> };
 
-/** `calls`: the voice gateway declared it places calls, so `call` events go to it. */
 type VoiceEventsStream = {
   hash: string;
   calls: boolean;
@@ -119,81 +117,56 @@ export class VoiceGateway extends Context.Service<
     ) => Effect.Effect<VoiceGatewayDescription, InvalidInput>;
     readonly issueToken: Effect.Effect<{ token: string; issuedAt: string }>;
     readonly revokeToken: Effect.Effect<void, NotFound>;
-    /** The hash of the current voice gateway token when `token` is that token, without a database read. */
     readonly matchToken: (token: string) => string | null;
-    /** The served line and its current generation; NotFound for an unknown line or one whose bot is unavailable. */
-    /** Null when the token changed since `hash` was matched. */
     readonly line: (
       username: string,
       hash: string,
     ) => Effect.Effect<VoiceLine | null, NotFound>;
-    /** Registers a line stream; null, and the stream closed, when its token or line changed since its request was checked. */
     readonly openLine: (
       stream: VoiceLineStream,
     ) => Effect.Effect<(() => void) | null>;
-    /** Makes this the live event stream, replacing an older one, and sends it the config; null, and closed, when its token changed. */
     readonly openEvents: (
       stream: VoiceEventsStream,
     ) => Effect.Effect<(() => void) | null>;
-    /** Why `botId` cannot call the owner now, or null when it can. */
     readonly callRefusal: (botId: string) => Effect.Effect<string | null>;
-    /** Why `botId` cannot place an outside call now, worded for the owner, or null when it can. */
     readonly othersRefusal: (botId: string) => Effect.Effect<string | null>;
-    /** Whether the bot's line may call people other than the owner. */
     readonly callsOthers: (botId: string) => Effect.Effect<boolean>;
-    /** Who the bot's line has an active call with, or null without one; `callee` names an outside call's. */
     readonly currentCall: (
       botId: string,
     ) => Effect.Effect<{ party: CallParty; callee?: string } | null>;
     readonly isActive: (callId: string) => Effect.Effect<boolean>;
-    /** Marks the bot's active call to end once its reply was read aloud; false when it has none. */
     readonly hangUp: (botId: string) => Effect.Effect<boolean>;
-    /** Whether the bot asked to end the active call on the line. */
     readonly hangingUp: (username: string) => Effect.Effect<boolean>;
-    /** Starts the call on the line, or confirms it when active; null when the token changed. */
     readonly startCall: (
       username: string,
       callId: string,
       hash: string,
     ) => Effect.Effect<true | null, NotFound | Conflict>;
-    /** Where a message on `callId` goes; Conflict when that call ended, or is an outside call that is not the line's active call. */
     readonly speak: (
       username: string,
       callId: string,
       hash: string,
     ) => Effect.Effect<LineRoute | null, NotFound | Conflict>;
-    /**
-     * Where the line's turns go: to the active outside call's conversation when `callId` is it, or, without `callId`,
-     * while the line has one. Conflict for an outside call's ID that is not the line's active call.
-     */
     readonly route: (
       username: string,
       hash: string,
       callId: string | undefined,
     ) => Effect.Effect<LineRoute | null, NotFound | Conflict>;
-    /** Sends a `call` event and waits until the call settles, its wait runs out, or the effect is interrupted, which sends `cancel`. */
     readonly callOwner: (
       request: CallRequest,
     ) => Effect.Effect<VoiceCallResult>;
-    /**
-     * Stores the outside call's ID, then sends its `call` event; the refusal, or null once sent. It does not wait: the
-     * call's settling runs in the service's scope and announces a call that never started as `missed`.
-     */
     readonly callOutside: (
       request: OutsideCallRequest,
     ) => Effect.Effect<string | null>;
-    /** Null when the token changed since `hash` was matched. */
     readonly reportCall: (
       callId: string,
       report: VoiceCallReport,
       hash: string,
     ) => Effect.Effect<true | null, NotFound>;
-    /** Conflict unless the live event stream was opened with `hash`. */
     readonly reportLines: (
       hash: string,
       lines: VoiceLinesReport,
     ) => Effect.Effect<void, Conflict>;
-    /** Receives every call start, end, and missed outside call once, in order, after the change is made. */
     readonly handleCalls: (
       handler: VoiceCallHandler,
     ) => Effect.Effect<void, never, Scope.Scope>;

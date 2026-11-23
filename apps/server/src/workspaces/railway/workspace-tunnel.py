@@ -1,7 +1,3 @@
-# Runs in a workspace as `python3 workspace-tunnel.py <port>`, under railway-stream.py. Every connection to
-# 127.0.0.1:<port> is carried to the server over this program's stdin and stdout, where the workspace proxy answers it.
-# Frames: kind (1 byte), connection id (4 bytes), payload length (4 bytes), payload. Kinds: 1 open (guest to server),
-# 2 data, 3 end of one direction. Stdin closing ends the program and every connection.
 import os
 import signal
 import socket
@@ -27,7 +23,6 @@ def send(kind, connection, payload=b""):
 
 
 def listen():
-    # A tunnel a previous server left running holds the port; this one replaces it.
     for _ in range(2):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -54,7 +49,6 @@ def listen():
 
 
 def finish(connection, direction):
-    """Closes a connection once both directions have ended."""
     with connections_lock:
         entry = connections.get(connection)
         if entry is None:

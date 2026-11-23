@@ -34,7 +34,6 @@ for (const [network, prefix] of [
   PRIVATE.addSubnet(network, prefix, "ipv6");
 }
 
-/** Only globally routable addresses; transition and mapped IPv6 addresses are refused. */
 export function isPublicAddress(address: string): boolean {
   if (net.isIPv4(address)) {
     return !PRIVATE.check(address, "ipv4");

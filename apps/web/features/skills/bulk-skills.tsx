@@ -40,7 +40,6 @@ const SHOWN = {
   all: "",
 };
 
-/** Native checkboxes keep keyboard interaction and mixed section selection accessible. */
 export function SelectSkills({
   ids,
   label,

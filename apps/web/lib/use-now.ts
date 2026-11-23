@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 const DEFAULT_INTERVAL_MS = 30_000;
 
-// Refresh long-lived labels and catch up after sleep without reading time during render.
 export function useNow(intervalMs: number = DEFAULT_INTERVAL_MS) {
   const [now, setNow] = useState(() => Date.now());
 

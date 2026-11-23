@@ -21,10 +21,8 @@ import { VoiceGateway } from "./voice-gateway";
 
 export const VOICE_GATEWAY_PREFIX = "/v1/voice/";
 
-/** The host copies the voice gateway's bearer here; it deletes the header from every incoming request first. */
 export const VOICE_GATEWAY_TOKEN_HEADER = "x-crumble-voice-gateway-token";
 
-/** The host and the account refuse alike, so a refusal does not reveal which account IDs exist. */
 export const voiceGatewayRefusal = () =>
   Response.json(
     { error: "Voice gateway token required" },
@@ -39,7 +37,6 @@ type VoiceGatewayRoutesOptions = {
   runtime: AgentRuntime;
 };
 
-// The token was revoked or replaced after the middleware matched it.
 const tokenChanged = () =>
   new HTTPException(401, { res: voiceGatewayRefusal() });
 
@@ -76,7 +73,6 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
   const matched = new WeakMap<Request, string>();
   const hash = (request: Request) => matched.get(request) ?? "";
 
-  // A callee's message is read only on its line's active outside call, from that call's conversation.
   const spokenOn = Effect.fnUntraced(function* (
     username: string,
     execution: Execution,
@@ -153,7 +149,6 @@ function registerGatewayRoutes(options: VoiceGatewayRoutesOptions) {
       return yield* Effect.die(tokenChanged());
     }
 
-    // A callee's words reach only the call's conversation, never the bot chat.
     return c.json(
       yield* Effect.promise(() =>
         line.outside

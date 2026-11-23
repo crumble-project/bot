@@ -138,7 +138,7 @@ cd apps/site && bun install && bun run build
 - **Terminology:** follow [`GLOSSARY.md`](GLOSSARY.md). When a word in the docs or UI and a word in the code disagree, the glossary wins.
 - **Effect:** server code uses [Effect](https://effect.website). Read [`AGENTS.md`](AGENTS.md) and `apps/server/node_modules/effect/AGENTS.md` before you write Effect services or layers.
 - **Web UI components:** add shadcn components with `bun run ui:add`, as described in [`AGENTS.md`](AGENTS.md).
-- **Formatting and lint:** `bun run fix` formats with `bun fmt` and applies `oxlint` fixes. Lint uses [`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config) in `oxlint.config.ts`, without custom rules or plugins.
+- **Formatting and lint:** `bun run fix` formats with `bun fmt` and applies `oxlint` fixes. Lint uses [`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config) in `oxlint.config.ts`, plus the repository's comment ban. `bun run lint:comments` checks tracked and nonignored source files, including tests and UI components. Record non-obvious decisions in `docs/adr/` instead of source comments. Keep tooling exceptions in configuration, not inline suppressions. See [the comment cleanup report](docs/comment-cleanup.md) and invoke `/delete-comment` for future cleanup.
 - **Test speed:** the unit test suite in CI must finish in two minutes or less.
 - **Documentation:** when a change alters behavior, settings, endpoints, or UI labels described in the docs, update the matching page in [`apps/docs/content/`](apps/docs/content) in the same pull request and run `bun run check` in `apps/docs`.
 
@@ -175,6 +175,8 @@ Store tables live in each feature's `schema.ts` or `schema.<part>.ts` under `app
 bun run --cwd apps/server db:generate --name short_description       # store.sqlite
 bun run --cwd apps/server db:generate:push --name short_description  # push.sqlite
 ```
+
+These wrappers forward options to Drizzle, then move statement separators into adjacent `statements.json` metadata. Keep each SQL file and its metadata together. Historical migration hashes and statement order remain unchanged. See [ADR 0023](docs/adr/0023-comment-free-migration-metadata.md).
 
 ## API contract
 

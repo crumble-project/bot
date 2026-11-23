@@ -222,7 +222,6 @@ describe("bot schedules", () => {
       },
     );
 
-    // SAFETY: Schedule extensions expose their registered tool list.
     const tool = (scheduleExtension(self, service) as any).tools[0];
 
     try {
@@ -357,7 +356,6 @@ describe("bot schedules", () => {
     const { store, service, schedules } = setup();
     const plain = store.createAgent(input("Plain", ["memory"]), uuid(1));
     expect(
-      // SAFETY: Schedule extensions expose their registered tool list.
       (scheduleExtension(store.getAgent(plain.id)!, service) as any).tools.map(
         (tool: { name: string }) => tool.name,
       ),
@@ -381,7 +379,6 @@ describe("bot schedules", () => {
   test("the schedule tool saves a task for the calling bot", async () => {
     const { store, service } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
-    // SAFETY: Schedule extensions expose their registered tool list.
     const tool = (scheduleExtension(self, service) as any).tools[0];
 
     const saved = await tool.execute(

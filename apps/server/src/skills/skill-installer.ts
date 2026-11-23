@@ -109,7 +109,6 @@ export class SkillInstaller extends Context.Service<
     readonly browse: (
       location: string,
     ) => Effect.Effect<SkillListing, InvalidInput | NotFound | Unavailable>;
-    /** Installs every skill in `paths` or none of them. */
     readonly install: (
       request: SkillInstall,
     ) => Effect.Effect<
@@ -117,7 +116,6 @@ export class SkillInstaller extends Context.Service<
       InvalidInput | NotFound | Conflict | Unavailable
     >;
     readonly updates: Effect.Effect<Map<string, SkillUpdate>>;
-    /** Checks every installed skill, or only those not checked in the last day when `due`. */
     readonly check: (due?: boolean) => Effect.Effect<SkillCheck>;
     readonly pending: (
       skillId: string,

@@ -16,7 +16,6 @@ import type { PasswordManagerVendor, SecretRead } from "./password-manager";
 
 const NAME = "1Password";
 
-// Seen in the SDK: a malformed token fails as "invalid user input" locally, a wrong one as "authentication error".
 const rejectsToken = (cause: unknown) =>
   cause instanceof AuthExpiredError ||
   /invalid user input|authentication error/i.test(errorText(cause));
@@ -44,7 +43,6 @@ const reasons: Partial<Record<ResolveReferenceError["type"], string>> = {
   parsing: "can't parse the reference",
 };
 
-// 1Password computes the current code for this attribute; any other one-time code source holds the TOTP secret.
 const COMPUTED_CODE = "?attribute=totp";
 
 export const onePassword: PasswordManagerVendor = {
@@ -70,7 +68,6 @@ export const onePassword: PasswordManagerVendor = {
       catch: failure,
     }).pipe(
       Effect.map((client) => ({
-        // resolveAll reports a missing item per reference, where resolve only throws a message.
         read: (references) =>
           Effect.tryPromise({
             try: () => client.secrets.resolveAll([...references]),

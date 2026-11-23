@@ -34,7 +34,6 @@ const withBox = <A>(
   key: string | undefined,
   use: (box: SecretBox["Service"]) => A,
 ) => {
-  // Built in this fiber, like the test Store, so runSync outlasts the migration's scheduler yields.
   const scope = Scope.makeUnsafe();
 
   try {

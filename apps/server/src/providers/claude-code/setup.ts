@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk directsdk_setup.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { spawn } from "node:child_process";
 import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
@@ -21,7 +20,7 @@ import { PROCESS_GZIP } from "./relay-gzip";
 export type ClaudeCodeOptions = {
   command?: string | undefined;
   configDir: string;
-  /** Let Claude Code send telemetry and fetch the feature flags that unlock models in its picker. */
+
   telemetry: boolean;
   env: NodeJS.ProcessEnv;
 };
@@ -32,7 +31,6 @@ export type ClaudeCodeStatus =
   | { status: "error"; cliVersion?: string; message: string }
   | { status: "signed_in"; cliVersion: string; plan: string };
 
-// Probed after PATH: a service launch inherits a bare PATH that carries none of them.
 const HOME_PREFIXES = [
   ".local/bin",
   ".claude/local",
@@ -44,23 +42,18 @@ const HOME_PREFIXES = [
 
 const SYSTEM_PREFIXES = ["/opt/homebrew/bin", "/usr/local/bin"];
 
-// Never wanted from a child Crumble starts: a background self-update, the feedback upload path, and the CLI's own
-// session-title request, which would race the turn for the one request the relay admits.
 const ALWAYS_QUIET = {
   DISABLE_AUTOUPDATER: "1",
   DISABLE_FEEDBACK_COMMAND: "1",
   CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1",
 };
 
-// Any one of these turns off the feature-flag fetch, and with it every model the picker only offers through a flag.
 const QUIET_TRAFFIC = {
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   DISABLE_TELEMETRY: "1",
   DISABLE_ERROR_REPORTING: "1",
 };
 
-// The child sees only these from Crumble's environment, so provider keys, base URLs, cloud backends and Crumble's
-// own secrets never reach it. Proxy, certificate, and the owner's own opt-outs pass through.
 const INHERITED = [
   "PATH",
   "HOME",
@@ -130,10 +123,6 @@ export function resolveClaude(options: ClaudeCodeOptions) {
   ]);
 }
 
-/**
- * The environment of every process Crumble starts: allowlisted inherited values, the login identity Claude Code's
- * local login check reads, the selected config directory, and the traffic policy.
- */
 export function childEnv(options: ClaudeCodeOptions) {
   const env: Record<string, string> = {};
 
@@ -145,7 +134,6 @@ export function childEnv(options: ClaudeCodeOptions) {
     }
   }
 
-  // Without USER a logged-in CLI reports `loggedIn: false`, instantly and without a request.
   const user = env["USER"] ?? userInfo().username;
 
   env["USER"] ??= user;
@@ -208,7 +196,6 @@ const jsonLine = <T>(line: string, schema: z.ZodType<T>): T | undefined => {
   }
 };
 
-/** `pro` (auth status) and `Claude Pro` (handshake) name the same plan. */
 const planLabel = (raw: string | null | undefined) => {
   const value = (raw ?? "").trim();
 
@@ -227,7 +214,6 @@ export const signInCommand = (command: string, configDir: string) =>
 export const signOutCommand = (command: string, configDir: string) =>
   `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ${command} auth logout`;
 
-/** Asks the CLI itself, never Anthropic, whether it is installed and signed in. Any version is accepted. */
 export async function claudeCodeStatus(
   options: ClaudeCodeOptions,
 ): Promise<ClaudeCodeStatus> {
@@ -329,7 +315,6 @@ async function signedInCommand(options: ClaudeCodeOptions) {
   const status = await claudeCodeStatus(options);
   const command = resolveClaude(options);
 
-  // Logged out, the handshake still answers with a generic default list.
   return status.status === "signed_in" ? command : undefined;
 }
 
@@ -397,7 +382,6 @@ function unpinnedRoute(
   route: string,
   longContext: Set<string>,
 ): PickerRoute | undefined {
-  // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
   if (!row.resolvedModel) {
     return undefined;
   }

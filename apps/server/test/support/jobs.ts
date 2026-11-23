@@ -248,7 +248,6 @@ async function open(kind: typeof exclusiveKind) {
 
 const SETTLE_MS = 1500;
 
-// Tests that settle spend seconds in fixed sleeps; bun's 5 s default fails on slow CI runners.
 const SETTLING_TEST_MS = 15_000;
 
 export {

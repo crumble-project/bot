@@ -40,7 +40,6 @@ const makeAgent = (): Agent => ({
     .parse({ name: "Test" }),
   avatar: defaultAvatarDefinition("test"),
   id: crypto.randomUUID(),
-  // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,
   model: "test",
   createdAt: "",
@@ -348,7 +347,6 @@ test("a bot writes its own skills atomically, after reading them, and every chan
     skillLibrary: standaloneSkills(store),
   });
 
-  // SAFETY: The faux provider is registered in the test model registry.
   const agent = { ...stored, provider: "faux" as never, model: "test" };
   const results: string[] = [];
 
@@ -428,7 +426,6 @@ test("a bot writes its own skills atomically, after reading them, and every chan
   );
   expect(results[0]).toContain("before changing it");
 
-  // SAFETY: the tool result's text is the JSON the skill_manage tool wrote.
   const batch = JSON.parse(JSON.parse(results[1]!).content[0].text) as {
     applied: unknown[];
     findings: Array<{ rule: string }>;
@@ -625,7 +622,6 @@ test("shows in-flight assistant text only to snapshots that ask for it", async (
   const streamed = await runtime.snapshot(a, conversation, { partial: true });
   const hidden = await runtime.snapshot(a, conversation);
   expect(streamed.status).toBe("running");
-  // The snapshot catches the reply mid-stream: a non-empty prefix of the answer.
   expect(streamed.partial.length).toBeGreaterThan(0);
   expect(answer.startsWith(streamed.partial)).toBe(true);
   expect(hidden.partial).toBe("");

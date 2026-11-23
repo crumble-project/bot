@@ -42,8 +42,6 @@ export function registerActivityRoutes(options: {
       ? [service.agent(input.agentId)]
       : allAgents;
 
-    // History is durable per agent; skip bots that have never opened a conversation so
-    // this read-only feed does not initialize empty chats.
     const activeAgents = yield* Effect.filter(candidateAgents, (agent) =>
       conversations
         .list(agent.id, true)

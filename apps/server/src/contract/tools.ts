@@ -1,8 +1,6 @@
 import { JOB_KINDS } from "../shared/job-kinds";
 import type { Agent } from "./agents";
 
-// Node-free, so the web can name tools without importing the features behind them.
-
 export const CODING_TOOL_NAME = JOB_KINDS.coding.toolName;
 export const DESKTOP_TOOL_NAME = JOB_KINDS.desktop.toolName;
 export const DESKTOP_SCREENSHOT_TOOL_NAME = "desktop_screenshot";
@@ -30,16 +28,13 @@ export const SKILL_MANAGE_TOOL_NAME = "skill_manage";
 export const SCHEDULE_TOOL_NAME = "schedule";
 export const EVENT_PAYLOAD_TOOL_NAME = "event_payload";
 
-/** Every tool of one MCP server starts with this, which also groups them in code mode. */
 export const mcpToolPrefix = (serverId: string) =>
   `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
 
-/** Any MCP server's tool, under this server's prefix or a provider's own `mcp` naming. */
 export const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
 export const DEFAULT_JUDGE_MODEL_NAME = "GPT-6 Luna";
 
-/** The `kind` of a transcript event for a job that ended without an answer. */
 export const JOB_FAILURE_EVENT = "job-failure";
 
 export const JOB_KIND_NAMES = [CODING_TOOL_NAME, DESKTOP_TOOL_NAME] as const;

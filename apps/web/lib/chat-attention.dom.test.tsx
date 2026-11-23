@@ -220,7 +220,6 @@ test("reports only active views and ready visible reply surfaces", async () => {
   const nativeTimeout = globalThis.setTimeout;
   let nextInterval = 0;
 
-  // The controller only schedules no-argument heartbeat callbacks.
   const fakeSetInterval = (callback: () => void, delay?: number) => {
     if (delay !== 30_000) {
       throw new Error(`Unexpected interval ${delay}`);
@@ -235,7 +234,6 @@ test("reports only active views and ready visible reply surfaces", async () => {
     intervals.delete(id);
   };
 
-  // The tested timers use no-argument callbacks and no extra arguments.
   const fakeSetTimeout = (callback: () => void, delay?: number) => {
     if (delay !== 1000) {
       return nativeTimeout(callback, delay);

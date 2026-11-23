@@ -29,7 +29,6 @@ export function fromWallClock(local: string, zone: string) {
 
   let instant = guess.getTime();
 
-  // Two passes settle the zone offset, also across a daylight-saving change.
   for (let pass = 0; pass < 2; pass++) {
     const shown = new Date(`${wallClock(new Date(instant), zone)}:00Z`);
     instant += guess.getTime() - shown.getTime();

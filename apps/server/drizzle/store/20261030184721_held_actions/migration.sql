@@ -12,5 +12,5 @@ CREATE TABLE `held_actions` (
 	`decided_at` text,
 	CONSTRAINT `fk_held_actions_agent_id_agents_id_fk` FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE CASCADE
 );
---> statement-breakpoint
+
 CREATE INDEX `held_actions_agent` ON `held_actions` (`agent_id`);

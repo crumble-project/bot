@@ -5,7 +5,6 @@ import { streamEvents } from "../shared/event-stream";
 import { canonicalReplyEvent } from "../contract/reply-event";
 import type { Activity, BotsAccess } from "./bots";
 
-/** The SSE event an activity is sent as, and its data. Learned and pins events are their own event names. */
 function activityFrame(data: Activity, serverId: string) {
   switch (data.type) {
     case "reply":
@@ -22,7 +21,6 @@ function activityFrame(data: Activity, serverId: string) {
   }
 }
 
-/** Writes one activity as the event the clients expect, canonicalized so replies match the push payload. */
 const activitySender =
   (serverId: string, stream: SSEStreamingApi, close: () => void) =>
   (activity: Activity) => {
@@ -36,7 +34,6 @@ const activitySender =
 export function registerBotActivityRoutes(options: {
   register: Register;
   service: BotsAccess;
-  /** The ID clients match replies against notifications with; a runner without push has none. */
   serverId: string;
 }) {
   const { register, service, serverId } = options;
@@ -47,7 +44,6 @@ export function registerBotActivityRoutes(options: {
 
       onClose(service.onActivity(send));
 
-      // Replay current previews on every connection so a sidebar can recover missed events.
       for (const { agent, lastMessage } of await service.agentPreviews()) {
         send({
           type: "chat-preview",

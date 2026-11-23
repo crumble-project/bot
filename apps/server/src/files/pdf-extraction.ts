@@ -23,7 +23,6 @@ export type PdfRuntime = {
   onResultFrame?: () => void;
 };
 
-/** The promise resolvers below start as this and are replaced by their executors. */
 const noop = () => {};
 
 const MAX_STDOUT_BYTES = 64 * 1024 * 1024;
@@ -114,9 +113,7 @@ export async function runPdfExtraction(
 
     try {
       child?.disconnect();
-    } catch {
-      // The worker is already gone.
-    }
+    } catch {}
 
     child?.kill();
   };
@@ -305,9 +302,7 @@ export async function runPdfExtraction(
 
     try {
       child?.disconnect();
-    } catch {
-      // The worker is already gone.
-    }
+    } catch {}
 
     child?.kill();
   }

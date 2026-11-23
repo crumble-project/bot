@@ -1,5 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk inert_mcp.py (MIT, see THIRD_PARTY_NOTICES.md).
-// Inventory only: lists the turn's Crumble tools to Claude Code and denies every call. Crumble runs the tools.
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { z } from "zod";

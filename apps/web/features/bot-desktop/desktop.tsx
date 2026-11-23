@@ -18,7 +18,6 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
   const [control, setControl] = useState<DesktopControl | null>(null);
   const holder = useRef<DesktopControl["holder"]>("bot");
 
-  // Responses and events can arrive out of order; keep the latest change.
   const apply = (next: DesktopControl) =>
     setControl((current) =>
       current && current.changes > next.changes ? current : next,
@@ -46,7 +45,6 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
     return () => {
       controller.abort();
 
-      // Leaving the desktop hands control back, so the bot's job can continue.
       if (holder.current === "owner") {
         void send<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
           holder: "bot",
@@ -55,8 +53,6 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
     };
   }, [path]);
 
-  // `apply` stores the returned control; no query caches it.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const take = useMutation({
     mutationFn: (next: DesktopControl["holder"]) =>
       call("putDesktopControl", `${path}/desktop/control`, "PUT", {
@@ -110,8 +106,6 @@ export function BotDesktop({ botId }: { botId: string }) {
   const path = agentPath(botId);
   const { control, take } = useDesktopControl(path);
 
-  // The viewer link works once, so every connection needs a fresh one.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const viewer = useMutation({
     mutationFn: () =>
       call("createDesktopViewer", `${path}/desktop/viewer`, "POST"),
@@ -181,8 +175,7 @@ function ViewerFrame({
       key={path}
       title={title}
       src={path}
-      // The viewer is our own noVNC page; its module imports need the real origin.
-      // react-doctor-disable-next-line iframe-missing-sandbox
+
       sandbox="allow-scripts allow-same-origin"
       {...(tabIndex !== undefined && { tabIndex })}
       className={cn("size-full border-0", className)}
@@ -245,7 +238,6 @@ export function DesktopPreview({ botId }: { botId: string }) {
   const path = agentPath(botId);
   const [asked, setAsked] = useState(false);
 
-  // Machine state has no live event, so poll it.
   const status = useQuery({
     ...desktopStatusQuery(botId),
     refetchInterval: 10_000,
@@ -253,7 +245,6 @@ export function DesktopPreview({ botId }: { botId: string }) {
 
   const live = asked || status.data?.running === true;
 
-  // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
   const viewer = useMutation({
     mutationFn: () =>
       call(

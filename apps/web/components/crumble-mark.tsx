@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 
-/** The Crumble logo from favicon.svg, colored by the surrounding text. */
 export function CrumbleMark({ className }: { className?: string }) {
   return (
     <svg

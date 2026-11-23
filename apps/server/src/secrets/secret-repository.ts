@@ -39,7 +39,7 @@ export class SecretRepository extends Context.Service<
       key: string,
       source: SecretReference,
     ) => Effect.Effect<void>;
-    /** A value stored in Crumble; reading one that comes from a password manager is a defect. */
+
     readonly get: (key: string) => Effect.Effect<string | undefined>;
     readonly source: (key: string) => Effect.Effect<SecretSource | undefined>;
     readonly status: (key: string) => Effect.Effect<SecretStatus>;
@@ -154,7 +154,6 @@ export class SecretRepository extends Context.Service<
       const deleteAll = Effect.fn("SecretRepository.deleteAll")(function* (
         prefix: string,
       ) {
-        // substr, not LIKE: keys may hold % and _.
         const deleted = yield* db
           .delete(secrets)
           .where(sql`substr(${secrets.key}, 1, ${prefix.length}) = ${prefix}`)

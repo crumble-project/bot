@@ -33,7 +33,6 @@ export class OwnerSkills extends Context.Service<
       agentId: string,
       skillId: string,
     ) => Effect.Effect<Skill, NotFound>;
-    /** A shared skill the owner may edit: a default one can't be, and an installed one follows its upstream. */
     readonly editable: (skillId: string) => Effect.Effect<Skill, AppError>;
     readonly updateOwn: (
       skillId: string,
@@ -41,13 +40,11 @@ export class OwnerSkills extends Context.Service<
       lifecycle: z.output<typeof skillLifecycleInput>,
     ) => Effect.Effect<Skill | null>;
     readonly removeShared: (skillId: string) => Effect.Effect<void, AppError>;
-    /** Gives `target` the skill: a shared one is linked, a bot's own is copied. Returns true when it already had it. */
     readonly assign: (
       skillId: string,
       target: Agent,
       assigned: boolean,
     ) => Effect.Effect<boolean, AppError>;
-    /** Adds `skillIds` to each bot's shared skills: all of them, or none when one bot would go over the limit. */
     readonly shareWith: (
       botIds: Array<string>,
       skillIds: Array<string>,

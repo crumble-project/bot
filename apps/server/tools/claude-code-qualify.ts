@@ -1,8 +1,3 @@
-// Qualifies a Claude Code version for the adapter: the real CLI against a loopback Messages peer, with a fixture
-// API key and no inference or account credentials. Ported from Hermes' evals/directsdk_admission.py and
-// evals/directsdk_cache_wire.py (MIT, see THIRD_PARTY_NOTICES.md). Run locally, not in CI:
-//   bun tools/claude-code-qualify.ts /absolute/path/to/claude
-// Crumble accepts every version; run this to check a new one before relying on it.
 import { normalizeContext, Type } from "@earendil-works/pi-ai";
 import { logInfo } from "../src/shared/process-log";
 import type {
@@ -48,7 +43,6 @@ type Row = {
   upstream_requests?: number;
 };
 
-/** Replaced by the promise executor below; the initial value only satisfies the type. */
 const noop = () => {};
 
 const check = (ok: boolean, what: string) => {
@@ -616,7 +610,6 @@ const digest = (value: Prompt) =>
 
 type Json = z.infer<ReturnType<typeof z.json>>;
 
-/** Wire content without cache directives, which move to the newest breakpoint and are not cached prompt text. */
 function content(value: Json): Json {
   if (Array.isArray(value)) {
     return value.map(content);
@@ -639,7 +632,6 @@ const prompt = (wire: Wire) =>
     .looseObject({ messages: z.array(z.looseObject({ content: z.json() })) })
     .parse(
       content(
-        // As on the wire: the request carries no undefined properties.
         copyJson(
           {
             tools: wire.tools,
@@ -976,12 +968,6 @@ async function checkOneShot(run: CacheRun) {
   );
 }
 
-/**
- * Twenty rounds of tool continuations, ordinary turns, and a 14-round loop with thinking: every request must carry
- * the previous request's cached prefix unchanged, keep signed thinking, and stay within four breakpoints. After the
- * long loop the next turn must carry a breakpoint on the loop's opening frame. A tool-less one-shot drops its message
- * marks. This checks exact prefix reuse, not cache hit rates.
- */
 async function cacheWire(modelId: string) {
   const home = mkdtempSync(join(tmpdir(), "crumble-qualify-cache-"));
   const wires: Array<Wire> = [];

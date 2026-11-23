@@ -7,7 +7,6 @@ import { createAuth, passkeyOriginFor } from "./auth";
 import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { INVITE_HEADER } from "./invites";
 
-// Password hashing alone can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 test("binds passkeys to localhost for a loopback origin", () => {
@@ -165,7 +164,6 @@ test("closed sign-up needs an open invite, which works once", async () => {
 
 const ORIGIN = "http://localhost:7337";
 
-/** Calls an auth endpoint as a client does: over HTTP, with the account's bearer token. */
 const authRequest = (
   accounts: Awaited<ReturnType<typeof createAuth>>,
   token: string,
@@ -310,7 +308,7 @@ test("an account from before pins reads as no pins", async () => {
 
   try {
     const { token } = await signUp(accounts, "older@example.com");
-    // Accounts made before the column existed have NULL there, not the default.
+
     const database = new Database(join(dataDir, "auth.sqlite"));
     database.run('update user set "pinnedConversations" = NULL');
     database.close();

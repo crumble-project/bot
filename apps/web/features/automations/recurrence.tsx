@@ -28,11 +28,9 @@ const REPEATS = [
   { value: "custom", label: "Custom" },
 ];
 
-// Monday first; cron counts Sunday as 0.
 const WEEK = [1, 2, 3, 4, 5, 6, 0];
 
 const weekdayName = (day: number, weekday: "short" | "long") =>
-  // 2023-01-01 was a Sunday, so day n is n days later.
   new Date(2023, 0, 1 + day).toLocaleDateString(undefined, { weekday });
 
 const time = (match: RegExpExecArray) => ({

@@ -32,7 +32,6 @@ export const VOICE_VIA = "voice";
 export const voiceCallRequest = (callId: string, phase: "started" | "ended") =>
   `voice-call:${callId}:${phase}`;
 
-/** What the callee said in an outside call: `id` is the voice gateway's ID for the message within the call. */
 export const outsideCallRequest = (callId: string, id: string) =>
   `outside-call:${callId}:${id}`;
 
@@ -44,7 +43,6 @@ export const botMessageRequest = (executionId: string, status: string) =>
 
 export const reviewRequest = (executionId: string) => `review:${executionId}`;
 
-/** The ID a job's turn is reviewed under: it has no execution, so nothing resolves this as one. */
 export const jobTurnId = (
   jobKind: string,
   agentId: string,
@@ -72,7 +70,6 @@ export type ParsedRequest =
   | { kind: "outside-call"; callId: string; id: string }
   | { kind: "call-request"; callRequestId: string }
   | { kind: "review"; executionId: string }
-  /** A client's own ID. Job deliveries and reports land here too: they never become executions, so nothing decodes them. */
   | { kind: "other" };
 
 export function askingBot(request: ParsedRequest) {
@@ -98,7 +95,6 @@ const noticeOf =
     id,
   });
 
-/** Each request prefix and what its fields mean; a prefix missing here, such as a client's own ID, is `other`. */
 const PREFIXES = new Map<string, PrefixParser>([
   ["schedule", (scheduleId, due) => ({ kind: "schedule", scheduleId, due })],
   ["script", (scheduleId, runId) => ({ kind: "script", scheduleId, runId })],
@@ -134,7 +130,6 @@ const PREFIXES = new Map<string, PrefixParser>([
   ["review", (executionId) => ({ kind: "review", executionId })],
 ]);
 
-/** What a request ID says about its turn. A due time or a task ID may hold colons, so the last field takes the rest. */
 export function parseRequestId(requestId: string): ParsedRequest {
   const [prefix, subject, ...rest] = requestId.split(":");
   const detail = rest.join(":");

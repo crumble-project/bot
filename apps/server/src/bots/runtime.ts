@@ -141,10 +141,6 @@ export type RuntimeSnapshot = {
   updatedAt: number;
 };
 
-/**
- * Options for a chat snapshot. `partial` opts into the in-flight reply text, which snapshots hide by default. `own`
- * reads the given conversation's transcript; without it a snapshot reads the bot chat's, whatever conversation it is.
- */
 export type SnapshotOptions = {
   limit?: number | undefined;
   partial?: boolean | undefined;
@@ -174,12 +170,6 @@ type HarnessRecord = {
   extensions: Array<Extension>;
 };
 
-/**
- * Keep run/tool progress available to clients without exposing the provider's
- * in-flight assistant message. The durable harness commits the final answer
- * together with run completion; clients should render that committed entry
- * only after the run has ended.
- */
 function publicLive(live: LiveState | undefined) {
   if (!live) {
     return live;
@@ -254,11 +244,6 @@ function hideIncompleteAssistant(messages: Array<TranscriptMessage>) {
   );
 }
 
-/**
- * What clients may show of the bot's chat. A model can commit a tool-calling assistant entry before its tool round
- * completes, so assistant entries after an active input stay hidden until the run settles and no text segment leaks
- * mid-turn. Entry IDs are global across the bot's conversations, so only inputs of its chat count.
- */
 async function visibleMessages(
   harness: Harness,
   chat: ConversationId,
@@ -340,8 +325,6 @@ type ModelBlocks = ReturnType<typeof modelBlocks>;
 export const unreadableImages = (agent: Pick<Agent, "name" | "model">) =>
   `${agent.name}'s model (${agent.model}) can't read images. Choose a model that accepts images in ${agent.name}'s profile, or set a vision model in Settings to describe images for it.`;
 
-// Catalogs that list no modalities are trusted; the provider reports anything it refuses. With a vision model set,
-// the vision extension describes images for a model that can't read them.
 function assertImageSupport(
   agent: Agent,
   model: { input?: ReadonlyArray<string> } | undefined,
@@ -379,8 +362,6 @@ function inferenceModels(models: Models, choices: { agent: Agent }) {
         };
       }
 
-      // The special streamSimple branch above handles the only replaced method, so every other property is the
-      // Models instance's own, bound to it where it is a method.
       if (!Predicate.hasProperty(target, property)) {
         return undefined;
       }
@@ -409,10 +390,8 @@ function modelToolsOf(tools: Array<BotTool>) {
 }
 
 async function ensureAgentModels(models: Models, agent: Agent) {
-  // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
   await ensureModel(models, agent);
 
-  // The desktop job model may come from another provider with a dynamic catalog.
   if (agent.desktopModel) {
     await ensureModel(models, agent.desktopModel);
   }
@@ -478,7 +457,6 @@ export class AgentRuntime {
     return (await this.open(agent)).harness;
   }
 
-  /** Every conversation's `pi.usage` in the bot's harness, summed: its chat, jobs, and any other conversation. */
   async usage(agent: Agent) {
     return (await this.open(agent)).harness.usage(BACKGROUND_CONTEXT);
   }
@@ -624,7 +602,6 @@ export class AgentRuntime {
     const tools = this.toolExtensions(agent);
     const { registry } = tools;
 
-    // Hooks and tools run only once the harness is open; until then nothing calls them.
     const opened: OpenedHarness = {};
 
     const vision = visionExtension({
@@ -1004,7 +981,6 @@ export class AgentRuntime {
     });
   }
 
-  /** A data-only entry: the model never sees it, and it lands at once, even mid-turn. */
   private async record(
     agent: Agent,
     conversationId: string,
@@ -1065,9 +1041,6 @@ export class AgentRuntime {
       throw new Error("Conversation not found");
     }
 
-    // Read transcript before attaching the live view. A run may commit an
-    // intermediate assistant entry while the view is being attached; the
-    // active-run guard below then filters it from this snapshot.
     const transcript = options.own
       ? await readConversationTranscript(
           harness,
@@ -1080,7 +1053,6 @@ export class AgentRuntime {
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
 
     try {
-      // SAFETY: pi-durable owns this document key and serializes it as LiveState.
       const live = view.value.docs["pi.live"] as LiveState | undefined;
 
       const messages = await visibleMessages(
@@ -1214,7 +1186,6 @@ export class AgentRuntime {
     );
   }
 
-  /** A conversation's own transcript, such as an outside call's, with unfinished assistant entries hidden. */
   async conversationHistory(
     agent: Agent,
     conversationId: string,

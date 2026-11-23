@@ -8,7 +8,6 @@ const usageTotals = z.looseObject({
   cost: z.looseObject({ total: z.number().optional() }).optional(),
 });
 
-/** Pi Durable's usage document, as far as clients sum its tokens and cost. `tools` holds tool results' own spend, such as vision and intent checks. */
 export const usageDocument = z.looseObject({
   models: z.record(z.string(), usageTotals).optional(),
   tools: z.record(z.string(), usageTotals).optional(),

@@ -37,7 +37,7 @@ export function claudeCodeOptions(
   const options: ClaudeCodeOptions & { workDir: string } = {
     configDir: join(dataDir, "claude"),
     workDir: join(dataDir, "claude-work"),
-    // Feature flags unlock models in Claude Code's picker; off keeps it quiet with fewer models.
+
     telemetry: !isOff((env["CRUMBLE_CLAUDE_TELEMETRY"] ?? "").trim()),
     env,
   };
@@ -51,7 +51,6 @@ export function claudeCodeOptions(
   return options;
 }
 
-// Model ids drop the `[1m]` the adapter adds back for pinned routes; unpinned ids keep what the CLI announced.
 const modelId = (route: string, pinned: boolean) =>
   pinned ? routeModel(route) : route;
 
@@ -102,11 +101,6 @@ function externalAuth(
   };
 }
 
-/**
- * Bots run on the owner's Claude subscription through the official Claude Code CLI on the server
- * ([feature 0006](https://github.com/crumble-project/spec/blob/main/features/0006-claude-code-provider.md)). Sign-in
- * stays in Claude Code; Crumble only reads its status.
- */
 export function claudeCodePlugin(
   dataDir: string,
   env: NodeJS.ProcessEnv,

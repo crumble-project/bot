@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { ANTHROPIC_ORIGIN, isOff } from "./native";
@@ -15,7 +14,6 @@ const GZIP_CA_ENV = [
 
 const PROXY_ENV = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
 
-// Claude Code 2.1.302's origin-400 test.
 const GO_BAD_JSON =
   /^bad json: (?:invalid character |unexpected EOF$|unexpected end of JSON input$|EOF$)/;
 
@@ -27,7 +25,6 @@ export class GzipFallback {
   }
 }
 
-/** The fallback every model request of this process shares: a refusal holds for all of them. */
 export const PROCESS_GZIP = new GzipFallback();
 
 const goError = z.object({ reason: z.literal("bad_json"), error: z.string() });
@@ -46,7 +43,6 @@ const INVALID_JSON_MESSAGES = [
   "Failed to parse request: could not parse request body as JSON",
 ];
 
-// The message prefix counts only in a full Anthropic error envelope.
 const invalidJsonEnvelope = ({ type, error }: z.infer<typeof anthropicError>) =>
   type === "error" &&
   error.type !== undefined &&

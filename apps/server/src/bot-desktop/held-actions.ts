@@ -95,7 +95,6 @@ export class HeldActions extends Context.Service<
       decision: Exclude<HoldDecision, { status: "expired" }>,
     ) => Effect.Effect<HeldAction, NotFound | Conflict>;
     readonly expire: (id: string) => Effect.Effect<void>;
-    /** Succeeds with the owner's decision; a decision made earlier is returned at once. */
     readonly untilDecided: (id: string) => Effect.Effect<HoldDecision>;
     readonly cardPosted: (
       action: HeldAction,
@@ -116,7 +115,6 @@ export class HeldActions extends Context.Service<
         (held: HeldAction, surface: HeldActionSurface) => void
       >();
 
-      // No wait outlives the process: a job's tool call ends with it.
       yield* db
         .update(heldActions)
         .set({ status: "expired", decidedAt: yield* nowIso })
@@ -219,7 +217,6 @@ export class HeldActions extends Context.Service<
       ) {
         const decided = yield* Deferred.make<HoldDecision>();
 
-        // Listening before reading, so a decision between the two is not missed.
         const stop = Effect.sync(
           listeners.add(id, (decision) =>
             Deferred.doneUnsafe(decided, Effect.succeed(decision)),
@@ -271,7 +268,6 @@ export type HeldActionsAccess = Omit<
   Access<HeldActions["Service"], (typeof SYNC_HELD_ACTIONS)[number]>,
   "untilDecided" | "onHeld"
 > & {
-  /** Resolves with the owner's decision; cancelling `context` expires the action and ends the wait. */
   until(id: string, context: PiContext): Promise<HoldDecision>;
 };
 

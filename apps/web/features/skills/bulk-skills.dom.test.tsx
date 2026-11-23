@@ -303,7 +303,6 @@ async function fixture(
     )!;
 
     await act(async () => {
-      // React tracks direct assignments; use the native setter to simulate typing.
       Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
         "value",
@@ -324,7 +323,7 @@ async function fixture(
 
   try {
     await render(<SkillsPage />);
-    // Sections replace a skeleton only once bots and every bot's skills have loaded.
+
     await waitFor(
       () =>
         container.querySelector('[aria-label="Select Own (Alpha)"]') !== null,
@@ -537,8 +536,7 @@ test("selection consumers do not render for unrelated provider changes, but stil
 
     let writes = 0;
     let indeterminate = checkbox.indeterminate;
-    // SelectSkills' ref writes this native property on every consumer commit.
-    // A Profiler misses context-only commits, and nothing else in the DOM changes.
+
     Object.defineProperty(checkbox, "indeterminate", {
       configurable: true,
       get: () => indeterminate,

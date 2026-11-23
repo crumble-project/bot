@@ -57,7 +57,6 @@ function useLiveAvatar(
   return host;
 }
 
-/** Static thumbnails use one SVG; live faces share the library's animation clock and reduced-motion listener. */
 export function BotAvatar({
   bot,
   size = 28,

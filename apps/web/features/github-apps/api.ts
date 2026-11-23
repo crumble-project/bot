@@ -33,7 +33,6 @@ export const githubAccountsQuery = queryOptions({
     (await api("githubAccounts", "/v1/github-accounts", { signal })).accounts,
 });
 
-/** A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too. */
 export const invalidateGithub = () =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: githubAppsQuery.queryKey }),

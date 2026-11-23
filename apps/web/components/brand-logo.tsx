@@ -1,6 +1,5 @@
 import type { SimpleIcon } from "simple-icons";
 
-// Near-black marks would vanish on the dark background, so they take the text color instead.
 const channel = (hex: string, at: number) =>
   Number.parseInt(hex.slice(at, at + 2), 16) / 255;
 
@@ -26,8 +25,7 @@ export function MarkupLogo({ svg }: { svg: string }) {
     <span
       aria-hidden
       className="flex size-4 [&>svg]:size-full"
-      // Markup comes from an icon package bundled at build time, never from users or the server.
-      // react-doctor-disable-next-line dangerous-html-sink
+
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

@@ -141,7 +141,6 @@ function GalleryTab({
   );
 }
 
-// State sits above TabsContent, which unmounts its children when another tab opens.
 function ImportTab({
   value,
   onChange,

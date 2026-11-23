@@ -36,8 +36,6 @@ export function ModelChoiceRow({
     ...gone,
   ];
 
-  // `save` writes the server's answer into the query cache.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const change = useMutation({
     mutationFn: (value: string) => {
       const choice = choices.find((item) => modelKey(item) === value);

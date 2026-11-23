@@ -24,7 +24,7 @@ Railway is a second backend behind `Workspaces`, chosen with `CRUMBLE_WORKSPACE_
   its streams, which do not end by themselves.
 - **Images are template recipes** named by their hash. A bot whose checkpoint has another image gets a new sandbox
   from the current template, with `/workspace` copied over as a tarball through Railway's file transfer.
-- **Exec output is text,** so a guest helper (`src/workspaces/railway/railway-stream.py`) sends a program's stdout as base64 lines.
+- **Exec output is text,** so a guest helper (`src/workspaces/railway/railway-stream.py`) sends a program's stdout as base64 lines. The workspace tunnel carries each loopback connection over the same binary stdin/stdout stream using frames of a one-byte kind, four-byte connection ID, four-byte payload length, and payload. Kinds are open (guest to server), data, and end-of-direction; each TCP connection closes after both directions end, and closing stdin ends the tunnel and its connections. The helper replaces a stale tunnel process holding its loopback port.
 - **No network policy.** Railway has no egress hook, so connections are not filtered. Sandboxes are `ISOLATED`:
   internet only, not the Railway environment's private network. The owner accepted losing network-level approval on
   2026-10-23; approvals for push or PR belong in the tool layer.

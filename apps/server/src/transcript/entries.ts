@@ -82,7 +82,6 @@ export const heldActionData = z.object({
 
 export const CALL_DIRECTIONS = ["inbound", "outbound"] as const;
 
-/** `greeting`: what the bot said on a call it placed. `text`: an ended call's line. `callee`: whom an outside call reached. */
 export const callEventData = z.object({
   callId: z.string(),
   phase: z.enum(["started", "ended"]),

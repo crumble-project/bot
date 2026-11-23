@@ -7,7 +7,6 @@ import {
 } from "../shared/limits";
 import { PASSWORD_MANAGER_IDS } from "../shared/vendors";
 
-// Names the workspace, its shell, or the credential proxy itself depend on.
 const RESERVED_CREDENTIAL_NAMES = new Set([
   ...Object.keys(guestTrustEnv("", "")),
   "PATH",
@@ -45,7 +44,6 @@ export const credentialName = z
 
 const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** A public DNS name, or `*.` and one: the hosts a credential may be sent to. Addresses are not names. */
 const credentialHost = z
   .string()
   .trim()
@@ -69,7 +67,6 @@ export const credentialHosts = z
 
 export const passwordManagerIdInput = z.enum(PASSWORD_MANAGER_IDS);
 
-/** Settings key of a password manager: never rename. */
 export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
 
 const secretReferenceInput = z.object({
@@ -79,8 +76,6 @@ const secretReferenceInput = z.object({
 
 export type SecretReference = z.infer<typeof secretReferenceInput>;
 
-// One object with optional fields rather than a union, so client generators keep it.
-/** A secret the owner enters: a value to store in Crumble, kept exactly as sent, or a password manager reference. */
 export const secretInput = z
   .object({
     value: z.string().min(1).max(MAX_SECRET_CHARS).optional(),
@@ -96,15 +91,12 @@ export type SecretInput = z.infer<typeof secretInput>;
 
 export type SecretStatus = {
   configured: boolean;
-  /** The password manager the value is read from; null for a value stored in Crumble or no value. */
   passwordManager: PasswordManagerId | null;
   reference: string | null;
 };
 
 export const credentialSaveInput = z.object({
-  /** Kept when omitted; required for a credential nobody asked for. */
   hosts: credentialHosts.optional(),
-  /** A new credential needs it; omit it to keep the saved one. */
   secret: secretInput.optional(),
 });
 
@@ -123,10 +115,8 @@ export const loginFieldInput = z.enum([
 
 export type LoginField = z.infer<typeof loginFieldInput>;
 
-/** The grammar of a 1Password item reference; a field reference continues it with `/<field>`. */
 export const ONE_PASSWORD_ITEM = String.raw`op:\/\/[^/]+\/[^/]+`;
 
-/** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
 const loginItemInput = z.object({
   passwordManager: z.literal("1password"),
   reference: z
@@ -140,10 +130,8 @@ const loginItemInput = z.object({
 
 export const loginSaveInput = z
   .object({
-    /** Kept when omitted; required for a new login. */
     hosts: credentialHosts.optional(),
     item: loginItemInput.optional(),
-    /** Fields to change; null removes the one-time code, whose value is the TOTP secret or an `otpauth://totp/` URI. */
     fields: z
       .object({
         username: secretInput.optional(),

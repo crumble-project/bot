@@ -82,7 +82,6 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         name: "Source",
         description: "",
         instructions: "Ask when needed",
-        // SAFETY: The faux provider is registered in the test model registry.
         provider: "faux-source" as any,
         model: "test",
         enabled: true,
@@ -99,7 +98,6 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         name: "Bot2",
         description: "",
         instructions: "Answer honestly",
-        // SAFETY: The faux provider is registered in the test model registry.
         provider: "faux-target" as any,
         model: "test",
         enabled: true,

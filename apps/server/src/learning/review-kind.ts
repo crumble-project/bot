@@ -16,7 +16,6 @@ import type { ReviewScope } from "./review-instructions";
 
 export const REVIEW_EXTENSION = "learning-review";
 
-// Owns a review conversation, so it stays out of the bot chat transcript, separate from the reviewed turn.
 export const ReviewAnchor = defineAnchorTask("crumble.review-anchor");
 
 export class ReviewBudgetExceeded extends Error {
@@ -27,11 +26,6 @@ export class ReviewBudgetExceeded extends Error {
   }
 }
 
-/**
- * The review extension: the anchor task, and a generation hook that adds up the input of every model request the
- * review makes and stops the review before a request would exceed the budget. Spending lives in memory, since a
- * restart drops reviews anyway.
- */
 function reviewExtension() {
   const spent = new Map<string, number>();
 

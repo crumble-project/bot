@@ -16,7 +16,6 @@ import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { agentCredentials, credentialAuthorities } from "./schema";
 
-/** A credential the owner gave one bot. Its value is write-only and never part of this record. */
 export type AgentCredential = z.infer<typeof credentialResponse>;
 
 export type CredentialRequest = Omit<BotSecretRequest, "oneTimeCode">;
@@ -65,13 +64,12 @@ const credential = (agentId: string, name: string) =>
 export class AgentCredentialRepository extends Context.Service<
   AgentCredentialRepository,
   {
-    /** Metadata only: listing never decrypts a value. */
     readonly list: (agentId: string) => Effect.Effect<Array<CredentialRecord>>;
     readonly get: (
       agentId: string,
       name: string,
     ) => Effect.Effect<CredentialRecord | undefined>;
-    /** Creates or updates a credential; the placeholder is made once and never changes. Its value is a secret of its own. */
+
     readonly save: (
       agentId: string,
       name: string,
@@ -82,11 +80,11 @@ export class AgentCredentialRepository extends Context.Service<
       agentId: string,
     ) => Effect.Effect<Record<string, string>>;
     readonly grants: (agentId: string) => Effect.Effect<Array<CredentialGrant>>;
-    /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
+
     readonly getAuthority: (
       agentId: string,
     ) => Effect.Effect<CredentialAuthority | undefined>;
-    /** Keeps the first authority saved for a bot, so concurrent callers agree on one. */
+
     readonly saveAuthority: (
       agentId: string,
       authority: CredentialAuthority,

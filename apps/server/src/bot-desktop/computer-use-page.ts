@@ -67,7 +67,6 @@ export type PageBinding = {
   tab_id: string;
   url: string;
   title: string;
-  /** This call attached the job's cua-driver session to Chromium, which moved focus and opened a setup page. */
   attachedNow: boolean;
 };
 
@@ -110,7 +109,6 @@ async function bind(state: ComputerUseState, target: Window, context: Context) {
   return reply;
 }
 
-/** Attaches the job's session to Chromium. It opens a setup page and moves focus, so earlier reads are stale. */
 async function attach(
   state: ComputerUseState,
   target: Window,
@@ -156,10 +154,6 @@ function boundTab(
   };
 }
 
-/**
- * Binds the job's cua-driver session to the window's active tab, for `open` and `read`. Binding supersedes the refs of
- * earlier reads. A session is attached to Chromium once, on its first page action.
- */
 async function bindPage(
   state: ComputerUseState,
   target: Window,
@@ -283,8 +277,6 @@ export async function readPage(
   return readBound(state, page, args, context);
 }
 
-// A tab shows the new URL as soon as navigation starts; a URL that holds this long without a new title has loaded.
-// Reloading the open URL changes neither, so reaching the requested URL counts as moving too.
 const SETTLE_MS = 1000;
 
 async function waitForLoad(
@@ -398,7 +390,6 @@ export type RefCallBuilder = (
   args: ComputerUseArgs,
 ) => RefCall;
 
-// Linux Chromium refuses background pointer input from cua-driver, so pointer actions go foreground.
 const FOREGROUND = { delivery_mode: "foreground" };
 
 const pointerCall =

@@ -16,10 +16,6 @@ import type { SecretSource, SecretUnavailable } from "./secret-values";
 export class Secrets extends Context.Service<
   Secrets,
   {
-    /**
-     * Gets the value, reading a reference now and refusing one that can't be read, hands it to `verify`, and stores
-     * the secret only if `verify` succeeds. Returns what `verify` returns.
-     */
     readonly save: {
       (key: string, input: SecretInput): Effect.Effect<void, InvalidInput>;
       <A, E = never, R = never>(
@@ -28,7 +24,7 @@ export class Secrets extends Context.Service<
         verify: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
       ): Effect.Effect<A, E | InvalidInput, R>;
     };
-    /** Saves several secrets, such as a login's fields, storing none unless every one reads and passes `verify`. */
+
     readonly saveAll: <E = never, R = never>(
       entries: ReadonlyArray<{
         key: string;
@@ -39,7 +35,7 @@ export class Secrets extends Context.Service<
     readonly read: (
       key: string,
     ) => Effect.Effect<Redacted.Redacted | undefined, SecretUnavailable>;
-    /** Asks the password manager whether the reference holds a value; false only when the item lacks that field. */
+
     readonly probe: (
       source: SecretReference,
     ) => Effect.Effect<boolean, InvalidInput>;

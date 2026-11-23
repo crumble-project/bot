@@ -316,7 +316,6 @@ test("read rejects malformed or mismatched requests", async () => {
   await expect(engine.read(context, { match, cursor: match })).rejects.toThrow(
     "Provide exactly one history match or read cursor",
   );
-  // SAFETY: read validates the direction at run time, which is what this case exercises.
   const sideways = "sideways" as never;
 
   await expect(

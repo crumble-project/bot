@@ -273,7 +273,6 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
   kind?: FeedItem["kind"] | undefined;
 };
 
-/** `before`: the cursor of the transcript page the item was read from, where reading resumes while it is unconsumed. */
 type Queued = { item: FeedItem; before: string | null };
 
 function oldestMessageKey(messages: Array<TranscriptMessage>) {

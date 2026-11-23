@@ -13,7 +13,7 @@ export type EventSource = z.infer<typeof eventSourceResponse>;
 export const eventRelayQuery = queryOptions({
   queryKey: ["event-relay"],
   queryFn: ({ signal }) => api("eventRelay", "/v1/event-relay", { signal }),
-  // The connection advances on the server, so poll while it connects.
+
   refetchInterval: (query) =>
     query.state.data?.status === "connecting" ? 1000 : false,
 });

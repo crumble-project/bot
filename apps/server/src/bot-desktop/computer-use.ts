@@ -1,7 +1,3 @@
-// Ported from Hermes Agent's computer_use tool (tools/computer_use/schema.py, MIT, Nous Research). Changes, measured in
-// the bot desktop spike: captures default to the accessibility tree with diff reads instead of screenshots, input
-// climbs from background to foreground on its own (the bot owns its display), and only actions an intent check holds
-// wait for approval.
 import type { Context } from "@earendil-works/chord";
 import type { ImageContent, TextContent, Usage } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
@@ -74,7 +70,6 @@ export function computerUseTool({
     description: COMPUTER_USE_DESCRIPTION,
     parameters: computerUseParameters,
     callers: ["model"],
-    // Input already sent cannot be taken back; after a crash the job captures and decides.
     replay: "unsafe",
     execute: async (args, api, callContext) => {
       const env = api.env;

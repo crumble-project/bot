@@ -13,7 +13,6 @@ import { isCallOnly } from "../shared/chat-only";
 
 export const CALL_CONVERSATION_EXTENSION = "outside-call";
 
-/** What the call conversation's prompt needs; `objected`: the callee objected, so its transcript is withheld. */
 export const CallConversation = defineDoc<{
   requestId: string | null;
   callee: string;
@@ -38,7 +37,6 @@ export const CallConversation = defineDoc<{
 
 type OutsideCall = { callee: string; goal: string; opening: string };
 
-// Owns an outside call's conversation, so it stays out of the bot chat's transcript, Esc, and idle waits.
 const CallAnchor = defineAnchorTask("crumble.call-anchor");
 
 export const outsideCallOf = async (
@@ -63,10 +61,6 @@ const standing = (agent: Agent, call: OutsideCall) =>
     `When the goal is reached or cannot be reached, say goodbye and call \`${HANG_UP_TOOL_NAME}\`. Saying goodbye does not end the call.`,
   ].join("\n");
 
-/**
- * An outside call's conversation: the callee's words land only here. It selects exactly its own extension and the
- * call's hang-up extension, so no other extension's tools, hooks, or prompt sections reach it, and its prompt is bare.
- */
 export function callConversations(): ConversationKind {
   const extension = defineExtension({
     name: CALL_CONVERSATION_EXTENSION,

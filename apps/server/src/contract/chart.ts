@@ -15,10 +15,6 @@ const hexByte = (channel: number) =>
     .toString(16)
     .padStart(2, "0");
 
-/**
- * Resolves the CSS color syntax TanStack emits (`var(--x, fallback)`, `currentColor`, `Canvas`, `rgb()`) to a theme
- * token clients resolve per appearance, or a hex literal.
- */
 export function chartColor(value: string): string {
   const trimmed = value.trim();
   const variable = /^var\(\s*--[\w-]+\s*,\s*(.+)\)$/.exec(trimmed);
@@ -139,7 +135,6 @@ const primitiveOf = (paint: ReturnType<typeof paintFields>) =>
 const primitive = primitiveOf(
   paintFields(
     color,
-    // Canvas-style joins have no SwiftUI or Android equivalent; they fall back to miter.
     z
       .string()
       .transform((join): "miter" | "round" | "bevel" =>

@@ -3,10 +3,8 @@ import { THEMES } from "@crumble/server/contract/user-preferences";
 import type { Theme } from "@crumble/server/contract/user-preferences";
 import { authClient } from "@/lib/auth-client";
 
-/** Also read by the inline script in index.html, which applies the theme before first paint. */
 const STORAGE_KEY = "crumble-theme";
 
-/** The page background per scheme, for the browser chrome; matches --background in styles.css. */
 const THEME_COLOR = { light: "#f9fafb", dark: "#07080a" };
 
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
@@ -76,7 +74,6 @@ export async function setTheme(theme: Theme) {
   await authClient.updateUser({ theme });
 }
 
-/** Takes the account's theme once the session loads, since another device may have changed it. */
 export function useAccountTheme() {
   const session = authClient.useSession();
   const theme = session.data?.user.theme;

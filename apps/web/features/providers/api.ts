@@ -60,7 +60,7 @@ export const signInQuery = (id: string) =>
     queryKey: ["provider-sign-in", id],
     queryFn: ({ signal }) =>
       api("getProviderLogin", providerSignInPath(id), { signal }),
-    // Sign-ins advance on the server, so poll until they end.
+
     refetchInterval: (query) =>
       query.state.data?.status === "pending" ? 1000 : false,
   });

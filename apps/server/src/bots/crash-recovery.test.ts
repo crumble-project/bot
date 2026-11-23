@@ -40,7 +40,6 @@ describe("crash recovery", () => {
         ),
       ]);
 
-      // SAFETY: The crash fixture writes this exact metadata object as JSON.
       const metadata = JSON.parse(String(ready).trim()) as {
         agentId: string;
         conversationId: string;
@@ -85,7 +84,6 @@ describe("crash recovery", () => {
           name: "Second",
           description: "",
           instructions: "",
-          // SAFETY: The faux provider is registered in the test model registry.
           provider: "faux" as any,
           model: "crash-model",
           enabled: true,

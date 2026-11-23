@@ -12,6 +12,6 @@ CREATE TABLE `library_files` (
 	CONSTRAINT `fk_library_files_group_id_group_chats_id_fk` FOREIGN KEY (`group_id`) REFERENCES `group_chats`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "library_files_one_owner" CHECK(("agent_id" IS NOT NULL) != ("group_id" IS NOT NULL))
 );
---> statement-breakpoint
-CREATE UNIQUE INDEX `library_files_bot_hash` ON `library_files` (`agent_id`,`hash`);--> statement-breakpoint
+
+CREATE UNIQUE INDEX `library_files_bot_hash` ON `library_files` (`agent_id`,`hash`);
 CREATE UNIQUE INDEX `library_files_group_hash` ON `library_files` (`group_id`,`hash`);

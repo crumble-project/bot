@@ -41,7 +41,6 @@ export type SkillPatch = Partial<
   >
 >;
 
-/** The origin a GitHub-installed skill's `origin` column holds. */
 const originOf = (json: string) => skillOriginSchema.parse(JSON.parse(json));
 
 const isSkillState = (state: string): state is Skill["state"] =>
@@ -63,7 +62,6 @@ const contentColumns = (skill: Skill) => ({
 export class SkillRepository extends Context.Service<
   SkillRepository,
   {
-    /** One bot's skills, or the shared ones for `null`, oldest first. */
     readonly list: (agentId?: string | null) => Effect.Effect<Array<Skill>>;
     readonly get: (skillId: string) => Effect.Effect<Skill | null>;
     readonly create: (
@@ -80,14 +78,10 @@ export class SkillRepository extends Context.Service<
       skillId: string,
       by?: ChangeBy | null,
     ) => Effect.Effect<boolean>;
-    /** Puts a skill back as it was, keeping its ID, timestamps, and usage; records nothing. */
     readonly restore: (skill: Skill) => Effect.Effect<void>;
-    /** Deletes a skill without recording a change, for reverts that record their own. */
     readonly discard: (skillId: string) => Effect.Effect<void>;
-    /** Loading a skill counts as using it, and brings a stale skill back to active. */
     readonly recordUse: (skillId: string) => Effect.Effect<void>;
     readonly listBotCreated: Effect.Effect<Array<Skill>>;
-    /** A bot's inline `skills` write: matched by name, so a kept skill keeps its documents, provenance, and usage. */
     readonly replaceAgentSkills: (
       agentId: string,
       inline: ReadonlyArray<{ name: string; instructions: string }>,

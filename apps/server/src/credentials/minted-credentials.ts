@@ -26,7 +26,7 @@ export class CredentialSource extends Context.Service<
     >;
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
     readonly lines: (agentId: string) => Effect.Effect<Array<string>>;
-    /** Signs a commit or tag as the bot; undefined when the source has no key for it. */
+
     readonly sign: (
       agentId: string,
       data: Uint8Array,
@@ -34,11 +34,9 @@ export class CredentialSource extends Context.Service<
   }
 >()("crumble/credentials/CredentialSource") {}
 
-/** Credentials a source mints on use instead of the owner entering them; only the source grants or revokes them. */
 export class MintedCredentials extends Context.Service<
   MintedCredentials,
   {
-    /** Makes `name` a minted credential; a stored one keeps its placeholder and loses its value. */
     readonly grant: (
       agentId: string,
       name: string,

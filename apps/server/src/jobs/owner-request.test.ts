@@ -10,7 +10,6 @@ import { voiceCallRequest } from "../shared/request-ids";
 import { messageTag, turnSource } from "../transcript/origins";
 import { ownerMessages } from "./owner-request";
 
-// SAFETY: IDs are opaque to ownerMessages, which only hands the chat's to scanEntries.
 const chatId = 1 as ConversationId;
 
 const message = (
@@ -19,7 +18,6 @@ const message = (
   kind: string,
   text: string,
 ): EntryRecord => ({
-  // SAFETY: entry IDs are opaque to ownerMessages.
   id: id as EntryId,
   conversationId: chatId,
   kind: "crumble.message",
@@ -76,7 +74,6 @@ test("a script automation's notice isn't the owner's request: its output can be 
 
 test("the latest owner message is found past the first page", async () => {
   const bots = Array.from({ length: 5 }, (_, index) => ({
-    // SAFETY: entry IDs are opaque to ownerMessages.
     id: (index + 2) as EntryId,
     conversationId: chatId,
     kind: "crumble.bot-message",

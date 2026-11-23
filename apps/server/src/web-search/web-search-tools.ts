@@ -31,8 +31,6 @@ const date = Type.Optional(
   Type.String({ pattern: String.raw`^\d{4}-\d{2}-\d{2}$` }),
 );
 
-// Every address must be public: the provider resolves the name itself, so unlike the credential proxy, Crumble can't
-// connect to only the public ones.
 const publicUrl = Effect.fnUntraced(function* (value: string) {
   let url: URL;
 

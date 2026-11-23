@@ -107,7 +107,7 @@ describe("credentialProxy", () => {
     );
 
     await new Promise<void>((done) => upstream.listen(0, "127.0.0.1", done));
-    // SAFETY: listen completed on a TCP port, not a Unix socket.
+
     const upstreamPort = (upstream.address() as AddressInfo).port;
 
     const proxy = credentialProxy({
@@ -130,7 +130,7 @@ describe("credentialProxy", () => {
     );
 
     await new Promise<void>((done) => entry.listen(0, "127.0.0.1", done));
-    // SAFETY: listen completed on a TCP port, not a Unix socket.
+
     const entryPort = (entry.address() as AddressInfo).port;
     const ca = await authorities.certificate(bot.id);
 
@@ -414,7 +414,7 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
     new Promise<string>((done, fail) => {
       const socket = tls.connect({
         host: "127.0.0.1",
-        // SAFETY: listen completed on a TCP port, not a Unix socket.
+
         port: (entry.address() as AddressInfo).port,
         servername: SIGNING_HOST,
         ca,

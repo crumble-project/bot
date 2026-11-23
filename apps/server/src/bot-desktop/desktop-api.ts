@@ -17,10 +17,6 @@ import type { Runner } from "../shared/runner";
 import type { Agent } from "../contract/agents";
 import { usesDesktop } from "../contract/tools";
 
-/**
- * WebSocket close reasons the viewer shows, at most 123 bytes each: they name what the owner can fix and carry no guest
- * output, which may hold secrets. The log has the cause.
- */
 const closeReasons = {
   DesktopNotConfigured: "This server has no bot desktop image",
   DesktopNotEnabled: "This bot needs the desktop tool for its bot desktop",
@@ -181,9 +177,7 @@ function viewerSocket(
 
         bridge = bridgeDesktop({
           stream,
-          // Watching never lets input through; only the owner holding control does.
           allowInput: () => control.get(agentId).holder === "owner",
-          // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
           send: (data) => ws.send(new Uint8Array(data)),
           close: () => ws.close(),
         });
@@ -244,7 +238,6 @@ function registerViewerRoutes(options: DesktopRouteOptions) {
   app.get(
     `${VIEWER_PREFIX}/:ticket/websockify`,
     async (c, next) => {
-      // Spent here, before the upgrade: a link opens one connection.
       const viewer = tickets.redeem(c.req.param("ticket"));
 
       if (!viewer || !workspaces) {
@@ -264,11 +257,6 @@ function registerViewerRoutes(options: DesktopRouteOptions) {
   );
 }
 
-/**
- * Routes for watching and taking control of a bot desktop. Control and viewer links are owner API; the viewer page,
- * its noVNC files, and its WebSocket live outside `/v1`, because a web view cannot send the bearer token there: the
- * single-use link is the credential.
- */
 export function registerDesktopRoutes(options: DesktopRouteOptions) {
   const access = desktopAccess(options);
 

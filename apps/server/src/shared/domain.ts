@@ -25,7 +25,7 @@ export type Memory = {
   id: string;
   agentId: string | null;
   content: string;
-  /** Null for memories saved before sources were recorded. */
+
   source: MemorySource | null;
   createdAt: string;
   updatedAt: string;
@@ -68,10 +68,8 @@ export const ACTIVE_EXECUTION_STATUSES = ["pending", "running"] as const;
 export const activeExecution = (execution: Pick<Execution, "status">) =>
   ACTIVE_EXECUTION_STATUSES.some((status) => status === execution.status);
 
-/** The request a credential's value is read for: some values, such as a GitHub App's token, depend on it. */
 export type CredentialTarget = { host: string; path: string };
 
-/** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
 export const hostMatches = (hosts: ReadonlyArray<string>, host: string) =>
   hosts.some((pattern) =>
     pattern.startsWith("*.")

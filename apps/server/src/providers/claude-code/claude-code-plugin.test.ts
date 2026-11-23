@@ -32,7 +32,6 @@ import { standaloneScheduler } from "../../automations/scheduler-test-support";
 import { standaloneBots } from "../../bots/bots-test-support";
 import { Store } from "../../../test/support/store";
 
-// Spawned CLIs can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
@@ -63,7 +62,6 @@ const env = (extra: Record<string, string> = {}) => ({
 });
 
 describe("Claude Code catalog", () => {
-  // From Hermes' test_directsdk_models.py: every spelling lands on the pinned native route.
   test.each([
     ["sonnet", "claude-sonnet-5-5[1m]"],
     ["sonnet-5-5", "claude-sonnet-5-5[1m]"],
@@ -230,7 +228,6 @@ function api(fake: Record<string, string>) {
     store.runtime,
     pluginProviders([plugin]),
   );
-  // SAFETY: provider routes never reach the runtime.
 
   const service = standaloneBots(store, {} as AgentRuntime);
 

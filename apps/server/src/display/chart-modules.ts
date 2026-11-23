@@ -1,7 +1,3 @@
-/**
- * The modules the chart sandbox bundles. A new chart family goes here, in `chart-runtime.ts`'s imports, and in the
- * `show` tool's description, and `charts.test.ts` fails until all three agree.
- */
 export const CHART_MODULES = [
   "@tanstack/charts",
   "@tanstack/charts/polar",

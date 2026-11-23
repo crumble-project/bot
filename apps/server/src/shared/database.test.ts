@@ -12,7 +12,6 @@ import { Effect, Match } from "effect";
 import { z } from "zod";
 import { migrateFile, migrationsFolder } from "./database";
 
-// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 const dirs: string[] = [];
@@ -68,7 +67,6 @@ const indexEntry = z.object({
 
 const indexColumn = z.object({ name: z.string().nullable() });
 
-// Drizzle writes boolean defaults as `false`/`true`, which SQLite stores as 0/1.
 const normalizedDefault = (value: string | null) =>
   Match.value(value).pipe(
     Match.when("false", () => "0"),
@@ -116,7 +114,6 @@ function schemaOf(file: string) {
             .parse(rows(`PRAGMA index_info(${JSON.stringify(each.name)})`))
             .map((entry) => entry.name);
 
-          // Constraint indexes get generated names, so only created indexes are compared by name.
           return JSON.stringify({
             name: each.origin === "c" ? each.name : each.origin,
             unique: each.unique,
@@ -242,7 +239,6 @@ describe("product database migrations", () => {
   });
 
   test("later migrations keep credentials, their values, and their use log", () => {
-    // Rebuilding agent_credentials inside the migration's transaction would cascade into credential_uses.
     const before = mkdtempSync("/tmp/crumble-migrations-");
     dirs.push(before);
 

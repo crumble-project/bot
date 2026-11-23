@@ -37,7 +37,6 @@ function oversizedTextPdf(pages: number): Uint8Array {
   return new TextEncoder().encode(pdf);
 }
 
-/** Far above an oversized PDF's extraction time, so a loaded machine still reaches the worker's own limits before a timer. */
 const SLOW_WORKER_MS = 30_000;
 
 async function workerErrorExit(bytes: Uint8Array): Promise<number> {

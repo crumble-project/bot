@@ -38,8 +38,6 @@ const MODE_COPY = {
   },
 } as const;
 
-// The server validates the token at sign-up, and it grants no role of its own.
-// react-doctor-disable-next-line url-prefilled-privileged-action
 const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
@@ -50,7 +48,6 @@ function enter() {
 }
 
 function usePasskeySignIn(mode: Mode) {
-  // Bumped after a manual attempt that didn't sign in, which aborted the autofill request.
   const [attempt, setAttempt] = useState(0);
 
   const signIn = useMutation({
@@ -77,9 +74,7 @@ function usePasskeySignIn(mode: Mode) {
         if (passkeyDone(await authClient.signIn.passkey({ autoFill: true }))) {
           enter();
         }
-      } catch {
-        // A failed autofill sign-in leaves the form for another try.
-      }
+      } catch {}
     })();
 
     return () => {
@@ -116,7 +111,6 @@ function useConnect(mode: Mode, credentials: Credentials) {
   });
 }
 
-/** Creates the account with a passkey alone; the server creates the user once the passkey verifies. */
 function usePasskeySignUp(credentials: { email: string; name: string }) {
   const { email, name } = credentials;
 

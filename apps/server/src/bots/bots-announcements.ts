@@ -19,7 +19,6 @@ type AnnouncementDeps = {
 
 export type BotsAnnouncements = ReturnType<typeof botsAnnouncements>;
 
-// A reaction ends a turn quietly, and so does a call's wake-up turn that wrote nothing.
 const quiet = (
   { reply, reaction }: ReturnType<typeof latestReply>,
   origin: string,

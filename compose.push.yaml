@@ -1,5 +1,3 @@
-# Remote push from this server. Keep the key files outside the repository:
-#   docker compose -f compose.yaml -f compose.push.yaml up -d
 services:
   crumble:
     environment:

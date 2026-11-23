@@ -217,7 +217,6 @@ describe("push registration and durable delivery", () => {
     expect((await app.request("/v1/push")).status).toBe(401);
     const info = await request("/v1/push");
     expect(info.status).toBe(200);
-    // SAFETY: The endpoint response is the PushInfo object under test.
     expect(((await info.json()) as any).serverId).toBe(
       await push.runPromise(Push.use((p) => Effect.succeed(p.serverId))),
     );

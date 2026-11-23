@@ -1,7 +1,3 @@
-/**
- * Bundled into the chart sandbox, never imported by the server. It exposes the authoring API to rewritten imports and
- * flattens compiled scenes into the primitive list clients draw. The server validates what it emits (`chartLayout`).
- */
 import {
   areaX,
   areaY,
@@ -173,10 +169,6 @@ const theme = {
   ),
 };
 
-/**
- * The authoring API a chart may import: every value the bundled modules export, plus the compact scales and the
- * tooltip. Naming each entry keeps the sandbox surface deliberate; a new export to offer is imported and added here.
- */
 const charts = {
   areaX,
   areaY,
@@ -300,7 +292,6 @@ const charts = {
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
-/** QuickJS has no Intl, so default tooltip numbers arrive with float noise such as 56.35859999999999. */
 const tidy = (value: string) =>
   /^-?\d+\.\d{4,}$/.test(value)
     ? String(Math.round(Number(value) * 1000) / 1000)
@@ -332,7 +323,6 @@ function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
     return parent;
   }
 
-  // SVG paint inherits into children; group opacity composites, which multiplying approximates for chart marks.
   return {
     fill: style.fill ?? parent.fill,
     fillOpacity: style.fillOpacity ?? parent.fillOpacity,
@@ -393,7 +383,6 @@ function pathCommands(d: string, dx: number, dy: number): Array<Command> {
           commands.push(["Z"]);
           break;
         default:
-          // abs(), unshort(), and unarc() leave only the cases above.
           break;
       }
     });
@@ -657,7 +646,6 @@ function flatten(node: SceneNode, place: Placement, out: Array<Primitive>) {
     return;
   }
 
-  // Focus layers paint only for the focused point; clients draw their own hover marker instead.
   if (node.focus || node.className?.includes("focus-layer")) {
     return;
   }
@@ -721,7 +709,6 @@ function compile(
   const errors: Array<unknown> = [];
 
   try {
-    // A width the library cannot lay out is dropped; clients scale another layout to fit.
     for (const width of widths) {
       try {
         layouts.push(

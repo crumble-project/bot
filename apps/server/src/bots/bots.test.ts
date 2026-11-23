@@ -36,7 +36,6 @@ type RuntimeFixture = {
 };
 
 const fakeRuntime = (fixture: RuntimeFixture) =>
-  // SAFETY: The prototype supplies AgentRuntime identity; the fixture overrides the methods a test uses.
   Object.assign(
     Object.create(AgentRuntime.prototype),
     { close: async () => undefined },

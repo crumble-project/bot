@@ -115,9 +115,9 @@ export type TenantRuntime = {
   app: ReturnType<typeof createAPI>;
   token: string;
   workspaces: Workspaces | undefined;
-  /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
+
   removeWorkspaces: () => Promise<void>;
-  /** Tells the account's open /v1/events streams that its pinned conversations changed. */
+
   announcePins: (pins: Array<string>) => void;
   close: () => Promise<void>;
 };
@@ -323,7 +323,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const conversations = Layer.mergeAll(scheduler, activity);
 
-  /** Tools whose sandboxes must close after the bot runtime that uses them. */
   const sandboxedTools = Layer.mergeAll(
     integrationTools,
     codemodeTools,
@@ -334,7 +333,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const signIns = Layer.mergeAll(ProviderSignIns.layer, integrations);
 
-  // Tiers from top to bottom: each may use every tier below it, and the account closes them top first.
   return leaves.pipe(
     Layer.provideMerge(schedules),
     Layer.provideMerge(botRequests),
@@ -385,7 +383,6 @@ const removeAccountWorkspaces = Effect.fnUntraced(function* (
   });
 }, logged("Removing an account's workspaces failed"));
 
-// After the API: what recovery and start deliver may reach it. Work a layer's scope owns is already running.
 const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
   yield* (yield* Bots).recover;
   yield* (yield* ScriptRuns).recover;

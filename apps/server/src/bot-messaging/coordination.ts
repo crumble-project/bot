@@ -142,7 +142,6 @@ const answerJobQuestionTool = (agent: Agent, messaging: Messaging) =>
       agent: Type.String(),
       job: Type.String(),
     }),
-    // A rerun after the answer resumed the job would fail as already answered.
     replay: "unsafe",
     execute: async (args) =>
       toolOutput(

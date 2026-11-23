@@ -7,7 +7,6 @@ const unique = (values: ReadonlyArray<string>) =>
 
 const ownerNumber = z.string().regex(/^\+?[0-9*#]{1,32}$/u);
 
-// The username is a path segment in the gateway's line routes, so "." and ".." are refused.
 const sipUsername = z
   .string()
   .regex(/^[A-Za-z0-9._~+-]{1,64}$/u)

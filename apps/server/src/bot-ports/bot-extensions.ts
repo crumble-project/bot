@@ -10,7 +10,6 @@ export type ExtensionSource = (
 export class BotExtensions extends Context.Service<
   BotExtensions,
   {
-    /** Offers `source`'s extensions until the scope closes; lower positions come first. */
     readonly register: (
       position: number,
       source: ExtensionSource,

@@ -87,7 +87,6 @@ function rfbMessages(ws: WebSocket, read: RfbRead) {
       this.pointer(x, y, 1);
       this.pointer(x, y, 0);
     },
-    /** A key press and release as noVNC sends them: a QEMU extended key event with the XT scan code. */
     key(keysym: number, scancode: number) {
       for (const down of [1, 0]) {
         const message = new Uint8Array(12);
@@ -140,10 +139,6 @@ function rfbMessages(ws: WebSocket, read: RfbRead) {
   };
 }
 
-/**
- * A minimal RFB 3.8 viewer over a WebSocket, sending the same messages noVNC sends: the extended clipboard's negative
- * length, QEMU extended key events, pointer events, and framebuffer update requests.
- */
 export async function connectRfb(url: string) {
   const ws = new WebSocket(url);
 

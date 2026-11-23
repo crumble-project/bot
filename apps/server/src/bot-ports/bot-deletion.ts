@@ -1,10 +1,6 @@
 import { Context, Effect, Layer, Ref } from "effect";
 import type { Scope } from "effect";
 
-/**
- * One feature's part in deleting a bot. It runs while the bot still exists, to read what the delete's cascade takes,
- * and answers what to clear once the bot is gone.
- */
 export type BotCleanup = (
   agentId: string,
 ) => Effect.Effect<Effect.Effect<void>>;
@@ -15,7 +11,6 @@ export class BotDeletion extends Context.Service<
     readonly register: (
       cleanup: BotCleanup,
     ) => Effect.Effect<void, never, Scope.Scope>;
-    /** Asks every feature what it will clear for the bot; run the answer after the delete. */
     readonly prepare: (agentId: string) => Effect.Effect<Effect.Effect<void>>;
   }
 >()("crumble/bot-ports/BotDeletion") {

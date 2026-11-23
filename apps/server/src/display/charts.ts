@@ -4,7 +4,6 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { z } from "zod";
 import { chartLayout } from "../contract/chart";
 
-/** Layout widths that fit inside client cards unscaled: a phone column and the desktop reply. */
 export const CHART_WIDTHS = [320, 520];
 export const DEFAULT_CHART_HEIGHT = 240;
 const MAX_BYTES = 600_000;
@@ -64,10 +63,6 @@ const RUNTIME_ENTRY = fileURLToPath(
   new URL("./chart-runtime.ts", import.meta.url),
 );
 
-/**
- * Runs model-written TanStack Charts code in a QuickJS sandbox and returns validated layouts. The sandbox has no I/O,
- * so the code can only build a chart from the data it contains.
- */
 export class ChartCompiler {
   private readonly sandbox = new CodemodeSandbox({
     memoryLimitBytes: 128 * 1024 * 1024,

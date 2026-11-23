@@ -68,7 +68,6 @@ const tool = (
     service.agent(agentId),
     standaloneMessaging(service),
   );
-  // SAFETY: The coordination extension always exposes its registered tools.
 
   return (extension as any).tools[index];
 };

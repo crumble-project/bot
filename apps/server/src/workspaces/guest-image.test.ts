@@ -43,7 +43,6 @@ const aptPackages = (stage: string) =>
     .split(/\s+/)
     .toSorted();
 
-// Railway gets its Chromium as a pinned snapshot build: Ubuntu ships it only as a snap, which a sandbox can't run.
 const DOCKERFILE_ONLY_PACKAGES = ["chromium"];
 
 describe("the Dockerfile matches the guest manifest", () => {

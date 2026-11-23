@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-// Agents follow paths in steering files without checking them first, so a moved file must fail the build.
 const files = Bun.spawnSync([
   "git",
   "ls-files",

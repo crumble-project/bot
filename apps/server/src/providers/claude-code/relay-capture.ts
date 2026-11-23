@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { z } from "zod";
 
 const usage = z.looseObject({
@@ -213,15 +212,12 @@ export class Capture {
     const target = this.message?.content[index];
 
     try {
-      // A no-argument tool call streams one empty partial_json.
       const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
 
       if (target) {
         target.input = input;
       }
     } catch {
-      // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
-      // dropped at message_stop, never run with guessed arguments.
       this.unparsed.push(index);
     }
   }

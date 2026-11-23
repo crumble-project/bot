@@ -60,9 +60,7 @@ function unwrap(masterKey: Buffer, path: string) {
     if (key.length === 32) {
       return key;
     }
-  } catch {
-    /* reported below */
-  }
+  } catch {}
 
   throw new Error(
     `Credential encryption key cannot be unwrapped with ${MASTER_KEY_VARIABLE}; refusing to start the account`,
@@ -72,16 +70,13 @@ function unwrap(masterKey: Buffer, path: string) {
 function restrict(path: string) {
   try {
     chmodSync(path, 0o600);
-  } catch {
-    /* permissions are best effort on Windows */
-  }
+  } catch {}
 }
 
-// A failed sync throws before the plain key is deleted, so it stays recoverable.
 function syncDirectory(path: string) {
   if (process.platform === "win32") {
     return;
-  } // Windows can't open a directory to sync it
+  }
 
   const fd = openSync(path, "r");
 
@@ -92,7 +87,6 @@ function syncDirectory(path: string) {
   }
 }
 
-// Synced and renamed into place, so a crash leaves the old file or the whole new one, never a partial key.
 function writeSecret(path: string, data: string | Buffer) {
   const temporary = `${path}.${randomBytes(6).toString("hex")}.tmp`;
   const fd = openSync(temporary, "wx", 0o600);
@@ -133,7 +127,6 @@ function removePlainKey({ dataDir, keyPath }: KeyFiles) {
   syncDirectory(dataDir);
 }
 
-/** A start that stopped mid-migration leaves both files; the plain one may go only if they agree. */
 function unwrapExisting(
   masterKey: Buffer,
   { wrappedPath }: KeyFiles,
@@ -185,10 +178,6 @@ function wrappedKey(
   return key;
 }
 
-/**
- * Encrypts values at rest with the account's key (AES-256-GCM). The key lives in `.secret.key`,
- * or in `.secret.key.wrapped`, sealed with `CRUMBLE_MASTER_KEY`, when that variable is set.
- */
 export class SecretBox extends Context.Service<
   SecretBox,
   {
@@ -229,7 +218,6 @@ export class SecretBox extends Context.Service<
             db.select({ n: count() }).from(table),
           ).pipe(Effect.orDie);
 
-          // A new key cannot read what an old one encrypted; refusing keeps those values recoverable.
           if (counts.some(([row]) => (row?.n ?? 0) > 0)) {
             return yield* Effect.die(
               new Error(

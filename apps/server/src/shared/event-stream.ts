@@ -10,7 +10,6 @@ export type StreamSetup = {
   onClose: (cleanup: StreamCleanup) => void;
 };
 
-/** Browsers show a response only once a body chunk arrives. */
 const sendHeartbeat = (stream: SSEStreamingApi) =>
   stream.writeSSE({ event: "heartbeat", data: "{}" });
 

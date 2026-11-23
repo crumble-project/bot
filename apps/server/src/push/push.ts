@@ -49,7 +49,6 @@ const settleRejectedDelivery = Effect.fnUntraced(function* (
     );
   }
 
-  // A token that rotated since the send gets the delivery again; the old one is disabled.
   if (current.value.token !== device.token) {
     return yield* repository.requeueDelivery(
       row.outboxId,
@@ -94,7 +93,6 @@ export class Push extends Context.Service<
     ) => Effect.Effect<PushRegistration>;
     readonly remove: (installationId: string) => Effect.Effect<void>;
     readonly enqueue: (activity: ReplyActivity) => Effect.Effect<void>;
-    /** One delivery pass over what is due; passes run one at a time and finish once started. */
     readonly drain: Effect.Effect<void>;
   }
 >()("crumble/push/Push") {
@@ -178,12 +176,10 @@ export class Push extends Context.Service<
         yield* attention.cleanup;
       });
 
-      // Uninterruptible, so closing waits for a send in progress instead of losing its outcome.
       const drain = passes
         .withPermits(1)(pass)
         .pipe(Effect.uninterruptible, Effect.withSpan("Push.drain"));
 
-      // Runs before the repository closes: what is queued gets one last pass.
       yield* Effect.addFinalizer(() => drain);
 
       const device = Effect.fn("Push.device")(function* (
@@ -249,7 +245,6 @@ export const PushDelivery = Layer.effectDiscard(
       ),
     );
 
-    // Runs after the listener and consumer stop: replies still in memory reach the outbox for the last pass.
     yield* Effect.addFinalizer(() =>
       Queue.clear(replies).pipe(Effect.flatMap(Effect.forEach(push.enqueue))),
     );
@@ -265,7 +260,6 @@ export const PushDelivery = Layer.effectDiscard(
       (unsubscribe) => Effect.sync(unsubscribe),
     );
 
-    // Persisting never waits on a send, and a taken reply is persisted even when closing interrupts.
     yield* Effect.uninterruptibleMask((restore) =>
       restore(Queue.take(replies)).pipe(Effect.flatMap(push.enqueue)),
     ).pipe(

@@ -6,7 +6,6 @@ import { newSigningKey, sshPublicKey, sshSign } from "./ssh-signing";
 
 const sshKeygen = Bun.which("ssh-keygen");
 
-// The format is OpenSSH's; its own tool is the judge where it's installed.
 test.skipIf(!sshKeygen)("ssh-keygen accepts the signature", () => {
   const dir = mkdtempSync(join(tmpdir(), "sshsig-"));
 

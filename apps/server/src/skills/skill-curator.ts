@@ -25,8 +25,6 @@ export type CuratorAction = {
 };
 
 function idleDays(skill: Skill, now: Date): number {
-  // An active skill's edits and restoration count as activity; a stale one's
-  // transition updated it, so measure that state from its last use instead.
   const lastActivity = Math.max(
     Date.parse(skill.lastUsedAt ?? skill.createdAt),
     skill.state === "active" ? Date.parse(skill.updatedAt) : 0,

@@ -30,7 +30,6 @@ const agent = store.createAgent(
     name: "Crash",
     description: "",
     instructions: "",
-    // SAFETY: The faux provider is registered in the test model registry above.
     provider: "faux",
     model: "crash-model",
     enabled: true,

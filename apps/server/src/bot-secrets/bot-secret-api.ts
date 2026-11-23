@@ -5,7 +5,6 @@ type SecretCall = { req: { param(name: "id" | "name"): string } };
 
 type EmptyAnswer<R> = { body(data: null, status: 204): R };
 
-/** Routes on one of a bot's secrets: an unknown bot stops them before `act` runs. `done` answers 204 once it has. */
 export const secretRoutes = (service: BotLookup) => {
   const secret = <C extends SecretCall, S, T>(
     act: (

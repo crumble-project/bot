@@ -19,7 +19,6 @@ const LINE_CHANGED = "The line was given to another bot or turned off.";
 const ACKNOWLEDGE_WITHIN = "15 seconds";
 const KEPT_PLACED = 200;
 
-// The voice gateway rings for at most 3 minutes.
 const SETTLE_WITHIN = "210 seconds";
 
 type PendingEnd = Exclude<
@@ -27,7 +26,6 @@ type PendingEnd = Exclude<
   { outcome: "unacknowledged" | "timedOut" }
 >;
 
-// Lowercase without a period, like the voice gateway's own errors, as each ends a sentence the owner reads.
 const UNREPORTED = {
   unacknowledged: "the voice gateway did not take the call",
   timedOut: "the voice gateway did not report how the call ended",
@@ -53,7 +51,6 @@ function missOf(result: SettledCall): OutsideCallMiss {
   return { outcome: "failed", error: UNREPORTED[result.outcome] };
 }
 
-/** `started`: its start report made it the line's active call. */
 type PendingCall = {
   key: string;
   botId: string;
@@ -92,7 +89,6 @@ export const createPendingCalls = (
     Deferred.doneUnsafe(call.settled, Effect.succeed(settled));
   };
 
-  // The ID is tombstoned, so a start report still on its way cannot begin the call.
   const cancel = (callId: string) => {
     tombstone(callId);
 
@@ -145,7 +141,6 @@ export const createPendingCalls = (
       ),
     );
 
-  // The key names the tool call or the call request, so neither dials twice; a pending call's key stays.
   const ring = Effect.fnUntraced(function* (
     key: string,
     botId: string,
@@ -247,7 +242,6 @@ export const createPendingCalls = (
           botId: request.botId,
           callee: request.callee,
         });
-        // Stored before the event is sent, so no start report for it can ever begin a call with the owner.
         yield* save;
         boundary.connection()?.send({ event: "call", data: call.event });
 
@@ -255,7 +249,6 @@ export const createPendingCalls = (
       }),
     );
 
-  // Still pending: nobody settled the call, so the voice gateway must hang up.
   const drop = (call: PendingCall) =>
     locked(
       Effect.sync(() => {
@@ -296,7 +289,6 @@ export const createPendingCalls = (
     return yield* settle(call).pipe(Effect.ensuring(drop(call)));
   });
 
-  // An answered call that started ends through its end report instead.
   const missed = (call: PendingCall, result: SettledCall) =>
     locked(
       Effect.sync(() => {
@@ -357,7 +349,6 @@ export const createPendingCalls = (
       return true;
     },
     reassign: (username: string) => {
-      // A ringing call belongs to the bot that placed it, not to the line's next bot.
       for (const call of pending.values()) {
         if (call.event.username === username) {
           cancel(call.event.callId);

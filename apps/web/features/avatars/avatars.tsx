@@ -105,7 +105,7 @@ export function AvatarsPage() {
           design your own.
         </p>
         <AvatarStatePreviews value={value} />
-        {/* A pending PATCH can't be cancelled; edits during it could save out of order. */}
+        {}
         <fieldset disabled={save.isPending} className="flex flex-col gap-6">
           <BotToEdit bots={bots} selected={selected} onSelect={select} />
           <AvatarEditor key={selected} value={value} onChange={edit} />

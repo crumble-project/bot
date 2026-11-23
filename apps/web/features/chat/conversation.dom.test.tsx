@@ -247,7 +247,7 @@ test("a bot reply being sent shows what it answers", async () => {
       });
 
       expect(container.textContent).toContain("My answer");
-      // Once as its own message and once quoted above the reply.
+
       expect(container.textContent?.split("The original")).toHaveLength(3);
 
       await act(async () => discard("bot:bot", "request"));

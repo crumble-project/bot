@@ -298,7 +298,6 @@ export const gatewayConnections = Effect.fnUntraced(function* (
       return;
     }
 
-    // Without a token there is nothing to connect: leave the generation untouched.
     if (token === undefined) {
       return;
     }
@@ -387,7 +386,6 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     states.get(adapterId)?.connection === connection &&
     !reconfiguring.has(adapterId);
 
-  /** Stops the adapter's connection and workers, then stores `next`; the next reconcile connects with it. */
   const reconfigure = (id: string, next: GatewayConfig) =>
     Semaphore.withPermit(
       configurationChanges,

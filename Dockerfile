@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 FROM oven/bun:1.4 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -9,8 +8,6 @@ RUN bun install --frozen-lockfile --production
 FROM oven/bun:1.4
 WORKDIR /app
 
-# The lock file is created beside the data directory, so the volume holds both
-# and a second container on the same volume fails to start.
 ENV NODE_ENV=production \
     CRUMBLE_HOST=0.0.0.0 \
     CRUMBLE_PORT=7337 \

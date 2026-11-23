@@ -42,7 +42,6 @@ export const fakePasswordManager = (
 const itemOf = (reference: string) =>
   reference.split("/").slice(0, 4).join("/");
 
-/** As 1Password answers: a missing field on an item it holds, otherwise no such item. */
 const missing = (state: FakePasswordManager, reference: string) => {
   const reason = state.unreadable.get(reference);
 

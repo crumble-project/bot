@@ -14,7 +14,6 @@ const NOVNC = path.dirname(
   fileURLToPath(import.meta.resolve("@novnc/novnc/package.json")),
 );
 
-// The viewer page imports only noVNC's core library and the zlib port it bundles.
 const SERVED = ["core/", "vendor/"];
 
 function novncFile(requested: string) {
@@ -55,10 +54,6 @@ export const viewerPathOwner = (path: string) =>
 
 export type Viewer = { agentId: string; passive: boolean };
 
-/**
- * Single-use viewer links. A web view cannot add the owner's bearer token to a WebSocket, so the ticket in the URL is
- * the credential: issued to the authenticated owner, valid for a minute, and spent when its WebSocket connects.
- */
 export class ViewerTickets {
   private readonly tickets = new Map<
     string,

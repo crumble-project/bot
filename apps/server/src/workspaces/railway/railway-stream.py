@@ -1,5 +1,3 @@
-# Runs in a Railway sandbox as `python3 railway-stream.py <program> [args...]`. Railway delivers exec stdout as text,
-# so the program's binary stdout goes out as one base64 line per read; stdin stays binary.
 import base64
 import os
 import subprocess

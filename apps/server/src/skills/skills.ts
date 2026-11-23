@@ -31,7 +31,6 @@ export class BotSkills extends Context.Service<
       skillId: string,
       context: SkillToolContext,
     ) => Effect.Effect<void, SkillToolError>;
-    /** Runs `effect` atomically: the writes inside join one transaction, and a failure undoes them all. */
     readonly transaction: <A, E>(
       effect: Effect.Effect<A, E>,
     ) => Effect.Effect<A, E>;
