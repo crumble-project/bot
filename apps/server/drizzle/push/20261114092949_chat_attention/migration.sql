@@ -4,7 +4,7 @@ CREATE TABLE `chat_views` (
 	`chat_id` text NOT NULL,
 	`refreshed_at` integer NOT NULL
 );
---> statement-breakpoint
+
 CREATE TABLE `reply_associations` (
 	`event_id` text PRIMARY KEY,
 	`chat_kind` text NOT NULL,

@@ -52,21 +52,15 @@ export const skillLifecycleInput = z.object({
 });
 
 export type SkillOrigin = {
-  /** `owner/repo`. */
   repository: string;
   branch: string;
-  /** The skill's folder in the repository; empty for the root. */
   path: string;
   commit: string;
-  /** Fingerprint of the imported files, so a commit that changes nothing else doesn't count as an update. */
   digest: string;
 };
 
-/** A skill package in the library: a bot's own when `agentId` is set, shared when null. */
 export type Skill = SkillInput & {
-  /** Direct source of an owner-assigned copy; retained if the source is deleted. */
   copiedFromSkillId?: string | null;
-  /** Set for a skill installed from GitHub, which nobody can edit. */
   origin: SkillOrigin | null;
   id: string;
   agentId: string | null;
@@ -82,7 +76,6 @@ export type Skill = SkillInput & {
 
 export type LearnedChange = {
   id: string;
-  /** The bot whose skill or memory changed; null for a shared one. */
   agentId: string | null;
   actor: ChangeActor;
   target: (typeof CHANGE_TARGETS)[number];

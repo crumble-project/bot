@@ -168,7 +168,6 @@ export const computerUseParameters = Type.Object({
 
 export type StepArgs = Static<typeof step>;
 
-/** Arguments of a `computer_use` call. `action` is a plain string: a model can send one the schema doesn't name. */
 export type ComputerUseArgs = Static<typeof computerUseParameters>;
 
 type OptionalArg = Exclude<keyof ComputerUseArgs, "action">;
@@ -182,7 +181,6 @@ const KEEPS_EMPTY: Partial<Record<OptionalArg, string>> = {
   text: "type",
 };
 
-// Element [0] is the window frame itself, never a useful target.
 const isPlaceholder = (value: ComputerUseArgs[OptionalArg]) =>
   value === 0 ||
   value === "" ||
@@ -190,7 +188,6 @@ const isPlaceholder = (value: ComputerUseArgs[OptionalArg]) =>
     value.length > 0 &&
     value.every((coordinate) => coordinate === 0));
 
-/** Normalizes placeholder arguments: some models (gpt-6-luna) fill every optional field with 0, "", or [0, 0]. */
 export function normalize(raw: ComputerUseArgs): ComputerUseArgs {
   const args = { ...raw };
 

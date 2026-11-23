@@ -458,7 +458,6 @@ export function skillManageTool(callbacks: SkillManageCallbacks) {
       }),
     }),
     callers: ["model"],
-    // A batch is not replay-safe: an interrupted call reports the interruption instead of writing twice.
     replay: "unsafe",
     execute: async (args, api, callContext) => {
       const agent = callbacks.agent();

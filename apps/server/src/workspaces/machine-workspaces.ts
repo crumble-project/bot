@@ -53,15 +53,12 @@ export type MachineStream = {
 export interface WorkspaceMachine {
   readonly image: string;
   readonly isAlive: Effect.Effect<boolean, WorkspaceUnreachable>;
-  /** Succeeds once the bot desktop's browser is up; at once on an image without a bot desktop. */
   readonly desktopReady: Effect.Effect<void, DesktopStartFailed>;
   stream(
     command: string,
     args: ReadonlyArray<string>,
   ): Effect.Effect<MachineStream, WorkspaceStreamFailed>;
-  /** Makes completed writes in the workspace durable. */
   readonly sync: Effect.Effect<void, WorkspaceSyncFailed>;
-  /** Makes the workspace durable while the machine still runs, then stops it and frees what it held. */
   readonly stop: Effect.Effect<void, WorkspaceStopFailed>;
 }
 
@@ -73,7 +70,6 @@ export type GuestFile = {
 
 export type GuestCommand = { step: string; command: string };
 
-/** What a booted guest gets from the server's features. Commands run in order, after every file is written. */
 export type GuestSetup = {
   files: ReadonlyArray<GuestFile>;
   commands: ReadonlyArray<GuestCommand>;
@@ -92,19 +88,13 @@ export type GuestOps = {
 
 export interface WorkspaceMachines {
   readonly kind: string;
-  /** Variables that send a job's HTTPS through the workspace proxy, where the guest does not reach it on its own. */
   readonly proxyEnv?: Record<string, string> | undefined;
-  /**
-   * Boots the bot's machine on `image` with the daemon at `GUEST_DAEMON`. On a `desktop` image the bot desktop's VNC
-   * server already listens; its browser may still be starting. Called serialized per bot.
-   */
   boot(
     agentId: string,
     image: string,
     desktop: boolean,
     guest?: GuestSetup,
   ): Effect.Effect<WorkspaceMachine, WorkspaceBootFailed | DesktopStartFailed>;
-  /** Deletes the bot's stopped machine and its files. Nothing to delete is a success. */
   remove(agentId: string): Effect.Effect<void, WorkspaceRemoveFailed>;
 }
 
@@ -112,7 +102,6 @@ export type WorkspaceSize = { cpus: number; memoryMib: number };
 
 export type MachineWorkspacesOptions = {
   idleTimeoutMs?: number;
-  /** An image that replaces the base image, read at each boot; only backends that boot OCI images pass it on. */
   baseImage?: () => string | null;
   desktopImage?: string;
   wantsDesktop?: (agentId: string) => boolean;
@@ -126,11 +115,9 @@ export type WorkspaceBackendOptions = Omit<
 > & {
   size: () => WorkspaceSize;
   dataDir: string;
-  /** Prefix of machine names, which may be global to the backend's account. */
   namePrefix: string;
 };
 
-/** Throws for an agent id that could name another bot's machine. */
 export function assertAgentId(agentId: string) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId)) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -155,11 +142,6 @@ export const bootStep = <A>(step: string, run: () => Promise<A>) =>
 
 export const ALLOW_OVERCOMMIT = "echo 1 > /proc/sys/vm/overcommit_memory";
 
-/**
- * Lets the guest kernel grant every memory reservation, at each boot since the setting lives in the running kernel.
- * Tools such as oxlint reserve far more address space than the machine has, which the default heuristic refuses. A
- * guest that refuses the setting still boots: most jobs never need it.
- */
 const allowOvercommit = (
   agentId: string,
   run: (command: string) => Promise<void>,
@@ -168,10 +150,6 @@ const allowOvercommit = (
     Effect.catch((error) => Effect.logWarning(error.message, agentId)),
   );
 
-/**
- * Installs the guest in the one order every backend needs: files, then the commands that read them, such as the
- * credential authority's, then the bot desktop, whose browser must find that authority when it starts.
- */
 export const prepareGuest = Effect.fn("prepareGuest")(function* (
   agentId: string,
   ops: GuestOps,
@@ -250,10 +228,6 @@ type Relay = {
 
 const relayRequest = z.array(z.string());
 
-/**
- * Holds the workspace for each call, so it never idle-stops under one. `info` and `session` count too: they connect,
- * and a machine that idle-stopped while its daemon starts fails the call.
- */
 class TrackedConnection extends Connection {
   constructor(
     options: ConnectionOptions,
@@ -298,7 +272,6 @@ class Workspace {
     readonly agentId: string,
     private readonly idleTimeoutMs: number,
   ) {
-    // pi-env runs this command for its connection: the Pi boundary, where a failed start rejects with its tagged error.
     this.connection = new TrackedConnection(
       { command: () => Effect.runPromise(this.ensureStarted()) },
       () => this.hold(),
@@ -310,7 +283,6 @@ class Workspace {
     });
   }
 
-  /** Start and stop never overlap, and concurrent callers share one start; a caller that leaves does not stop one halfway. */
   private exclusive<A, E>(task: Effect.Effect<A, E>) {
     return Semaphore.withPermit(this.lock, Effect.uninterruptible(task));
   }
@@ -347,7 +319,6 @@ class Workspace {
 
     const desktop = this.owner.desktopImageName();
 
-    // A new base image waits for the idle stop: a reconnect must not swap the machine under a running job.
     if (
       this.running &&
       (this.running.machine.image === image ||
@@ -381,14 +352,12 @@ class Workspace {
     );
   }
 
-  /** Stops only an idle workspace unless forced. A restart keeps the connection, which reconnects on next use. */
   stop(force: boolean, keepConnection = false) {
     return Effect.suspend(() => {
       clearTimeout(this.idleTimer);
 
       return this.exclusive(
         Effect.suspend(() => {
-          // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
           if (force && !keepConnection) {
             this.connection.close();
           }
@@ -445,10 +414,6 @@ class Workspace {
     return this.desktopImage().pipe(Effect.andThen(this.start(true)));
   }
 
-  /**
-   * A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. A passive
-   * stream neither boots nor holds the machine, so it ends when the machine stops.
-   */
   readonly openDesktop = Effect.fn("Workspace.openDesktop")(function* (
     this: Workspace,
     passive: boolean,
@@ -503,7 +468,6 @@ class Workspace {
     ) {
       const running = yield* machine;
 
-      // The bot lost its bot desktop while the machine booted.
       if (running.machine.image !== desktopImage) {
         return yield* new DesktopNotEnabled({
           message:
@@ -516,7 +480,6 @@ class Workspace {
         `TCP:127.0.0.1:${VNC_PORT}`,
       ]);
 
-      // Writes to the guest are async; chaining keeps them in order.
       let writes = Promise.resolve();
 
       return {
@@ -759,10 +722,6 @@ export const acquireWorkspaces = (
     workspaces ? Effect.orDie(workspaces.close()) : Effect.void,
   );
 
-/**
- * A unix socket that runs the daemon in the guest per connection: only this process can run commands in the machine,
- * so the `Connection` command is a bridge process that talks to this relay.
- */
 async function startRelay(machine: WorkspaceMachine): Promise<Relay> {
   const dir = await mkdtemp(path.join(tmpdir(), "crumble-workspace-"));
   const socketPath = path.join(dir, "relay.sock");
@@ -794,7 +753,6 @@ async function startRelay(machine: WorkspaceMachine): Promise<Relay> {
   };
 }
 
-// A throw here would escape the socket's event handler and take the server down.
 function daemonArgs(line: string): Array<string> | undefined {
   try {
     return relayRequest.safeParse(JSON.parse(line)).data;
@@ -803,7 +761,6 @@ function daemonArgs(line: string): Array<string> | undefined {
   }
 }
 
-/** The first line is the daemon's arguments as JSON; the rest is its stdin. */
 function serveRelayConnection(machine: WorkspaceMachine, socket: net.Socket) {
   let pending = Buffer.alloc(0);
 
@@ -841,7 +798,6 @@ async function pipeDaemon(
 ) {
   const daemon = await Effect.runPromise(machine.stream(GUEST_DAEMON, args));
 
-  // Writes to the guest are async; chaining keeps them in order.
   let writes = Promise.resolve();
 
   const enqueue = (write: () => Promise<void>) => {

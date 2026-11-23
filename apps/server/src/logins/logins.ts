@@ -98,7 +98,7 @@ export class Logins extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<void, AppError>;
-    /** Creates or updates a login; saving one the bot asked for answers its request. every reference is read once to check it, and nothing is saved if one fails. */
+
     readonly save: (
       agentId: string,
       name: string,
@@ -113,7 +113,7 @@ export class Logins extends Context.Service<
       name: string,
       options: { limit: number; before?: string | undefined },
     ) => Effect.Effect<Array<LoginUse>, AppError>;
-    /** The value to fill; for a one-time code, the code valid now. */
+
     readonly value: (
       agentId: string,
       name: string,
@@ -194,7 +194,6 @@ export class Logins extends Context.Service<
           reference: { passwordManager, reference: fields[field] },
         });
 
-        // Only a confirmed missing field means no code; any other failure must not drop a saved one.
         const hasCode = yield* secrets.probe(
           reference("one_time_code").reference,
         );

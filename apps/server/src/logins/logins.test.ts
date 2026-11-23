@@ -167,7 +167,6 @@ test("a 1Password item fills every field, its one-time code only when it has one
     }),
   );
 
-  // 1Password computes the code for this attribute, so it is filled as read.
   expect(await bot.value("github", "one_time_code")).toBe("123456");
 });
 

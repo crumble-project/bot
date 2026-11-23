@@ -31,7 +31,6 @@ import xai from "@lobehub/icons-static-svg/icons/xai.svg" with { type: "text" };
 import xiaomimimo from "@lobehub/icons-static-svg/icons/xiaomimimo.svg" with { type: "text" };
 import zai from "@lobehub/icons-static-svg/icons/zai.svg" with { type: "text" };
 
-/** Each provider's logo as SVG markup from LobeHub Icons; providers it lacks, such as Radius, keep a letter tile. */
 const LOGOS = {
   "amazon-bedrock": bedrock,
   "ant-ling": ling,

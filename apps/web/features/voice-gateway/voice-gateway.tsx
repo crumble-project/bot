@@ -393,7 +393,6 @@ function NumbersSection({ draft, errors, patch }: FieldsProps) {
   );
 }
 
-// Describes the saved line only while the draft still names the same bot.
 function savedLineState(gateway: VoiceGateway, line: DraftLine) {
   const username = line.username.trim();
   const saved = gateway.config.lines.find((item) => item.username === username);
@@ -964,7 +963,7 @@ function VoiceGatewayEditor({
 
   return (
     <>
-      {/* Outside the form: the token sheet's submit would bubble into it through the portal. */}
+      {}
       <ConnectionSection {...fields} />
       <form
         className="flex flex-col gap-8"
@@ -980,7 +979,7 @@ function VoiceGatewayEditor({
       >
         <NumbersSection {...fields} />
         <LinesSection {...fields} />
-        {/* Compared in draft form: a stored line may omit callsOthers, which a save always sends. */}
+        {}
         <SaveBar
           dirty={
             JSON.stringify(config) !==

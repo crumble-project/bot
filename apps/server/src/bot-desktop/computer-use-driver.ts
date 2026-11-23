@@ -10,7 +10,6 @@ import { forgetScreen, scrubText } from "./computer-use-state";
 import type { ComputerUseState } from "./computer-use-state";
 
 export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
-// cua-driver ends idle sessions; a call on an ended one is rejected with this message.
 
 const ENDED_SESSION = /session has ended/i;
 
@@ -35,7 +34,6 @@ export const windowName = (window: Window) =>
 export const windowLine = (window: Window) =>
   `${window.window_id} ${windowName(window)}`;
 
-// cua-driver reports refusals in several shapes; an error is a message or an object with a code.
 const driverError = z.union([
   z.string().transform((message) => ({ code: undefined, message })),
   z.object({ code: loose(z.string()), message: loose(z.string()) }),
@@ -86,7 +84,6 @@ type DriverValue =
 
 export type DriverArgs = Record<string, DriverValue>;
 
-// The reply stays as cua-driver sent it: URLs in it decide which host a login is for. Text is scrubbed when formatted.
 function parseReply(state: ComputerUseState, output: string): DriverReply {
   try {
     const parsed = driverReply.safeParse(JSON.parse(output));
@@ -94,9 +91,7 @@ function parseReply(state: ComputerUseState, output: string): DriverReply {
     if (parsed.success) {
       return parsed.data;
     }
-  } catch {
-    // Not JSON: cua-driver printed an error.
-  }
+  } catch {}
 
   return {
     error: {
@@ -108,13 +103,11 @@ function parseReply(state: ComputerUseState, output: string): DriverReply {
   };
 }
 
-// Chromium names container panels with U+FFFC placeholders and gives every node showContextMenu: tokens, no meaning.
 export const compactTree = (tree: string) =>
   tree
     .replaceAll(/￼+/g, "")
     .replaceAll(/,showContextMenu|showContextMenu,?/g, "");
 
-// cua-driver's hints sometimes name its own tools (run_steps, get_window_state); keep only advice that fits ours.
 export const ourNames = (text: string) =>
   text
     .replaceAll("get_window_state", "capture")
@@ -199,14 +192,12 @@ async function callDriver(
   context: Context,
   screenshot: boolean,
 ) {
-  // Unique per call: a file left by another job's call can never stand in for this one's.
   const id = randomUUID();
   const png = `/tmp/computer-use-${id}.png`;
   const jpg = `/tmp/computer-use-${id}.jpg`;
 
   const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
 
-  // Arguments can hold a login's value: printf is a builtin, so they reach stdin without a file or an argv.
   const reply = parseReply(
     state,
     await sh(

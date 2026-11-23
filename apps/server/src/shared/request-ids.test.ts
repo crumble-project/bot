@@ -20,7 +20,6 @@ import {
 const due = "2026-11-05T07:00:00.000Z";
 
 describe("request IDs", () => {
-  // These are idempotency keys and stored rows: a changed format starts a run twice.
   test.each([
     [scheduleRequest("s1", due), `schedule:s1:${due}`],
     [scriptRequest("s1", "r1"), "script:s1:r1"],

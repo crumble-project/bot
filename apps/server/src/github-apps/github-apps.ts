@@ -34,7 +34,6 @@ import { githubAppBots, githubApps } from "./schema";
 import { GITHUB_APP_WEB_PATHS } from "../contract/github-apps";
 import type { GitHubAppResponse } from "../contract/github-apps";
 
-// Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
 const PERMISSIONS = {
   contents: "write",
   pull_requests: "write",
@@ -44,18 +43,14 @@ const PERMISSIONS = {
   metadata: "read",
 };
 
-/** A token is minted again once less than this is left of its hour. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
-/** GitHub's manifest codes are valid for an hour; a state older than that can't finish. */
 const STATE_TTL_MS = 60 * 60 * 1000;
 
-/** The public page a created App links to; the server's own address would be published on it. */
 const HOMEPAGE = "https://docs.crumbli.ng";
 
 export type GitHubApp = GitHubAppResponse;
 
-/** What the web posts to GitHub to create the App: `manifest` goes in a form field, `state` is already in `url`. */
 export type GitHubAppManifest = { url: string; manifest: string };
 
 const conversion = z.object({
@@ -84,7 +79,6 @@ const STATE_FLOW = "github-app-state";
 const base64url = (value: string | Buffer) =>
   Buffer.from(value).toString("base64url");
 
-/** A JWT that authenticates as the App itself, valid for nine minutes; `iat` is back-dated for clock drift. */
 const appJwt = (clientId: string, privateKey: string, nowMs: number) => {
   const now = Math.floor(nowMs / 1000);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -120,14 +114,12 @@ const identityOf = (row: AppRow) => {
   return { name, email: noreplyEmail(row.botUserId, name) };
 };
 
-/** Bots acting as the owner credit the App as co-author, so GitHub shows its avatar on the commit too. */
 const trailerOf = (row: AppRow) => {
   const { name, email } = identityOf(row);
 
   return `Co-authored-by: ${name} <${email}>`;
 };
 
-/** The key stays on the server: git hands the commit to a guest helper that asks it for the signature. */
 const signingEntries = (signingKey: string): Array<[string, string]> => [
   ["gpg.format", "ssh"],
   ["user.signingkey", `key::${signingKey}`],
@@ -135,12 +127,6 @@ const signingEntries = (signingKey: string): Array<[string, string]> => [
   ["commit.gpgsign", "true"],
 ];
 
-/**
- * The account's GitHub Apps: each created from a manifest on one GitHub account, installed there, and assigned to
- * bots. A bot with an installed App gets the `GH_TOKEN` credential; its value is an installation token minted on
- * use, from the App whose account owns the request's repository. When the owner signed in through that App, the
- * token is the owner's instead (GitHubAppUsers). Everywhere else, the bot's machine account acts (GitHubAccounts).
- */
 export class GitHubApps extends Context.Service<
   GitHubApps,
   {
@@ -158,12 +144,12 @@ export class GitHubApps extends Context.Service<
     readonly connect: (
       id: string,
     ) => Effect.Effect<GitHubApp, NotFound | Conflict | GitHubUnavailable>;
-    /** Replaces the bots that act through the App; a bot keeps at most one App per GitHub account. */
+
     readonly assign: (
       id: string,
       botIds: ReadonlyArray<string>,
     ) => Effect.Effect<GitHubApp, NotFound | Conflict>;
-    /** Forgets the App; it stays on GitHub until the owner deletes it there. */
+
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
     readonly assignAccount: (
       id: string,
@@ -388,7 +374,6 @@ export class GitHubApps extends Context.Service<
           token: yield* jwtFor(found),
         });
 
-        // A private App installs only on its owner; an older App may not know its account yet.
         const installation = all.find(
           (each) =>
             !found.account ||
@@ -571,7 +556,6 @@ export class GitHubApps extends Context.Service<
         const owner = ownerOf(target);
         const machine = yield* accounts.ofBot(agentId);
 
-        // Requests without an owner in their path, such as GraphQL, go to the machine account, else the default App.
         const app = owner
           ? installed.find((each) => each.account?.toLowerCase() === owner)
           : undefined;
@@ -629,7 +613,6 @@ export class GitHubApps extends Context.Service<
           : own;
       });
 
-      /** Signs a machine account's commits; an App's commits through the API are verified without it. */
       const signingConfig = Effect.fn("GitHubApps.signingConfig")(function* (
         agentId: string,
         identity: GitHubIdentity | undefined,
@@ -656,7 +639,6 @@ export class GitHubApps extends Context.Service<
         const { name, email, trailer }: Omit<GitHubIdentity, "account"> =
           chosen;
 
-        // Config, not GIT_AUTHOR_*, so a repository's own user.name wins in another account's repositories.
         const entries: Array<[string, string]> = [
           ["user.name", name],
           ["user.email", email],
@@ -668,9 +650,7 @@ export class GitHubApps extends Context.Service<
 
         entries.push(...(yield* signingConfig(agentId, fallback)));
 
-        if (yield* hasToken(agentId))
-        // git sends the placeholder as the Basic password; the credential proxy swaps it for the token.
-        {
+        if (yield* hasToken(agentId)) {
           entries.push([
             "credential.https://github.com.helper",
             `!f() { echo username=x-access-token; echo "password=$${GITHUB_TOKEN_CREDENTIAL}"; }; f`,

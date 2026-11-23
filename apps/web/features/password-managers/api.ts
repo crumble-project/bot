@@ -21,6 +21,5 @@ export const passwordManagersQuery = queryOptions({
 export const passwordManagerPath = (id: PasswordManagerId) =>
   `/v1/password-managers/${encodeURIComponent(id)}` as const;
 
-/** After any secret write: each password manager's "used by" counts every saved reference. */
 export const invalidateSecrets = () =>
   queryClient.invalidateQueries({ queryKey: passwordManagersQuery.queryKey });

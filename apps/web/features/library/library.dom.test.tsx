@@ -13,7 +13,6 @@ import { queryClient } from "@/lib/api";
 import { waitFor } from "@/test/wait-for";
 import { requestPath } from "@/test/request-path";
 
-/** `createObjectURL` accepts a `MediaSource` too; these tests only upload blobs. */
 const isBlob = (value: Blob | MediaSource): value is Blob =>
   "arrayBuffer" in value;
 

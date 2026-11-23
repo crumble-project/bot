@@ -94,7 +94,6 @@ function nextRunLabel(
   return `${at.weekday}, ${at.month} ${at.day} at ${at.hour}:${at.minute} ${at.dayPeriod}`;
 }
 
-// ICU versions join date and time differently ("Jan 1 at 1 PM", "Jan 1, 1 PM"); build the label from parts so every platform matches.
 function partsOf(date: Date, options: Intl.DateTimeFormatOptions) {
   const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
 

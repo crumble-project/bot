@@ -1,5 +1,4 @@
 #!/bin/sh
-# Lint, format-check, and type-check the working tree before each commit. Skip once with `git commit --no-verify`.
 set -eu
 hooks=$(dirname "$0")
 "$hooks/check-bun-version.sh"

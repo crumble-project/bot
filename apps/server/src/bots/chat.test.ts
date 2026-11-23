@@ -241,7 +241,6 @@ describe("continuous bot chat", () => {
       fauxAssistantMessage("Summary of earlier work"),
     ]);
 
-    // Pi keeps the newest 20k tokens verbatim, so only a long latest turn leaves older turns to summarize.
     const long = `second question ${"word ".repeat(25000)}`;
 
     for (const [index, text] of ["first question", long].entries())
@@ -899,7 +898,6 @@ describe("library files", () => {
       "Chat's model (chat) can't read images. Choose a model that accepts images in Chat's profile",
     );
 
-    // Refused before a turn is recorded, so the chat shows no failed turn beside the send error.
     const refused = await service.chatSnapshot(agent.id);
 
     expect(refused.error).toBeNull();
@@ -1294,15 +1292,12 @@ describe("vision model", () => {
       service.runtime.attachment(agent, shown.entryId, 0),
     ).rejects.toThrow("Attachment not found");
 
-    // SAFETY: the snapshot's usage is Pi Durable's usage document.
     const usage = (snapshot.usage as UsageDoc).models["eye/vision"]!;
     expect(usage.input).toBeGreaterThan(0);
     expect(usage.cost.total).toBeGreaterThan(0);
     await service.close();
   });
 
-  // The hook commits the description from inside the running generation; the turn settling, and a reopened harness
-  // reading it back, show that commit lands without deadlocking the generation that waits on it.
   test("a description is committed from the hook, asked for once, and reused by later turns, also after a restart", async () => {
     const seen: unknown[] = [];
     const asked: { images: string[]; prompt: string }[] = [];
@@ -1414,7 +1409,6 @@ describe("vision model", () => {
     ]);
     expect(seen[0]).toEqual([{ type: "text", text: "$12.00" }]);
 
-    // SAFETY: the snapshot's usage is Pi Durable's usage document.
     const usage = (await service.chatSnapshot(agent.id)).usage as UsageDoc;
     expect(usage.tools[ASK_ABOUT_IMAGE_TOOL_NAME]?.cost.total).toBeGreaterThan(
       0,

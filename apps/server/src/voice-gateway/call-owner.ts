@@ -59,7 +59,6 @@ export function callOwnerExtension(botId: string, calls: Calls) {
       }),
     }),
     callers: ["model"],
-    // A rerun after a crash would ring the owner a second time.
     replay: "unsafe",
     execute: async ({ greeting }, api, context) => {
       const result = await Effect.runPromise(
@@ -77,7 +76,6 @@ export function callOwnerExtension(botId: string, calls: Calls) {
     },
   });
 
-  // A spoken reply reaches only the line's bot chat.
   return defineExtension({ name: "voice-call", tools: [callOwner] });
 }
 
@@ -108,7 +106,6 @@ export function hangUpExtension(botId: string, calls: HangUps) {
   return defineExtension({ name: "voice-hang-up", tools: [hangUp] });
 }
 
-/** `hang_up` for an outside call's conversation; `objected` withholds the call's transcript once the call ends. */
 export function outsideHangUpExtension(
   botId: string,
   callee: string,

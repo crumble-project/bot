@@ -20,7 +20,6 @@ function peleFile(requested: string) {
   return file.startsWith(`${PELE}${path.sep}`) ? file : undefined;
 }
 
-/** The install icons `apps/web/manifest.webmanifest` names; Bun bundles only files the HTML links to. */
 const APP_ICONS = ["icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 
 function appIcon(name: string) {
@@ -43,14 +42,10 @@ function withoutUI(request: Request) {
   return Response.redirect(url, 308);
 }
 
-/**
- * The web UI and the modules it loads on demand. Bun bundles the UI without code splitting, so
- * Pele's Mermaid renderer is served unbundled and each diagram type loads only when a chat shows one.
- */
 export const webUIRoutes = {
   "/": webUI,
   "/*": webUI,
-  // The UI lived under /ui/ before; installed apps, bookmarks, and GitHub Apps' callback URLs still point there.
+
   "/ui": withoutUI,
   "/ui/*": withoutUI,
   ...Object.fromEntries(APP_ICONS.map((name) => [`/${name}`, appIcon(name)])),

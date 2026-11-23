@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk directsdk.py (MIT, see THIRD_PARTY_NOTICES.md).
 import {
   clampThinkingLevel,
   createAssistantMessageEventStream,
@@ -53,12 +52,10 @@ import { Match } from "effect";
 export const CLAUDE_CODE_API = "claude-code";
 
 const INERT_MCP = join(import.meta.dir, "inert-mcp.ts");
-// A clean answer returns at the CLI's result event; a CLI that will not exit is killed after this.
 
 const DRAIN_GRACE_MS = 10_000;
 const DEFAULT_TIMEOUT_MS = 600_000;
 
-// Claude Code's own error codes for errors it answers without a relayed upstream status.
 const NATIVE_ERRORS = new Map([
   ["rate_limit", "429 rate limit"],
   ["billing_error", "402 billing error"],
@@ -68,10 +65,9 @@ const NATIVE_ERRORS = new Map([
 ]);
 
 export type AdapterOptions = ClaudeCodeOptions & {
-  /** Claude Code's working directory: stable, since the CLI writes it into every request's environment. */
   workDir: string;
   upstream?: string;
-  /** Wire qualification only: environment for the real CLI against a fixture upstream, such as a fixture API key. */
+
   fixtureEnv?: Record<string, string>;
   status: () => Promise<ClaudeCodeStatus>;
   invalidateStatus: () => void;
@@ -97,7 +93,6 @@ function conversationSessionId(system: string, frames: Array<NativeFrame>) {
     .update(JSON.stringify([system, frames[0]?.message ?? null]))
     .digest();
 
-  // UUID version 4 layout over the digest's first 16 bytes.
   digest[6] = ((digest[6] ?? 0) & 0x0f) | 0x40;
   digest[8] = ((digest[8] ?? 0) & 0x3f) | 0x80;
   const hex = digest.subarray(0, 16).toString("hex");
@@ -107,7 +102,6 @@ function conversationSessionId(system: string, frames: Array<NativeFrame>) {
 
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** Crumble tool names and the names Claude Code sees; names over 50 characters get a stable hashed alias. */
 function toolNames(tools: Array<{ name: string }>) {
   const names = new Map<string, string>();
   const native = new Map<string, string>();
@@ -142,10 +136,6 @@ const COMBINATORS = ["oneOf", "allOf", "anyOf"];
 
 const jsonSchema = z.record(z.string(), z.json());
 
-/**
- * A parameter schema as JSON carries it. TypeBox tags its schemas with a symbol key, so a strict JSON copy rejects them,
- * and an optional field can leave a key undefined, which JSON omits. Both go the way an encode drops them.
- */
 function schemaJson(value: unknown): JsonValue {
   if (Array.isArray(value)) {
     return value.map((item) => schemaJson(item));
@@ -166,10 +156,6 @@ function schemaJson(value: unknown): JsonValue {
     : null;
 }
 
-/**
- * Anthropic's validator rejects top-level oneOf/allOf/anyOf and the null branch of nullable unions. The combinators
- * are advisory (Crumble re-validates arguments); nested unions other than nullable ones stay untouched.
- */
 function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
   const normalized = stripNullable(schema);
 
@@ -455,13 +441,12 @@ function configureThinking(
       return "low";
     }
     body["thinking"] = { type: "disabled" };
-    // Clear-thinking context edits are invalid when thinking is disabled.
+
     body["context_management"] = { edits: [] };
 
     return undefined;
   }
 
-  // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
   if (supportsAdaptiveThinking(modelId)) {
     body["thinking"] = { type: "adaptive", display: "summarized" };
   }
@@ -479,7 +464,7 @@ const streamJson = z.looseObject({
   error: z.string().nullish(),
   total_cost_usd: z.number().nullish(),
   usage: z.looseObject({}).nullish(),
-  // System events such as `permission_denied` carry `message` as plain text, which nothing reads.
+
   message: z
     .looseObject({
       error: z.json().optional(),
@@ -520,7 +505,6 @@ class Lines {
       try {
         this.push(streamJson.parse(JSON.parse(line)));
       } catch {
-        // The offending line is the whole diagnosis (a shim banner, a stray print); keep it.
         this.push(
           new Error(
             `Invalid native stream-json output: ${JSON.stringify(line.slice(0, 300))}`,
@@ -573,7 +557,6 @@ class Lines {
   }
 }
 
-/** Kills Claude Code and every process it started: it runs as the leader of its own process group. */
 function killTree(child: ChildProcessWithoutNullStreams) {
   if (
     child.exitCode !== null ||
@@ -585,9 +568,7 @@ function killTree(child: ChildProcessWithoutNullStreams) {
 
   try {
     process.kill(-child.pid, "SIGKILL");
-  } catch {
-    // Already gone.
-  }
+  } catch {}
 }
 
 const exited = (child: ChildProcessWithoutNullStreams) =>
@@ -613,7 +594,7 @@ function piUsage(usage?: CapturedMessage["usage"]): Usage {
     cacheRead,
     cacheWrite,
     totalTokens: input + output + cacheRead + cacheWrite,
-    // Subscription use has no per-request price; Claude Code's list-price estimate is not a charge.
+
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 
@@ -699,7 +680,6 @@ function prepareRequest(
   const { body, effort } = requestBody(model, options);
 
   const manifest = tools.map((tool) => {
-    // The manifest (inert MCP server) and the request body must advertise the same schema.
     const schema = normalizeInputSchema(
       jsonSchema.parse(schemaJson(tool.parameters)),
     );
@@ -725,7 +705,7 @@ type PreparedRequest = ReturnType<typeof prepareRequest>;
 function writeCliFiles(request: PreparedRequest, scratch: string) {
   const { manifest, body, system } = request;
   writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
-  // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
+
   writeFileSync(
     join(scratch, "settings.json"),
     JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
@@ -758,10 +738,9 @@ function cliArgs(model: Model<Api>, request: PreparedRequest, scratch: string) {
     "dontAsk",
     "--mcp-config",
     JSON.stringify(mcp),
-    // The CLI applies its own effort message, which overrides the request body's effort.
+
     ...(effort ? ["--effort", effort] : []),
-    // One native session per conversation: the CLI names a per-session scratch directory near the top of every
-    // request, so a new id per spawn would move the cache prefix on every call.
+
     "--session-id",
     conversationSessionId(system, frames),
   ];
@@ -785,7 +764,7 @@ function prepareCli(
     CLAUDE_CODE_MAX_RETRIES: "0",
     DISABLE_AUTO_COMPACT: "1",
     DISABLE_COMPACT: "1",
-    // Crumble owns budgets; the replayed reminder invalidates cached history.
+
     CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
     ANTHROPIC_BASE_URL: admission.url,
   });
@@ -1050,7 +1029,6 @@ function failUnused(
   throw new Error(`Claude Code made no model request${stderrTail()}`);
 }
 
-// The CLI's last error is the admission denial; name the first attempt's outcome so reports are diagnosable.
 function firstAttemptSummary(admission: Admission) {
   const upstream = admission.errorText();
 
@@ -1086,7 +1064,6 @@ function validateResponse(
     );
   }
 
-  // Stricter than Hermes, which drops only the cut-off call: no tool from a response with a broken call runs.
   if (admission.capture.dropped > 0) {
     throw new Error(
       `Incomplete tool call: ${admission.capture.dropped} tool call(s) ended before their arguments were complete (stop reason ${captured.stop_reason ?? "none"})`,
@@ -1116,12 +1093,10 @@ function classify(
   result: StreamJson | undefined,
   captured: CapturedMessage,
 ): "clean" | "tool_boundary" | "refused" | "failed" {
-  // The CLI reports a refusal as an error of its own; the captured answer stands.
   if (captured.stop_reason === "refusal") {
     return "refused";
   }
 
-  // One turn is all a request gets, so an answer that calls tools ends at the turn limit.
   if (
     result?.subtype === "error_max_turns" &&
     captured.content.some((item) => item.type === "tool_use")
@@ -1132,7 +1107,6 @@ function classify(
   return result?.subtype === "success" && !result.is_error ? "clean" : "failed";
 }
 
-/** Whether the result ends the turn as a good one does; a fast return never saw the exit code. */
 const endedWell = (
   outcome: ReturnType<typeof classify>,
   fast: boolean,
@@ -1150,7 +1124,7 @@ function validateNativeResult(
 ) {
   const { results, nativeError, nativeErrorCode, fast } = response;
   const outcome = classify(results[0], captured);
-  // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
+
   const handled = denied > 0 || outcome === "refused";
 
   if (nativeError !== undefined && !handled) {
@@ -1182,7 +1156,6 @@ function thinkingBlock(item: NativeBlock): ThinkingContent {
 }
 
 function toolCallBlock(item: NativeBlock, crumble: Map<string, string>) {
-  // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
   const offered = (item.name ?? "").replace(
     new RegExp(`^${CRUMBLE_TOOL_PREFIX}`),
     "",
@@ -1327,7 +1300,6 @@ function finishResponse(
   pushToolCalls(stream, message, calls);
 
   if (refused) {
-    // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
     stream.push({
       type: "error",
       reason: "error",
@@ -1440,7 +1412,6 @@ type NativeRequest = {
   collected: ReturnType<typeof stderrCollector>;
 };
 
-/** What the abort listener and the cleanup in `run` must see as soon as `driveCli` changes it. */
 type CliHold = {
   child: ChildProcessWithoutNullStreams | undefined;
   handedOff: boolean;
@@ -1589,7 +1560,6 @@ async function run(
   }
 }
 
-/** A clean admitted answer returns at the CLI's result event; its exit code and later output are never read. */
 function fastEligible(
   result: StreamJson,
   admission: Admission,
@@ -1610,7 +1580,6 @@ function fastEligible(
   );
 }
 
-/** Lets a finished CLI exit on its own, killing it after a grace period; the consumed admission stays up until then. */
 function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {
   const timer = setTimeout(() => killTree(child), DRAIN_GRACE_MS);
 

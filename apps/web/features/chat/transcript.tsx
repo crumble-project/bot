@@ -40,7 +40,6 @@ import { REACTION_TOOL_NAME } from "@crumble/server/contract/tools";
 import { blocksOf, toolDetailsOf } from "./tool-details";
 import { ReplyAttention } from "./reply-attention";
 
-/** Merges older pages into the live page, dropping IDs they share. Every page is in transcript order, oldest first. */
 export function mergeMessages(older: Array<Message>, live: Array<Message>) {
   const byId = new Map<string, Message>();
 
@@ -66,7 +65,6 @@ export const hasContent = (message: Message) =>
 
 export type Reaction = { emoji: string; from?: string | undefined };
 
-/** The entry a reaction answers: the owner's last message. */
 export type ReactionTarget = (
   message: Message,
   lastOwner: string | undefined,
@@ -612,20 +610,17 @@ function OwnerUploads({ uploads }: { uploads?: Array<Upload> | undefined }) {
     return null;
   }
 
-  // A sent message's uploads never change.
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {uploads.map((upload, index) =>
         upload.preview ? (
           <img
-            // react-doctor-disable-next-line no-array-index-as-key
             key={index}
             src={upload.preview}
             alt={upload.name}
             className="max-h-64 max-w-full rounded-lg object-contain"
           />
         ) : (
-          // react-doctor-disable-next-line no-array-index-as-key
           <Badge key={index} variant="outline">
             <IconFileText data-icon="inline-start" />
             {upload.name}

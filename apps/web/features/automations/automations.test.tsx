@@ -102,7 +102,6 @@ test("running an automation refreshes its histories and opens its bot", async ()
     ),
   );
 
-  // Seeded and observed, as open pages keep them: only a refresh can fetch them.
   for (const queryKey of [
     executionsQuery.queryKey,
     runs.queryKey,

@@ -10,7 +10,6 @@ type CallAvailability = {
   ringing: ReadonlySet<string>;
 };
 
-// A call to the owner is refused to its bot; an outside call to the owner approving it.
 const REFUSALS = {
   owner: {
     noLine: "You have no line.",

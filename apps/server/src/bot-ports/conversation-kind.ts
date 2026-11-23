@@ -23,7 +23,6 @@ export type ConversationParts = {
   offered: Array<Extension>;
 };
 
-/** `bare`: the prompt is `standing` and the clock alone, without the identity line, skills, or memory. */
 export type ConversationPrompt = {
   standing?: (agent: Agent) => Array<string>;
   addition?: string;
@@ -39,7 +38,6 @@ export type ConversationStyle = {
   noEnvironment?: boolean;
 };
 
-/** One kind of conversation besides the chat. Built once per bot, as its extension may hold state. */
 export type ConversationKind = {
   extension: Extension;
   recognize: (

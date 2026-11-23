@@ -43,7 +43,6 @@ const agent = (id: string, mcpServers: string[]): Agent => ({
   updatedAt: new Date().toISOString(),
 });
 
-// SAFETY: The fake clients only require the transport close method.
 const unusedTransport = { close: async () => {} } as McpTransport;
 
 function tempDir() {
@@ -174,7 +173,6 @@ describe("MCP integrations", () => {
     const first = extensions[0];
 
     if (!first) throw new Error("missing extension");
-    // SAFETY: MCP extensions expose their registered tool list.
     const tools = (first as any).tools as any[];
     expect(tools).toHaveLength(1);
     const tool: any = tools[0];
@@ -192,7 +190,6 @@ describe("MCP integrations", () => {
       BACKGROUND_CONTEXT,
     );
 
-    // SAFETY: The fake MCP client returns text output items.
     expect((result.output as any)[0].text).toBe("ok");
     expect(called).toBe(1);
     await close();
@@ -267,7 +264,6 @@ describe("MCP integrations", () => {
     );
 
     if (!extension) throw new Error("missing extension");
-    // SAFETY: MCP extensions expose their registered tool list.
     const tools = (extension as any).tools as any[];
     const tool: any = tools[0];
 
@@ -279,7 +275,6 @@ describe("MCP integrations", () => {
       BACKGROUND_CONTEXT,
     );
 
-    // SAFETY: The fake MCP client returns text output items.
     expect((result.output as any)[0].text).toBe("sent");
     expect(called).toBe(1);
     await close();
@@ -319,7 +314,6 @@ describe("MCP integrations", () => {
       store.createAgent(agent(agentId, [server.id]), agentId),
     );
 
-    // SAFETY: MCP extensions expose their registered tool list.
     const tool = ((extension as any).tools as any[])[0];
     const started = performance.now();
     await expect(
@@ -371,7 +365,6 @@ describe("MCP integrations", () => {
       store.createAgent(agent(agentId, [server.id]), agentId),
     );
 
-    // SAFETY: MCP extensions expose their registered tool list.
     const tool = ((extension as any).tools as any[])[0];
     const controller = new AbortController();
     const reason = new Error("caller cancelled");
@@ -435,7 +428,6 @@ describe("MCP integrations", () => {
       store.createAgent(agent(agentId, [server.id]), agentId),
     );
 
-    // SAFETY: MCP extensions expose their registered tool list.
     const tool = ((extension as any).tools as any[])[0];
     const controller = new AbortController();
     const context = withAbortSignal(controller.signal, BACKGROUND_CONTEXT);
@@ -526,7 +518,6 @@ describe("MCP integrations", () => {
 
     const { integrations, close } = standaloneIntegrations(store.runtime, {
       clientFactory: () => ({
-        // SAFETY: The fake client only requires the transport close method.
         transport: {
           close: async () => {
             closed.push("transport");
@@ -585,7 +576,6 @@ describe("MCP integrations", () => {
       SecretValues.use((values) => values.forget("1password", REFERENCE)),
     );
 
-    // SAFETY: MCP extensions expose their registered tool list.
     const tool = ((extension as any).tools as any[])[0];
 
     await expect(

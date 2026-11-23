@@ -97,7 +97,6 @@ function LoginBody({
   return session.data ? <SignInSteps session={session.data} /> : <Spinner />;
 }
 
-/** Runs a provider's account sign-in; closing keeps it going on the server so it can be continued. */
 export function SignInDialog({
   provider,
   onClose,
@@ -159,8 +158,6 @@ function SignInSteps({ session }: { session: ProviderSignIn }) {
   return (
     <div className="flex flex-col gap-4">
       {session.events.map((event, index) => (
-        // The event log only grows, so an event's index is its identity.
-        // react-doctor-disable-next-line no-array-index-as-key
         <LoginEvent
           key={index}
           event={event}
@@ -194,8 +191,6 @@ function AuthUrlEvent({
       {event.instructions && <p className="text-sm">{event.instructions}</p>}
       <Button
         render={
-          // Button renders its children into this anchor.
-          // react-doctor-disable-next-line anchor-has-content
           <a href={event.url} target="_blank" rel="noopener noreferrer" />
         }
         nativeButton={false}
@@ -282,7 +277,7 @@ function usePromptAnswer(sessionId: string, promptId: LoginPrompt["id"]) {
       ),
     onSuccess: (next) => {
       queryClient.setQueryData(signInQuery(sessionId).queryKey, next);
-      // Answers can be secrets; keep them out of the mutation state.
+
       answer.reset();
     },
   });

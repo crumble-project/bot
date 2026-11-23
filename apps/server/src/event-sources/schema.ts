@@ -10,7 +10,6 @@ export const relayEvents = sqliteTable(
   "relay_events",
   {
     id: text("id").primaryKey(),
-    // No foreign key: a deleted source's events still deduplicate redeliveries.
     sourceId: text("source_id").notNull(),
     receivedAt: text("received_at").notNull(),
     method: text("method").notNull(),

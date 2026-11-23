@@ -1,13 +1,8 @@
-# React Doctor finds security, performance, correctness, accessibility,
-# bundle-size, and architecture issues in React code. Docs: https://www.react.doctor/ci
-
 name: React Doctor
 
 on:
-  # Pull requests report and fail only on issues they introduce, relative to the merge base.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Pushes to main track the health score; the action never fails them.
   push:
     branches: ["main"]
 
@@ -26,11 +21,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      # The merge base needs full history; a shallow checkout reports pre-existing issues too.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: millionco/react-doctor@695e46eee203a5d1855020191aa7e9c010a1250e # v2.4.0
+      - uses: millionco/react-doctor@695e46eee203a5d1855020191aa7e9c010a1250e
         with:
           blocking: error

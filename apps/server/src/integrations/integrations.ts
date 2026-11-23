@@ -104,7 +104,6 @@ function defaultClientFactory(
   >[0] = {
     url,
     headers,
-    // Credentials never follow a redirect to another host.
     fetch: (input, init) => fetch(input, { ...init, redirect: "error" }),
   };
 
@@ -169,11 +168,9 @@ export class McpIntegrations extends Context.Service<
   McpIntegrations,
   {
     readonly oauthClient: ClientDocument | undefined;
-    /** Why a server's tools were left out of a bot's last turn, until it connects again. */
     readonly failure: (serverId: string) => string | null;
     readonly extensionsForAgent: (agent: Agent) => Promise<Array<Extension>>;
     readonly codemodeNamespaces: (agent: Agent) => Array<CodemodeNamespace>;
-    /** Drops a server's open connection, so the next use picks up a new token or sign-in. */
     readonly disconnect: (serverId: string) => Effect.Effect<void>;
   }
 >()("crumble/integrations/McpIntegrations") {
@@ -208,7 +205,6 @@ export class McpIntegrations extends Context.Service<
         const generation = (serverId: string) =>
           `${closes}:${disconnects.get(serverId) ?? 0}`;
 
-        /** Bounds a call, including clients that ignore their signal and timeoutMs. */
         const timed = <A>(call: (signal: AbortSignal) => PromiseLike<A>) =>
           Effect.tryPromise({ try: call, catch: (cause) => cause }).pipe(
             Effect.timeoutOrElse({
@@ -231,7 +227,6 @@ export class McpIntegrations extends Context.Service<
           );
 
         const authOf = Effect.fnUntraced(function* (server: MCPServer) {
-          // A signed-in server authenticates through OAuth, which refreshes its own access token.
           const oauth = hasOAuthTokens(storage, server.id);
           const bearer = oauth ? undefined : yield* token(server.id);
 
@@ -280,7 +275,6 @@ export class McpIntegrations extends Context.Service<
             ),
           );
 
-          // A disconnect while this one opened means its sign-in may be stale.
           if (generation(server.id) !== opening) {
             yield* closeConnection(value);
 
@@ -326,7 +320,6 @@ export class McpIntegrations extends Context.Service<
             ),
           );
 
-        /** One call of a remote tool. The durable tool is unsafe to replay, so a deadline reports the call and never retries it. */
         const callTool = (
           agent: Agent,
           server: MCPServer,
@@ -384,7 +377,6 @@ export class McpIntegrations extends Context.Service<
             name: `${mcpToolPrefix(server.id)}${remote.name.replaceAll(/[^a-zA-Z0-9_]/g, "_")}`,
             description:
               remote.description ?? `MCP tool ${remote.name} (${server.name})`,
-            // Providers need an object schema, and some reject one without `properties`.
             parameters: Type.Unsafe<McpArguments>({
               ...remote.inputSchema,
               type: "object",

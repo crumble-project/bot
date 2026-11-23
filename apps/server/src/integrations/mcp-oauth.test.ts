@@ -493,11 +493,9 @@ describe("MCP OAuth", () => {
     await signIn(store, server);
     fake.refuseRefresh();
     const { integrations, close } = standaloneIntegrations(store.runtime);
-    // SAFETY: OAuth integration only reads these Agent fields in this fixture.
     const agent = { id: "a1", mcpServers: [server.id] } as Agent;
     const extensions = await integrations.extensionsForAgent(agent);
 
-    // SAFETY: MCP extensions expose their registered tool list.
     expect(extensions.flatMap((extension) => (extension as any).tools)).toEqual(
       [],
     );
@@ -535,13 +533,11 @@ describe("MCP OAuth", () => {
 
         return {
           client,
-          // SAFETY: The fake client never uses transport beyond close().
           transport: { close: async () => {} } as McpTransport,
         };
       },
     });
 
-    // SAFETY: OAuth integration only reads these Agent fields in this fixture.
     const agent = { id: "a1", mcpServers: [server.id] } as Agent;
     await integrations.extensionsForAgent(agent);
     expect(calls).toEqual([{ headers: {}, oauth: true }]);

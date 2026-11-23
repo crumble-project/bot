@@ -6,7 +6,6 @@ import { readHttpHost, readSni, validPort } from "./workspace-proxy-protocol";
 export type WorkspaceInterceptor = {
   wants(host: string): boolean;
   answers?(host: string): boolean;
-  /** The client socket is positioned at the start of its TLS ClientHello. */
   handle(client: net.Socket, host: string, port: number): Promise<void>;
 };
 
@@ -14,7 +13,6 @@ export type WorkspaceProxyOptions = {
   lookup?: (host: string) => Promise<Array<string>>;
   isPublicAddress?: (address: string) => boolean;
   firstByteTimeoutMs?: number;
-  /** Listen on this port, so a restarted machine finds its proxy at the address it was created with. */
   port?: number;
   intercept?: WorkspaceInterceptor | undefined;
 };
@@ -26,7 +24,6 @@ const lookupAll = async (host: string) =>
 
 const MAX_HEADER_BYTES = 65_536;
 
-/** The CONNECT address is untrusted; dial only the public address resolved from the inspected host. */
 export async function startWorkspaceProxy(
   options: WorkspaceProxyOptions,
 ): Promise<WorkspaceProxy> {

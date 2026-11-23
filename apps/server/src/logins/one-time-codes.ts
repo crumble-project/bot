@@ -8,7 +8,6 @@ const ALGORITHMS = new Map([
   ["SHA512", "sha512"],
 ]);
 
-/** A TOTP secret with its parameters (RFC 6238); the defaults are what authenticator apps assume. */
 export type OneTimeSecret = {
   key: Buffer;
   digits: number;
@@ -16,7 +15,6 @@ export type OneTimeSecret = {
   algorithm: string;
 };
 
-/** RFC 4648 base32 without padding; undefined for any other character. */
 function base32(text: string) {
   const bits: Array<number> = [];
 
@@ -43,7 +41,6 @@ function base32(text: string) {
 
 const DEFAULTS = { digits: 6, periodSeconds: 30, algorithm: "sha1" };
 
-/** A URI's parameters, each defaulted; undefined when one is outside what authenticator apps accept. */
 function parametersOf(params: URLSearchParams) {
   const digits = Number(params.get("digits") ?? DEFAULTS.digits);
 

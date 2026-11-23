@@ -73,13 +73,11 @@ export const VisionDescriptions = defineDoc<{
   version: 1,
   scope: "conversation",
   history: "latest",
-  // A fork keeps the images it was forked with, so their descriptions stay good.
   fork: "current",
   initial: () => ({ descriptions: {} }),
   checkpointWhen: (_value, _ops, { deltasSinceBase }) => deltasSinceBase >= 32,
 });
 
-/** Whether a model reads images itself; catalogs that list no modalities are trusted, as for chat uploads. */
 export const readsImages = (
   model: { input?: ReadonlyArray<string> } | undefined,
 ) => !model?.input || model.input.includes("image");
@@ -102,7 +100,6 @@ export async function visionModelOf(
   models: Models,
   ref: VisionModelRef,
 ): Promise<Model<Api> | undefined> {
-  // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
   if (!models.getModel(ref.provider, ref.model)) {
     await models.refresh({ providers: [ref.provider] });
   }
@@ -178,7 +175,6 @@ async function look(
 const spent = (usage: Usage | undefined): usage is Usage =>
   usage !== undefined && (usage.totalTokens > 0 || usage.cost.total > 0);
 
-/** Adds `usage` to the model's bucket of the conversation's `pi.usage`, keyed `provider/modelId` as pi-durable keys it. */
 async function recordModelUsage(
   tx: Tx,
   conversationId: ConversationId,
@@ -189,7 +185,6 @@ async function recordModelUsage(
   const key = `${model.provider}/${model.id}`;
   const total = Object.hasOwn(totals, key) ? totals[key] : undefined;
 
-  // Providers may leave optional counters undefined; documents take strict JSON.
   if (!total) {
     totals[key] = {
       input: usage.input,
@@ -255,7 +250,6 @@ const failedText = (reason: string) =>
   `[An image could not be read: ${reason}]`;
 
 type VisionOptions = {
-  /** The bot's harness; the hook and tool run only once it is open. */
   harness: () => Harness | undefined;
   visionModel: () => VisionModelRef | undefined;
 };
@@ -382,7 +376,6 @@ function replaced(
     const hash = hashes.get(block);
     const text = hash === undefined ? undefined : standins.get(hash);
 
-    // Erasing the image quietly would drop content the model was meant to see.
     return {
       type: "text",
       text: required(text, "Every image in a replaced message has a standin"),
@@ -518,7 +511,6 @@ function askTool(options: VisionOptions) {
       }),
       question: Type.String({ minLength: 1, maxLength: 4000 }),
     }),
-    // Only reads: a rerun asks again.
     replay: "safe",
     execute: async (args, api, context) => {
       const { model, image } = await askTarget(

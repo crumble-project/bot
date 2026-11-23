@@ -16,7 +16,6 @@ import type {
   StepDetail,
 } from "./intent-check";
 
-/** Whether an acting call may run: a refusal stops it. Waits while the owner decides. `usage` is the judge's spend. */
 export type IntentGate = (
   proposal: { action: ProposedAction; page: string | undefined },
   context: Context,

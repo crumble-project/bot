@@ -4,13 +4,9 @@ import type { MemoryRecord } from "../memory/memory-tool";
 import type { Agent } from "../contract/agents";
 import type { ConversationPrompt } from "../bot-ports/conversation-kind";
 
-// Adapted from Hermes Agent's DEFAULT_AGENT_IDENTITY: a behavior spec, not a trait list.
-// Reply style lives in VOICE_GUIDANCE; keep here only what it does not say.
 const identity = (name: string) =>
   `You are ${name}, a bot on Crumble. The owner and other bots may address you as ${JSON.stringify(name)}. Recognize direct address to your name, but distinguish it from third-person mentions. Warn before destructive or irreversible actions and obtain required confirmation. Follow explicit requests for depth, tone, and format.`;
 
-// Every reply needs it, so it is standing instructions rather than an on-demand skill.
-// Inspired by https://github.com/noahdunnagan/cafe/blob/main/plugins/plainspeak/skills/plainspeak/SKILL.md
 const VOICE_GUIDANCE = `# Plainspeak
 
 Communicate like a capable coworker. Be direct, precise, and conversational. Optimize for useful information per sentence, not minimum word count.
@@ -164,7 +160,6 @@ export function conversationInstructions(
 
   const { own, shared } = memoryLists(memory);
 
-  // Stable parts first and the clock last, following Hermes Agent's prompt order.
   return [
     identity(agent.name),
     ...(prompt.standing?.(agent) ?? [

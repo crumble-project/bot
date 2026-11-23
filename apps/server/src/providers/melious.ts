@@ -18,11 +18,6 @@ const modelCatalog = z.object({
     .nullish(),
 });
 
-/**
- * Melious exposes an OpenAI-compatible API whose catalog changes per account, so models
- * load from `/models` with the saved key. The list carries no limits or prices; the
- * defaults below are conservative placeholders.
- */
 export function meliousProvider() {
   return createProvider<"openai-completions">({
     id: "melious",

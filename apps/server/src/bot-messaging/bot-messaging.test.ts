@@ -347,7 +347,6 @@ test("timeout and caller cancellation stop only the waiter", async () => {
 
   const waiter = messaging.result(ids.source, sent.executionId, {
     waitMs: 1000,
-    // SAFETY: The result API accepts this minimal context fixture.
     context: { abortSignal: controller.signal } as Context,
   });
 

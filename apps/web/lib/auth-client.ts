@@ -11,23 +11,17 @@ export const authClient = createAuthClient({
   ],
 });
 
-/** The header an email sign-up sends its invite token in; the server reads the same name. */
 export const INVITE_HEADER = "x-crumble-invite";
 
 export const { useSession } = authClient;
 
 export const useIsAdmin = () => useSession().data?.user.role === "admin";
 
-/**
- * Whether this page can use passkeys. Browsers only offer WebAuthn in a secure
- * context, and an IP address can't be a passkey's site.
- */
 export const passkeysAvailable =
   window.isSecureContext &&
   typeof PublicKeyCredential !== "undefined" &&
   !/^[\d.]+$|^\[/.test(location.hostname);
 
-/** Error codes for a browser passkey prompt the person dismissed or that timed out. */
 const DISMISSED = new Set([
   "AUTH_CANCELLED",
   "ERROR_CEREMONY_ABORTED",

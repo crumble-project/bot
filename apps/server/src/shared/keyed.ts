@@ -1,6 +1,5 @@
 import { Semaphore } from "effect";
 
-/** Callbacks by key; `notify` hands its value to every callback added under the key. */
 export const keyedListeners = <T = void>() => {
   const listeners = new Map<string, Set<(value: T) => void>>();
 

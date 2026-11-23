@@ -1,5 +1,4 @@
 import { z } from "zod";
-// Bound by name, not re-exported: `web` may import `contract`, never `shared`.
 export { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 
 export const webSource = z.object({ url: z.string(), title: z.string() });

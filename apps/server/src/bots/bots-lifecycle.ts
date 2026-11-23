@@ -26,7 +26,6 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
       (execution) => execution.conversationId === conversationId,
     );
 
-    // Cancelled before the runtime stops, so the aborted wait doesn't record the runs as failed first.
     for (const execution of running) {
       yield* record(execution, { status: "cancelled" });
     }

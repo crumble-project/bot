@@ -20,7 +20,6 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
 });
 
-// SAFETY: conversation IDs are opaque to the gate, which only hands this one to postCard.
 const chatId = 1 as ConversationId;
 
 const jobRequest: JobRequest = {

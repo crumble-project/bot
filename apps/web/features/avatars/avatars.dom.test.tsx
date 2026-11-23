@@ -22,7 +22,6 @@ const GLOBALS = [
   "cancelAnimationFrame",
 ];
 
-// happy-dom's :disabled ignores a disabled ancestor fieldset, which browsers honor.
 const disabled = (control: Element) =>
   control.matches(":disabled") ||
   control.closest("fieldset[disabled]") !== null;

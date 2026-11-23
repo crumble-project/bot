@@ -77,7 +77,6 @@ async function fixture() {
         : Effect.sync(() => {
             dispatched.push({ prompt, requestId });
 
-            // SAFETY: the dispatcher reads only id from the execution.
             return { id: requestId } as Execution;
           }),
   );

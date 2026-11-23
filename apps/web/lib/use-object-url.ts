@@ -2,7 +2,6 @@ import { useCallback, useRef } from "react";
 
 type MediaElement = HTMLImageElement | HTMLAudioElement | HTMLVideoElement;
 
-// Commit-phase allocation ensures discarded renders cannot leak object URLs.
 export function useObjectUrl(blob: Blob | undefined) {
   const attached = useRef<{ blob: Blob; url: string } | undefined>(undefined);
 

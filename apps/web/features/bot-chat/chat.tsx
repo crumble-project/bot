@@ -48,7 +48,6 @@ const replyToOf = (replyTo: Message | null, botName: string) => {
 
 const DETAILS_KEY = "crumble.details";
 
-/** Tailwind's lg breakpoint, where the details panel fits beside the chat. */
 const WIDE = "(min-width: 64rem)";
 
 function useDetails() {
@@ -60,8 +59,6 @@ function useDetails() {
   const [call, openCall] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
 
-  // One panel beside the chat: opening a job closes a call and the reverse,
-  // and selecting the open card again closes its panel.
   const setJob = (next: JobRef | null) => {
     openCall(null);
     openJob((open) =>

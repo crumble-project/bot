@@ -108,7 +108,7 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
     expect(minted).toBe(1);
   } finally {
     await act(async () => root.unmount());
-    // The auth client stops a second after its last consumer, and needs the window to.
+
     await waitFor(
       () => removedListeners.mock.calls.some(([type]) => type === "storage"),
       "the session store to stop",

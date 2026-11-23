@@ -48,7 +48,7 @@ describe("HTTP/runtime persistence", () => {
         name: "Faux",
         description: "",
         instructions: "Answer",
-        // SAFETY: The faux provider is registered in the test model registry.
+
         provider: "faux" as any,
         model: "test-model",
         enabled: true,
@@ -105,7 +105,6 @@ describe("HTTP/runtime persistence", () => {
 
       expect(snapshotResponse.status).toBe(200);
 
-      // SAFETY: the chat snapshot is narrowed to the message fields asserted below.
       const snapshot = (await snapshotResponse.json()) as {
         messages: { role: string; content: string }[];
       };

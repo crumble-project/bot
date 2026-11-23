@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk tests/test_admission_*.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { Admission } from "./relay";
@@ -429,10 +428,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
 
   const withMarker = (entry: Block) => ({ ...entry, cache_control: MARKER });
 
-  // Shapes native has used plus wording no relay has seen: the breakpoint lands on the last block that is exactly
-  // the host's own content.
   const moves: [Block[], Message[], At][] = [
-    // 2.1.280 tool round: reminder appended inside the tool_result, then a separate date message
     [
       [RESULT],
       [
@@ -456,7 +452,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       ],
       [0, 1],
     ],
-    // an annotation after the host content, in wording no heuristic knows
+
     [
       [QUESTION],
       [
@@ -471,7 +467,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       ],
       [1, 0],
     ],
-    // an annotation prepended to the newest turn: nothing of that turn recurs
+
     [
       [QUESTION],
       [
@@ -486,7 +482,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       ],
       [0, 1],
     ],
-    // tool results then the user's own text, native's reminder in that text: the results recur
+
     [
       [RESULT, QUESTION],
       [
@@ -504,7 +500,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       ],
       [1, 0],
     ],
-    // every queried block unchanged, native's date in its own message after them
+
     [
       [RESULT],
       [
@@ -519,7 +515,7 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       ],
       [1, 0],
     ],
-    // a block native appends after unchanged tool results: the results recur
+
     [
       [RESULT],
       [
@@ -764,7 +760,6 @@ describe("first turn (test_admission_first_turn.py)", () => {
   const ENV =
     "Primary working directory: /tmp/claude-directsdk-cwd-501\nPlatform: darwin";
 
-  /** Native's opening request: reminder ahead of the host frame, marker on the env/date message. */
   const call1 = (): Message[] => [
     { role: "user", content: [REMINDER, FRAME] },
     {
@@ -779,7 +774,6 @@ describe("first turn (test_admission_first_turn.py)", () => {
     },
   ];
 
-  /** Native's second request: the same first turn replayed bare, one tool round, the date after it. */
   const call2 = (): Message[] => [
     { role: "user", content: [FRAME] },
     { role: "system", content: ENV },
@@ -824,7 +818,6 @@ describe("first turn (test_admission_first_turn.py)", () => {
       ? item.content
       : [{ type: "text", text: item.content }];
 
-  /** What the API caches for this request: every message block up to and including the marker. */
   const cachedPrefix = (payload: string) => {
     const blocks: [string, string][] = [];
 
@@ -878,14 +871,13 @@ describe("first turn (test_admission_first_turn.py)", () => {
   });
 
   test.each([
-    // a later turn: there is history, the first turn is left exactly as native sent it
     [
       [...call2().slice(0, 3), { role: "user", content: [REMINDER, FRAME] }],
       [FRAME],
     ],
-    // the frame occurs twice: ambiguous, forward as is
+
     [[{ role: "user", content: [REMINDER, FRAME, FRAME] }], [FRAME]],
-    // something other than text ahead of the frame is not native's context block
+
     [
       [
         {
@@ -901,7 +893,7 @@ describe("first turn (test_admission_first_turn.py)", () => {
       ],
       [FRAME],
     ],
-    // the frame is not in the turn at all (native rewrote it)
+
     [
       [
         {
@@ -939,7 +931,6 @@ describe("first turn (test_admission_first_turn.py)", () => {
 describe("two native marks (test_admission_two_marks.py)", () => {
   const MARKER = { type: "ephemeral" };
 
-  // Native's own system/tools marks: with two message marks the request is at Anthropic's limit of four.
   const SYSTEM = [
     { type: "text", text: "x-anthropic-billing-header: cc" },
     {
@@ -988,10 +979,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
     ],
   });
 
-  /**
-   * What native sends after `rounds` parallel rounds: older rounds replay as the host sent them, the newest
-   * carries native's reminder (optionally) and is followed by its per-request context.
-   */
   const nativeRequest = (rounds: number, reminder: boolean): Body => {
     const messages: Message[] = [
       {
@@ -1003,7 +990,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
     for (let n = 0; n < rounds; n++)
       messages.push(assistant(n), { role: "user", content: results(n) });
 
-    // native mark 1: last tool_use of the turn
     const markedUse = blocksOf(messages.at(-2)).at(-1);
 
     if (markedUse) markedUse.cache_control = MARKER;
@@ -1012,7 +998,7 @@ describe("two native marks (test_admission_two_marks.py)", () => {
 
     if (reminder && newest)
       newest.content = `${z.string().parse(newest.content)}${REMINDER}`;
-    // native mark 2: per-request context, never replayed
+
     messages.push({
       role: "system",
       content: [
@@ -1160,7 +1146,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
   const LAYOUT_NAMES: Layout[] = ["2.1.285", "2.1.287"];
 
-  // tools, system, whether native also marks the last assistant block
   const LAYOUTS: Record<Layout, [Tool[], Block[], boolean]> = {
     "2.1.285": [
       [
@@ -1254,10 +1239,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     ];
   };
 
-  /**
-   * Native's request for a history ending in a user frame: its env message after the first turn and its
-   * per-request date message last, which is where it puts the message mark.
-   */
   const native = (messages: Message[], layout: Layout): Body => {
     const [tools, system, assistantMark] = LAYOUTS[layout];
     const sent = structuredClone(messages);
@@ -1321,11 +1302,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     previous: string | undefined,
   ) => (kind === "tool_use" || kind === "tool_result") && previous === kind;
 
-  /**
-   * Anthropic's documented lookup: each breakpoint checks up to 20 positions back, itself included, a run of
-   * tool_use or tool_result blocks counting once; entries are written only at breakpoints. A thinking block
-   * renders closed once a later user message carries more than tool results.
-   */
   class Cache {
     private readonly entries = new Set<string>();
 
@@ -1434,7 +1410,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     return out;
   };
 
-  // native's env message sits at messages[1]
   const nativeIndex = (i: number) => (i ? i + 1 : 0);
 
   const lastRead = (sent: [Body, Where | undefined][]) => sent.at(-1)?.[1];
@@ -1472,7 +1447,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
       const sent = replay(messages, layout);
       const assistantMark = LAYOUTS[layout][2];
 
-      // 2.1.287+'s own mark on the last assistant block stays; nothing is added.
       for (const [body] of sent)
         expect(messageMarks(body)).toHaveLength(
           1 + Number(assistantMark && body.messages.length > 4),
@@ -1510,9 +1484,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     });
 
     test("a nested marker takes a slot so the request stays at four", () => {
-      // A marker inside a historical tool_result's content (a host marker restoration carried back) counts toward
-      // the four: 2.1.285 has no slot left and forwards the fold only, 2.1.287+ moves its mark on the last
-      // assistant block. Neither forwards a fifth, which the API rejects.
       const messages = [
         ...turn(OPENING, 14, () => true),
         { role: "user", content: [FOLLOW_UP] },
@@ -1586,8 +1557,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
   });
 
   test("at the limit a native mark moves instead of a fifth", () => {
-    // 2.1.287+ with a tools mark is at four: native's mark on the last assistant block is the one the next request
-    // does not need (the recurring breakpoint follows it), so it moves.
     const messages = [
       ...turn(OPENING, 14, () => true),
       { role: "user", content: [FOLLOW_UP] },
@@ -1623,7 +1592,7 @@ describe("turn start (test_admission_turn_start.py)", () => {
     const tool = raw.tools?.[0];
 
     if (tool) tool.cache_control = MARKER;
-    // top-level automatic caching takes a slot too
+
     raw.cache_control = { type: "ephemeral" };
 
     const body = parse(
@@ -2297,8 +2266,6 @@ describe("tool streaming (test_admission_tool_streaming.py)", () => {
   });
 
   test("a tool call cut off mid-argument is dropped and the stream still captures", () => {
-    // Streamed input is unvalidated: a max_tokens cut leaves partial JSON. The relay must keep going and must
-    // never hand the host a call with guessed arguments.
     const capture = new Capture();
 
     capture.feed(

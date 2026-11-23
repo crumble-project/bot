@@ -74,7 +74,6 @@ describe("scheduled admission recovery", () => {
       close: async () => undefined,
     };
 
-    // SAFETY: The prototype supplies AgentRuntime identity; the fixture overrides dispatch methods used here.
     const fakeRuntime = Object.assign(
       Object.create(AgentRuntime.prototype),
       runtimeFixture,

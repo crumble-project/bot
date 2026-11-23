@@ -19,7 +19,6 @@ const RESTARTED: OutsideCallMiss = {
   error: "the server restarted",
 };
 
-// The transcript a note reads: enough for the 12,000 characters it keeps.
 const NOTE_MESSAGES = 200;
 
 const lineOf = (message: TranscriptMessage): Array<CallLine> => {
@@ -41,7 +40,6 @@ type OutsideDeps = {
   requests: CallRequests["Service"];
 };
 
-/** Tells the bot how its outside call came out, or, while it is disabled, writes the line as a marker only. */
 const report = (
   { bots }: OutsideDeps,
   request: CallRequest,
@@ -113,7 +111,6 @@ const ended = Effect.fnUntraced(function* (
   yield* report(deps, request, text, change.wakes);
 });
 
-/** Writes an outside call's markers, ends its call request, and wakes its bot once; false for a call with the owner. */
 export const markOutsideCall = Effect.fnUntraced(function* (
   deps: OutsideDeps,
   change: VoiceCallChange,
@@ -151,10 +148,6 @@ export const markOutsideCall = Effect.fnUntraced(function* (
   return true;
 });
 
-/**
- * Gives the turn an outside call's end starts the goal and the transcript, for the model only, and ends call requests
- * a restart left calling: their call rang in memory, so the voice gateway's start report for it now answers 409.
- */
 export const outsideCalls = Layer.effectDiscard(
   Effect.gen(function* () {
     const requests = yield* CallRequests;

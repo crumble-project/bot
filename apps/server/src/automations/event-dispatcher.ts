@@ -9,12 +9,10 @@ import { ScheduleRepository } from "./schedule-repository";
 
 export const EVENT_MAX_ATTEMPTS = 10;
 
-/** Starts each automation's oldest pending event run, one run per automation at a time. */
 export class EventDispatcher extends Context.Service<
   EventDispatcher,
   {
     readonly tick: Effect.Effect<void>;
-    /** Ticks every second until the account closes. */
     readonly start: Effect.Effect<void>;
   }
 >()("crumble/automations/EventDispatcher") {

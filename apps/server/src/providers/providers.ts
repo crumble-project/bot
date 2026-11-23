@@ -26,7 +26,6 @@ const catalog = (
   return models;
 };
 
-/** An account's catalog: only credentials the account saved reach a model, never the host's environment or files. */
 export const accountModels = (
   credentials: CredentialStore | undefined,
   contributions: ReadonlyArray<ProviderContribution>,

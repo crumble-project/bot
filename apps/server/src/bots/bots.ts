@@ -49,7 +49,6 @@ export type LearnedActivity = {
   createdAt: string;
 };
 
-/** The account's pinned conversations changed; the whole list, first pin first. */
 export type PinsActivity = {
   type: "pins";
   pinnedConversations: Array<string>;
@@ -94,20 +93,13 @@ export class Bots extends Context.Service<
     ) => () => void;
     readonly onActivity: (callback: (event: Activity) => void) => () => void;
     readonly changed: (conversationId: string) => Effect.Effect<void>;
-    /** Runs when an execution is done, failed, or cancelled; it may run more than once for one execution. */
     readonly onSettled: (
       callback: (execution: Execution) => void | Promise<void>,
     ) => () => void;
-    /** Reads existing durable history for sidebar summaries without creating a chat. */
     readonly agentPreviews: Effect.Effect<
       Array<{ agent: Agent; lastMessage: string }>
     >;
-    /** Tokens and cost of every model and tool across all of the account's bots, since each bot's first conversation. */
     readonly usage: Effect.Effect<ReturnType<typeof usageSummary>, AppError>;
-    /**
-     * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
-     * Job reports reach the chat without an execution, so a finished execution never announces them.
-     */
     readonly announceJobAnswer: (
       answer: JobAnswer,
     ) => Effect.Effect<void, AppError>;
@@ -118,14 +110,12 @@ export class Bots extends Context.Service<
       conversationId: string,
       options?: SnapshotOptions,
     ) => Effect.Effect<ChatSnapshot, AppError>;
-    /** The bot's one continuous chat, created on first use and stable across restarts. */
     readonly chat: (agentId: string) => Effect.Effect<Conversation, AppError>;
     readonly recordBotMessage: (
       agentId: string,
       event: BotMessageEvent,
       requestId: string,
     ) => Effect.Effect<void, AppError>;
-    /** Writes a call marker the model never sees into the bot's chat. */
     readonly recordCallEvent: (
       agentId: string,
       event: CallEventData,
@@ -149,7 +139,6 @@ export class Bots extends Context.Service<
       name: string,
       options: PageOptions,
     ) => Effect.Effect<Page<"jobHistory">, AppError>;
-    /** Sends an answer to a job's open question, which resumes the job; fails once the job no longer waits on it. */
     readonly answerJob: (
       agentId: string,
       kind: string,

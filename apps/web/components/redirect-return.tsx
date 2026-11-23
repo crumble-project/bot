@@ -23,7 +23,6 @@ export function RedirectReturn({
 }) {
   const navigate = useNavigate();
 
-  // A query, not an effect: its cache runs the exchange once per redirect, also under StrictMode, since a code works once.
   const done = useQuery({
     queryKey: ["redirect-return", location.pathname, location.search],
     queryFn: () =>

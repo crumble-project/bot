@@ -43,7 +43,6 @@ const delivery = (outboxId: string, installationId: string) =>
 export class PushRepository extends Context.Service<
   PushRepository,
   {
-    /** The server's push identity, created on first use and kept from then on. */
     readonly serverId: Effect.Effect<string>;
     readonly upsertDevice: (
       installationId: string,

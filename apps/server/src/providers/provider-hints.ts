@@ -1,4 +1,3 @@
-/** Installed-library limits that matter when the owner's browser is on another machine. */
 export const REMOTE_HINTS = new Map([
   [
     "openai",

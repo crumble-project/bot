@@ -9,7 +9,6 @@ type Conversation = { id: string };
 
 export const botPin = (id: string) => `agent:${id}`;
 
-/** A stored list that is missing or invalid pins nothing. */
 const savedPins = (stored: unknown) => {
   const parsed = pinnedConversations.safeParse(stored);
 
@@ -17,9 +16,8 @@ const savedPins = (stored: unknown) => {
 };
 
 export type Pins = {
-  /** The pinned conversations that exist, first pin first. */
   pinned: Array<string>;
-  /** False until the bots load; until then every change is refused. */
+
   ready: boolean;
   isPinned: (key: string) => boolean;
   canPin: (key: string) => boolean;
@@ -28,11 +26,6 @@ export type Pins = {
   move: (key: string, target: string) => void;
 };
 
-/**
- * The account's pinned conversations. Changes show at once and save the whole
- * list, one write at a time; afterwards the session's list takes over again,
- * which also rolls back a failed write.
- */
 export function usePins(bots: Array<Conversation> | undefined): Pins {
   const session = authClient.useSession();
   const [wanted, setWanted] = useState<Array<string> | null>(null);
@@ -44,8 +37,6 @@ export function usePins(bots: Array<Conversation> | undefined): Pins {
 
   const { refetch } = session;
 
-  // A list filtered to conversations that haven't loaded would wipe every pin, and so would one
-  // written before the session's list arrives. A server too old to keep pins never sends one.
   const ready =
     bots !== undefined &&
     pinnedConversations.safeParse(session.data?.user.pinnedConversations)
@@ -66,7 +57,6 @@ export function usePins(bots: Array<Conversation> | undefined): Pins {
         const pinnedConversations = queue.next;
         queue.next = null;
 
-        // The session is read once every write is done, so it can't show an older list in between.
         await authClient
           .updateUser({ pinnedConversations }, { disableSignal: true })
           .catch(() => null);

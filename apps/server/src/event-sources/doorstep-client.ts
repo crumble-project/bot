@@ -40,7 +40,6 @@ const unexpected = (response: Response) =>
     message: `The event relay answered ${response.status}`,
   });
 
-/** Creates a source on the relay; its address carries the source's secret and is returned only now. */
 export const createSource = Effect.fnUntraced(function* (access: RelayAccess) {
   const response = yield* request(access, "v1/sources", { method: "POST" });
 

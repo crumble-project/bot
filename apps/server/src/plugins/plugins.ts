@@ -27,7 +27,6 @@ export type ProviderContribution = {
 };
 
 export type JobKindContribution = {
-  /** Stored data depends on it: never rename. */
   kind: string;
   enabled: (agent: Agent) => boolean;
   extensions: (agent: Agent) => JobExtensions;
@@ -47,15 +46,9 @@ export type WorkspaceBackend = (
   options: WorkspaceBackendOptions,
 ) => ClosableWorkspaces | undefined;
 
-/**
- * A plugin's fixed part: vendors that need nothing from the account, so they exist before the account's services, which
- * read secrets and run workspaces through them. See docs/adr/0004-plugin-interfaces.md.
- */
 export type PluginVendors = {
-  /** Stored data and settings key on it: never rename. */
   id: string;
   passwordManagers?: Array<PasswordManagerVendor>;
-  /** Tried in list order; the first the environment configures runs the account's workspaces. */
   workspaceBackends?: Array<WorkspaceBackend>;
 };
 
@@ -101,21 +94,14 @@ export function pluginWorkspaces(
   return;
 }
 
-/** A value the owner sets for a plugin, such as an API key. See docs/adr/0009-plugin-settings.md. */
 export type PluginSetting = {
-  /** Stored data keys on it: never rename. */
   key: string;
   kind: "secret";
   label: string;
   whenMissing: string;
 };
 
-/**
- * A plugin's runtime part, built once the account's services exist: model providers, job kinds, and web search
- * providers. See docs/adr/0004-plugin-interfaces.md.
- */
 export type CrumblePlugin = {
-  /** Stored data and settings key on it: never rename. */
   id: string;
   providers?: Array<ProviderContribution>;
   jobKinds?: Array<JobKindContribution>;

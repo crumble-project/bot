@@ -1,8 +1,6 @@
-// Ported from Hermes' claude-subscription-directsdk model_catalog.py (MIT, see THIRD_PARTY_NOTICES.md).
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 
-/** Pinned native routes with their context windows; a loopback gateway needs explicit long-context selection. */
 const CONTEXT_WINDOWS = new Map([
   ["claude-sonnet-5-5", 1_000_000],
   ["claude-sonnet-5", 1_000_000],
@@ -14,7 +12,6 @@ const CONTEXT_WINDOWS = new Map([
   ["claude-fable-5-1", 1_000_000],
 ]);
 
-/** The window Claude Code applies to an id it cannot verify behind the relay. */
 const UNPINNED_WINDOW = 200_000;
 
 const LONG_CONTEXT = "[1m]";
@@ -26,7 +23,6 @@ export const isLongContext = (route: string) => route.endsWith(LONG_CONTEXT);
 
 export const longContextRoute = (model: string) => `${model}${LONG_CONTEXT}`;
 
-// Families that 400 on `thinking: {type: "disabled"}`; a disable becomes the lowest effort instead.
 const MANDATORY_THINKING = [
   "claude-fable",
   "claude-opus-5-5",
@@ -42,7 +38,6 @@ const ALIASES = new Map([
   ["fable", "claude-fable-5-1"],
 ]);
 
-// Haiku 4.5 rejects adaptive thinking; unknown routes keep it so future models are not downgraded.
 const NO_ADAPTIVE_THINKING = new Set(["claude-haiku-4-5-20251001"]);
 
 function routeBase(base: string): string {
@@ -94,10 +89,6 @@ export const acceptsThinkingDisable = (model: string) =>
 export const supportsAdaptiveThinking = (model: string) =>
   !NO_ADAPTIVE_THINKING.has(canonicalOf(model));
 
-/**
- * The levels a route takes: Pi AI's Anthropic catalog, minus `minimal`, which `--effort` lacks, and `off` where
- * thinking is mandatory. Unknown routes keep `xhigh` and `max` so future models are not downgraded.
- */
 export function thinkingLevelMap(model: string): ThinkingLevelMap {
   const canonical = canonicalOf(model);
 
@@ -112,10 +103,6 @@ export function thinkingLevelMap(model: string): ThinkingLevelMap {
   };
 }
 
-/**
- * The window to promise for a route: the pinned one, else the 200K native applies to a plain unknown id. An unknown
- * `[1m]` id gets 1M, the most native will serve, since nothing smaller is known either.
- */
 export function contextWindow(route: string) {
   const pinned = CONTEXT_WINDOWS.get(canonicalOf(route));
 
@@ -149,6 +136,5 @@ export const pinnedRoutes = () =>
 export const pinnedRouteSet = () =>
   new Set(pinnedRoutes().map((entry) => entry.route));
 
-/** Pro and Team standard seats bill Fable to usage credits from the first request. */
 export const creditBilledModels = (plan: string) =>
   new Set(plan && !plan.includes("max") ? ["claude-fable-5-1"] : []);

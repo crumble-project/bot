@@ -5,7 +5,6 @@ import type { OwnerMessage } from "../jobs/owner-request";
 
 export type IntentTarget = { role?: string; name?: string };
 
-/** What a call says it will do, apart from its target. A login's `field` names the field, never its value. */
 export const STEP_DETAILS = [
   "text",
   "keys",
@@ -24,7 +23,6 @@ export type IntentStep = {
   target?: IntentTarget;
 } & Partial<Record<StepDetail, string>>;
 
-/** Where an action happens: the page or window, and the host if it's a web page. */
 export type Place = { page?: string | undefined; host?: string | undefined };
 
 export type ProposedAction = {
@@ -34,7 +32,6 @@ export type ProposedAction = {
   command?: string;
 };
 
-/** What the judge reads. Page text is never part of it, so a page can't argue for its own action. */
 export type IntentRequest = {
   ownerMessages: Array<OwnerMessage>;
   tasks: Array<string>;
@@ -45,7 +42,6 @@ export type JudgeAnswer = {
   irreversible: number;
   inIntent: number;
   inIntentBar: number;
-  /** Enter outside a terminal gets no rule of its own: the intent eval showed this judge catches what Enter commits. */
   decidesEnter?: boolean;
   usage?: Usage;
 };
@@ -66,7 +62,6 @@ export type IntentVerdict = {
 const IRREVERSIBLE_AT = 0.5;
 
 const COMMIT_WORDS = [
-  // English
   "pay",
   "pay now",
   "buy",
@@ -87,7 +82,6 @@ const COMMIT_WORDS = [
   "publish",
   "post",
   "sign",
-  // German
   "bezahlen",
   "zahlen",
   "jetzt bezahlen",
@@ -105,7 +99,6 @@ const COMMIT_WORDS = [
   "abonnieren",
   "überweisen",
   "veröffentlichen",
-  // French
   "payer",
   "acheter",
   "commander",
@@ -114,7 +107,6 @@ const COMMIT_WORDS = [
   "confirmer",
   "valider",
   "réserver",
-  // Spanish and Portuguese
   "pagar",
   "comprar",
   "pedir",
@@ -124,7 +116,6 @@ const COMMIT_WORDS = [
   "excluir",
   "confirmar",
   "reservar",
-  // Italian
   "paga",
   "acquista",
   "ordina",
@@ -132,7 +123,6 @@ const COMMIT_WORDS = [
   "elimina",
   "conferma",
   "prenota",
-  // Dutch
   "betalen",
   "kopen",
   "verzenden",
@@ -149,7 +139,6 @@ const CONTROL_ROLE = /button|link|menu ?item|option/i;
 const ENTER_KEY = /(^|\+)(return|enter|kp_enter)$/i;
 const PRESSES = new Set(["click", "double_click"]);
 
-// A key goes to the focus, which may be a form field, so Enter always counts.
 export const isEnter = ({ action, keys }: IntentStep) =>
   action === "key" && ENTER_KEY.test(keys?.trim() ?? "");
 
@@ -159,7 +148,6 @@ const isCommitControl = ({ role, name }: IntentTarget) =>
 const isCommitPress = ({ action, target }: IntentStep) =>
   PRESSES.has(action) && target !== undefined && isCommitControl(target);
 
-/** Enter in a terminal needs a judge that sees its command, as the bot's own bash runs commands; elsewhere, a cleared one. */
 const enterLeftToJudge = (
   action: ProposedAction,
   answer: Pick<JudgeAnswer, "decidesEnter"> | undefined,

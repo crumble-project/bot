@@ -93,7 +93,7 @@ const PERMISSION = {
 function Notifications() {
   const [enabled, setEnabled] = useState(notifications.enabled);
   const [permission, setPermission] = useState(notifications.permission);
-  // Unset defaults to enabled, but nothing shows until the browser grants permission.
+
   const on = enabled && permission === "granted";
   const [sound, setSound] = useState(notifications.sound);
 
@@ -363,7 +363,6 @@ function Passkeys() {
 
   const error = add.error ?? remove.error ?? passkeys.error;
 
-  // Listing, renaming, and removing need only a session; adding needs WebAuthn.
   return (
     <Section
       title="Passkeys"
@@ -396,8 +395,6 @@ function Account() {
   const session = useSession();
   const user = session.data?.user;
 
-  // `signedOut` resets the session, which clears the whole query cache.
-  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const signOut = useMutation({
     mutationFn: () => authClient.signOut(),
     onSettled: signedOut,

@@ -29,7 +29,6 @@ const memoryOf = (row: typeof memories.$inferSelect): Memory => ({
 export class MemoryRepository extends Context.Service<
   MemoryRepository,
   {
-    /** One bot's memories, or the shared ones for `null`. */
     readonly list: (agentId: string | null) => Effect.Effect<Array<Memory>>;
     readonly get: (memoryId: string) => Effect.Effect<Memory | null>;
     readonly create: (
@@ -46,9 +45,7 @@ export class MemoryRepository extends Context.Service<
       memoryId: string,
       by?: ChangeBy | null,
     ) => Effect.Effect<boolean>;
-    /** Puts a memory back as it was, keeping its ID and timestamps; records nothing. */
     readonly restore: (memory: Memory) => Effect.Effect<void>;
-    /** Deletes a memory without recording a change, for reverts that record their own. */
     readonly discard: (memoryId: string) => Effect.Effect<void>;
   }
 >()("crumble/memory/MemoryRepository") {

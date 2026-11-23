@@ -120,7 +120,6 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    /* Scroll areas the ScrollArea component can't wrap, such as the chat transcript and menus. */
     scrollbar-width: thin;
     scrollbar-color: color-mix(
         in oklab,
@@ -131,7 +130,6 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* Keep the installed app from rubber-banding like a web page. */
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
   }
@@ -281,7 +279,6 @@
   }
 }
 
-/* Bot replies rendered by @tanstack/markdown, which emits plain elements. */
 @layer components {
   .markdown {
     @apply flex flex-col gap-3 leading-relaxed;

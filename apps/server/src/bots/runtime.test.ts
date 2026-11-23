@@ -15,7 +15,6 @@ const agent = (id: string, model = "test-model"): Agent => ({
   avatar: defaultAvatarDefinition(id),
   description: "",
   instructions: `You are ${id}`,
-  // SAFETY: The faux provider is registered in the test model registry below.
   provider: "faux" as any,
   model,
   enabled: true,

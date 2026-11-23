@@ -49,7 +49,6 @@ const requestOf = (schedule: Schedule, trigger: AutomationTrigger) =>
 export class Automations extends Context.Service<
   Automations,
   {
-    /** Success means the work was durably admitted; not admitted while its last start is in flight or its script runs. */
     readonly start: (
       schedule: Schedule,
       trigger: AutomationTrigger,

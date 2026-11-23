@@ -31,10 +31,6 @@ export function SettledCard({
   );
 }
 
-/**
- * Reads a request's list anew: the cached one can predate a request that just arrived. `reading` is the outcome to show
- * until the list can be trusted, which `conclusive` data can be at once; null after that.
- */
 export function useFreshRequest<D>(
   query: UseQueryOptions<D, Error, D, Array<string>>,
   conclusive: (data: D) => boolean,

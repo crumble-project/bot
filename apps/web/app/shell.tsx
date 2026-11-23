@@ -131,13 +131,8 @@ function useDocumentTitle(bots: Array<Bot> | undefined) {
   }, [chat, unread]);
 }
 
-/** The sidebar's background, as `--sidebar` in styles.css, per color scheme. */
 const SIDEBAR_THEME_COLOR = { light: "#e4e6ea", dark: "#030304" };
 
-/**
- * Tints the browser chrome, which in an installed iPhone app is the status
- * bar, to match the sidebar sheet while it is open on phones.
- */
 function SidebarThemeColor() {
   const { isMobile, openMobile } = useSidebar();
   const theme = useTheme();

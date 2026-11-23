@@ -208,7 +208,6 @@ type ServerState = {
   ready?: Promise<void>;
 };
 
-// Accounts and the admin API are connected before the server accepts requests.
 function connectedAccounts(state: ServerState): Accounts {
   if (!state.identity) {
     throw new Error("Accounts are not connected");
@@ -308,7 +307,7 @@ function tenantPool(pool: {
       rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
     },
     restore: (accounts: Accounts) => restoreTenants(dataDir, accounts, tenant),
-    /** Only an account that is running has streams to tell; this never starts one. */
+
     announcePins: (userId: string, pins: Array<string>) => {
       void tenants
         .get(userId)
@@ -322,7 +321,6 @@ function tenantPool(pool: {
 
 type TenantPool = ReturnType<typeof tenantPool>;
 
-// Bun upgrades require the original incoming Request instance.
 async function forward(
   pool: TenantPool,
   request: Request,
@@ -347,8 +345,6 @@ async function accountResponse(
     headers: request.headers,
   });
 
-  // A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
-  // goes to the account it names. A session keeps it within the session's account.
   const owner = session ? undefined : viewerPathOwner(path);
 
   if (owner && connectedAccounts(state).hasUser(owner) && !state.closed) {
@@ -379,11 +375,6 @@ type VoiceGatewayHost = {
 
 const BEARER = /^Bearer\s+(\S+)$/iu;
 
-/**
- * A voice gateway token names its account, as a viewer ticket does; the account checks the secret. No session is
- * read here, so a session never reaches these routes. An unknown account gets the same status, body, and headers
- * as a wrong secret, though not the same timing.
- */
 export async function voiceGatewayResponse(
   request: Request,
   host: VoiceGatewayHost,
@@ -471,7 +462,6 @@ const requestHandler =
       return Response.json({ error: "Untrusted origin" }, { status: 403 });
     }
 
-    // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
     if (path.startsWith("/api/auth/admin/")) {
       return new Response("Not found", { status: 404 });
     }
@@ -502,7 +492,6 @@ const serve = (
   port: number,
 ) =>
   Bun.serve({
-    // The UI answers every other path, so the server's own paths are routes too, ahead of its wildcard.
     routes: {
       ...webUIRoutes,
       ...Object.fromEntries(SERVER_PATHS.map((path) => [path, handle])),

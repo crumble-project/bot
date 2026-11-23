@@ -64,7 +64,6 @@ export function changeTitle(change: Change) {
   return state.name;
 }
 
-/** Reverts a change after confirming; the server records the revert as a change of its own. */
 export function RevertChange({ change }: { change: Change }) {
   const target = change.target === "skill" ? "skill" : "memory";
 

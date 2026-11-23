@@ -28,7 +28,7 @@ export const heldActionsQuery = (id: string) =>
     queryKey: ["held-actions", id],
     queryFn: ({ signal }) =>
       api("agentHeldActions", `${agentPath(id)}/held-actions`, { signal }),
-    // A stopped job, a restart, or another client can end a waiting action.
+
     refetchInterval: (query) =>
       query.state.data?.some((action) => action.status === "pending")
         ? HELD_POLL_MS

@@ -6,7 +6,6 @@ const pause = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-/** Polls inside act so React commits between checks: a fixed wait loses to a loaded machine. */
 export async function waitFor(check: () => boolean, expected = "DOM state") {
   const deadline = Date.now() + 4000;
 
@@ -20,13 +19,11 @@ export async function waitFor(check: () => boolean, expected = "DOM state") {
   }
 }
 
-/** Only before asserting that something did not happen; anything positive uses waitFor. */
 export const settle = () =>
   act(async () => {
     await pause(30);
   });
 
-/** Before teardown: a late query notification would reach React after the window is gone. */
 export async function waitForIdle(client: QueryClient) {
   await waitFor(
     () => client.isFetching() === 0 && client.isMutating() === 0,

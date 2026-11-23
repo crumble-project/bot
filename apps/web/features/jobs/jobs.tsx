@@ -166,7 +166,7 @@ function useJobHistory(botId: string, job: JobRef, status?: string) {
     initialPageParam: "",
     getNextPageParam: (page) =>
       page.hasMore && page.oldestEntryId ? page.oldestEntryId : undefined,
-    // Each finished step appears while the job works; the job list's events change `status` when it ends.
+
     refetchInterval: status === "working" ? STEP_REFRESH_MS : false,
   });
 
@@ -233,7 +233,6 @@ function JobHistoryBody({
   );
 }
 
-/** A fence longer than any backtick run in the text, so the text can't close it. */
 function fenced(text: string, info = "") {
   const longest = Math.max(
     2,
@@ -341,8 +340,6 @@ function JobTitle({ job, current }: { job: JobRef; current: Job | undefined }) {
 }
 
 function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
-  // Reads every page on demand; nothing cached changes.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const download = useMutation({
     mutationFn: () => downloadTranscript(botId, job),
   });

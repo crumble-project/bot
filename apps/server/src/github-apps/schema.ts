@@ -13,7 +13,7 @@ export const githubApps = sqliteTable("github_apps", {
   name: text("name").notNull(),
   clientId: text("client_id").notNull(),
   privateKey: text("private_key").notNull(),
-  /** The `slug[bot]` user's ID, which GitHub's noreply commit email needs. */
+
   botUserId: integer("bot_user_id").notNull(),
   htmlUrl: text("html_url").notNull(),
   account: text("account"),
@@ -41,7 +41,7 @@ export const githubAppUsers = sqliteTable("github_app_users", {
     .references(() => githubApps.id, { onDelete: "cascade" }),
   login: text("login").notNull(),
   userId: integer("user_id").notNull(),
-  /** Encrypted, like `refreshToken`; GitHub rotates both on every refresh. */
+
   token: text("token").notNull(),
   expiresAt: integer("expires_at").notNull(),
   refreshToken: text("refresh_token").notNull(),

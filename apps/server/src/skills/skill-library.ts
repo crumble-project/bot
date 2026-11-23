@@ -36,7 +36,6 @@ export async function skillToolContext(
   return {
     reviewOf: review?.executionId ?? null,
     submissionIds: (live?.run?.inputs ?? []).map(String),
-    // The run's task changes with every tool round; its inputs stay the same for the whole turn.
     runKey: live?.run
       ? `${String(api.conversationId)}:${live.run.inputs.map(String).join(",")}`
       : null,

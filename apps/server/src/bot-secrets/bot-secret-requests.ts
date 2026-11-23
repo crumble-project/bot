@@ -44,7 +44,7 @@ export class BotSecretRequests extends Context.Service<
       kind: BotSecretKind,
       name: string,
     ) => Effect.Effect<BotSecretRequest | undefined>;
-    /** A repeated request replaces the earlier one. */
+
     readonly ask: (
       agentId: string,
       kind: BotSecretKind,
@@ -55,14 +55,14 @@ export class BotSecretRequests extends Context.Service<
         oneTimeCode?: boolean | undefined;
       },
     ) => Effect.Effect<BotSecretRequest>;
-    /** Clears the request a save answered and tells the bot `text`; nothing happens without a request. */
+
     readonly answer: (
       agentId: string,
       kind: BotSecretKind,
       name: string,
       text: string,
     ) => Effect.Effect<void>;
-    /** Clears the request and tells the bot; false when there was none. */
+
     readonly decline: (
       agentId: string,
       kind: BotSecretKind,

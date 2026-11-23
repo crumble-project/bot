@@ -92,8 +92,6 @@ function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
   const path = providerPath(provider.provider);
 
-  // `invalidateProviders` invalidates the provider and model queries.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const save = useMutation({
     mutationFn: (body: SecretInput | null) =>
       body === null
@@ -102,7 +100,7 @@ function useProviderCredential(provider: Provider) {
     onSuccess: async () => {
       setEditing(false);
       await Promise.all([invalidateProviders(), invalidateSecrets()]);
-      // Drop the submitted key from the mutation state.
+
       save.reset();
     },
   });

@@ -19,7 +19,6 @@ const KEPT_ENDED = 200;
 const RECONNECT_WITHIN_MS = 60_000;
 const RECONFIRM_WITHIN_MS = 15_000;
 
-// The voice gateway ends a call after 4 hours.
 const CALL_LASTS_MS = (4 * 60 + 5) * 60_000;
 
 type Keyed<K> = {
@@ -28,7 +27,6 @@ type Keyed<K> = {
   delete(key: K): boolean;
 };
 
-/** Forgets the oldest keys beyond `limit`, skipping those still `inUse`. */
 const forgetOldest = <K>(
   keyed: Keyed<K>,
   limit: number,
@@ -57,7 +55,6 @@ export const createCallState = Effect.fnUntraced(function* (
   scope: Scope.Scope,
   boundary: CallBoundary,
 ) {
-  // Token changes, config changes, stream registration, and call state take one lock, so nothing lands mid-sweep.
   const changes = yield* Semaphore.make(1);
 
   let goneAt: number | null = null;
@@ -67,14 +64,12 @@ export const createCallState = Effect.fnUntraced(function* (
   const ended = new Set(stored.ended);
   const outside = new Map(stored.outside.map((call) => [call.callId, call]));
 
-  // A reloaded call waits for the voice gateway from the first tick on.
   let reloaded = active.size > 0;
   let unsaved = false;
   const calls: Array<VoiceCallChange> = [];
   let handler: VoiceCallHandler | undefined;
   let announcing = false;
 
-  // A handler that reaches this service again finds the loop running, so it never waits on itself.
   const announce = Effect.gen(function* () {
     if (announcing) {
       return;
@@ -99,7 +94,6 @@ export const createCallState = Effect.fnUntraced(function* (
     return saveCalls(settings, active.values(), ended, outside.values());
   });
 
-  // Call changes are saved under the lock, then announced after it, so a marker never holds the lock.
   const locked = <A, E>(effect: Effect.Effect<A, E>) =>
     Semaphore.withPermit(changes, Effect.ensuring(effect, save)).pipe(
       Effect.ensuring(announce),
@@ -108,7 +102,6 @@ export const createCallState = Effect.fnUntraced(function* (
   const activeCall = (callId: string) =>
     [...active.values()].find((call) => call.callId === callId);
 
-  // A ringing or active outside call keeps its ID, so a report for it is never taken for a call with the owner.
   const rememberOutside = (call: OutsideCall) => {
     outside.set(call.callId, call);
     unsaved = true;
@@ -185,7 +178,6 @@ export const createCallState = Effect.fnUntraced(function* (
   const hangingUp = (username: string) =>
     Effect.sync(() => active.get(username)?.hangUp === true);
 
-  // Null when the token changed; Conflict once the call ended.
   const onCallLine = <A, E>(
     username: string,
     callId: string,
@@ -232,7 +224,6 @@ export const createCallState = Effect.fnUntraced(function* (
   ) => {
     const placed = pending.event(callId);
 
-    // Only its start report while it rings makes an outside call active; it never becomes a call with the owner.
     if (outside.has(callId) && !placed) {
       return Effect.fail(
         new Conflict({ message: "The outside call is not ringing" }),
@@ -375,7 +366,6 @@ export const createCallState = Effect.fnUntraced(function* (
       }),
     );
 
-  // A call the voice gateway can no longer report ends here: its stream is gone, or a new one never confirmed it.
   const expire = (now: number) => {
     const live = boundary.connection();
 
@@ -417,7 +407,6 @@ export const createCallState = Effect.fnUntraced(function* (
   ) => {
     const call = active.get(username);
 
-    // The first sweep after a restart sees every line as new; a reloaded call stays with its bot.
     if (call && call.botId !== botId) {
       end(call, "lineChanged", now);
     }

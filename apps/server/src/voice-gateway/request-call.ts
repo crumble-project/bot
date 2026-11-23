@@ -62,7 +62,6 @@ const requestCallTool = (agentId: string, service: CallRequests["Service"]) =>
         };
       }
 
-      // SAFETY: CallRequest holds only JSON data.
       const details = saved.success as JsonValue;
 
       return { ...toolOutput({ request: details }), details };

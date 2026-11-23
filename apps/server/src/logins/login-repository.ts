@@ -43,7 +43,6 @@ const login = (agentId: string, name: string) =>
 export class LoginRepository extends Context.Service<
   LoginRepository,
   {
-    /** Metadata only: listing never decrypts a value. */
     readonly list: (agentId: string) => Effect.Effect<Array<LoginRecord>>;
     readonly get: (
       agentId: string,

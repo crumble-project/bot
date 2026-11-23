@@ -171,7 +171,6 @@ export function notifyReply(event: ReplyEvent, { open, pathOf }: ChatLinks) {
   unread.set(path, (unread.get(path) ?? 0) + 1);
   showUnread();
 
-  // Full storage or a browser without `new Notification`, like Android Chrome, must not end the stream.
   try {
     if (!canNotify() || !firstNotice(event.eventId)) {
       return;
@@ -192,7 +191,6 @@ export function notifyReply(event: ReplyEvent, { open, pathOf }: ChatLinks) {
       notification.close();
     };
   } catch (error) {
-    // Report failed notices without ending the reply stream.
     reportError(error);
   }
 }

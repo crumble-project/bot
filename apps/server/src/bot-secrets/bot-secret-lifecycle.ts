@@ -93,7 +93,6 @@ export const botSecretLifecycle = <
         return found;
       });
 
-      // Checked first, then read again after the secret's slow save, so a save made meanwhile isn't overwritten.
       yield* hosts;
       yield* steps.store;
 
@@ -255,13 +254,12 @@ export const secretRequestTool = <
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
-    // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
+
     callers: ["model"],
     replay: "unsafe",
     execute: async (args) => {
       const request = tool.request(args);
 
-      // Clients read the request from the details to offer the owner its form.
       return { ...toolOutput({ request }), details: request };
     },
   });

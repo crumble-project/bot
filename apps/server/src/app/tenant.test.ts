@@ -47,7 +47,6 @@ async function claudeProvider(tenant: Tenant) {
 
   expect(response.status).toBe(200);
 
-  // SAFETY: the provider API response is narrowed to the fields asserted below.
   const providers = (await response.json()) as ClaudeProvider[];
 
   return providers.find((item) => item.provider === "claude-code");

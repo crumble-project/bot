@@ -18,7 +18,6 @@ import {
 } from "./github-api";
 import { githubAppUsers, githubApps } from "./schema";
 
-/** A token is refreshed once less than this is left of its eight hours. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -56,7 +55,6 @@ const staleSignIn = () =>
     message: "This GitHub sign-in is stale or was already used; start again",
   });
 
-// GitHub answers OAuth errors with 200 and an `error` field.
 const tokenAnswer = z.union([
   z.object({
     access_token: z.string().min(1),
@@ -79,11 +77,6 @@ type GitHubAppClient = Pick<
 
 export type GitHubAppUser = { login: string; userId: number };
 
-/**
- * The owner signing in to GitHub through an App, so bots assigned to it act as the owner instead of as `slug[bot]`.
- * GitHub shows their issues, pull requests, and comments with the App's badge. Tokens last eight hours and are
- * refreshed on use; refreshing rotates the refresh token, so refreshes run one at a time.
- */
 export class GitHubAppUsers extends Context.Service<
   GitHubAppUsers,
   {
@@ -133,7 +126,6 @@ export class GitHubAppUsers extends Context.Service<
         return found;
       }, Effect.orDie);
 
-      // Called only inside atomic(db), so legacy identity creation and owner reads share a snapshot.
       const readAuthorization = Effect.fnUntraced(function* (appId: string) {
         const found = yield* app(appId);
 
@@ -235,14 +227,13 @@ export class GitHubAppUsers extends Context.Service<
         }).pipe(atomic(db));
 
         return `https://github.com/login/oauth/authorize?${new URLSearchParams({
-          // No redirect_uri: GitHub uses the App's callback URL, which older Apps registered under /ui/.
           client_id: found.clientId,
           state,
           code_challenge: createHash("sha256")
             .update(verifier)
             .digest("base64url"),
           code_challenge_method: "S256",
-          // Asks for a refresh token even from an App that opted out of expiring tokens.
+
           scope: "offline_access",
         })}`;
       });
@@ -368,7 +359,6 @@ export class GitHubAppUsers extends Context.Service<
           return current;
         }).pipe(atomic(db));
 
-        // Remote revocation may outlive a new sign-in; all local deletion already committed.
         if (captured?.signedIn && secret) {
           yield* revokeGitHubGrant(
             {
@@ -408,7 +398,6 @@ export class GitHubAppUsers extends Context.Service<
       const refresh = Effect.fn("GitHubAppUsers.refresh")(function* (
         found: GitHubAppClient,
       ) {
-        // Another request may have refreshed while this one waited for the lock.
         const { captured, now, token } = yield* tokenSnapshot(found.id);
 
         if (token) {

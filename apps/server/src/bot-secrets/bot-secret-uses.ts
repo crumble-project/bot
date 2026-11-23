@@ -43,7 +43,7 @@ export class BotSecretUses extends Context.Service<
       name: string,
       use: Omit<BotSecretUse, "id">,
     ) => Effect.Effect<void>;
-    /** Newest first; page with `before` set to the last use's ID. */
+
     readonly list: (
       agentId: string,
       kind: BotSecretKind,

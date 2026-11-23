@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-/** A dynamic client registration request, which the fake server echoes back. */
 const registrationSchema = z.looseObject({ client_id: z.string().optional() });
 
 export function gate() {

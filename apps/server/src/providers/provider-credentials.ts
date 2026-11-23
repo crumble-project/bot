@@ -24,11 +24,6 @@ export type ProviderCredentialStore = CredentialStore & {
 
 type Services = ProviderCredentialRepository | Secrets;
 
-/**
- * Pi AI's credential store over the account's encrypted provider credentials, with each API key kept as a secret.
- * One instance serves the API and every bot runtime; the data-directory lock makes this process the only writer, so
- * per-provider promise queues serialize refresh, login, key replacement and sign-out.
- */
 export class ProviderCredentials extends Context.Service<
   ProviderCredentials,
   ProviderCredentialStore
@@ -92,9 +87,7 @@ class QueuedCredentialStore implements CredentialStore {
         s.read(providerApiKeyKey(providerId)),
       ).pipe(
         Effect.mapError(
-          (error) =>
-            // Pi AI puts this after "Credential store read failed for <provider>: ", which names the provider.
-            new Error(`API key could not be read: ${error.message}`),
+          (error) => new Error(`API key could not be read: ${error.message}`),
         ),
       ),
     );
@@ -140,7 +133,6 @@ class QueuedCredentialStore implements CredentialStore {
       async () => {
         const next = await update(this.stored(providerId));
 
-        // A started refresh persists even if its caller went away, so a rotated token is never lost.
         if (next !== undefined) {
           this.write(providerId, next);
         }
@@ -164,10 +156,6 @@ class QueuedCredentialStore implements CredentialStore {
     );
   }
 
-  /**
-   * Persists a completed login only if it is still current when its turn comes. The guard, write
-   * and state transition run synchronously together, so no cancellation can slip between them.
-   */
   commitLogin(
     providerId: string,
     credential: Credential,
@@ -228,7 +216,6 @@ class QueuedCredentialStore implements CredentialStore {
       return run;
     }
 
-    // Waiting callers honor cancellation; a started task keeps the queue until it settles.
     return new Promise<T>((resolve, reject) => {
       const onAbort = () => {
         if (!started) {

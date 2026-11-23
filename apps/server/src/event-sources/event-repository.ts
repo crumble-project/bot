@@ -13,7 +13,6 @@ export type RelayEvent = Omit<typeof relayEvents.$inferSelect, "storedAt">;
 export class EventConsumers extends Context.Service<
   EventConsumers,
   {
-    /** Runs inside the transaction that stores `event`, so a redelivery after a crash cannot lose what it records; answers how many runs it made. */
     readonly stored: (
       event: { id: string; sourceId: string },
       at: string,
@@ -29,7 +28,6 @@ export class EventRepository extends Context.Service<
     readonly getSource: (id: string) => Effect.Effect<EventSource | null>;
     readonly addSource: (source: EventSource) => Effect.Effect<void>;
     readonly removeSource: (id: string) => Effect.Effect<boolean>;
-    /** Stores the event once and hands it to its consumers in one transaction; a redelivery stores nothing. */
     readonly storeEvent: (
       event: RelayEvent,
     ) => Effect.Effect<{ stored: boolean; runs: number }>;

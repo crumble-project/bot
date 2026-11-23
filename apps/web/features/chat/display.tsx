@@ -143,7 +143,6 @@ type Node = ChartLayout["nodes"][number];
 
 type Point = ChartLayout["points"][number];
 
-// `styles.css` defines these; a chart may name more series, which reuse them.
 const THEME_CHART_COLORS = 5;
 
 const SERIES = Array.from(
@@ -186,7 +185,7 @@ function commonProps(node: Node, id: string) {
     strokeOpacity: node.strokeOpacity,
     strokeWidth: node.strokeWidth,
     strokeLinecap: node.lineCap,
-    // SAFETY: The server normalizes every line join to miter, round, or bevel.
+
     strokeLinejoin: node.lineJoin,
     strokeDasharray: node.dash?.join(" "),
     opacity: node.opacity,
@@ -376,8 +375,6 @@ function Chart({ layouts }: { layouts: Array<ChartLayout> }) {
         }}
       >
         {layout.nodes.map((node, index) => (
-          // Nodes have no identity beyond their position in the layout.
-          // react-doctor-disable-next-line no-array-index-as-key
           <ChartNode key={index} node={node} id={`${clipPrefix}-${index}`} />
         ))}
         {hover && (

@@ -22,7 +22,6 @@ import { settingsSections } from "@/features/settings/sections";
 import { useIsAdmin } from "@/lib/auth-client";
 import { THEME_OPTIONS, PAGES } from "./navigation";
 
-// Chat items keep their id as the value so equal names stay distinct; match them by name only.
 const filter = (value: string, search: string, keywords?: Array<string>) =>
   keywords?.length
     ? defaultFilter(keywords.join(" "), search)

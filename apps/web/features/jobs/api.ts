@@ -16,7 +16,6 @@ export const jobsQuery = (id: string, kind: JobKind) =>
   queryOptions({
     queryKey: ["jobs", id, kind],
     queryFn: async ({ signal }) =>
-      // Coding and desktop jobs share one response shape.
       (
         await api(
           kind === "coding" ? "codingJobs" : "desktopJobs",
@@ -25,7 +24,7 @@ export const jobsQuery = (id: string, kind: JobKind) =>
         )
       ).jobs,
     refetchOnMount: "always",
-    // A job's own progress sends the chat nothing, and a chat message may never tell of a job waking up.
+
     refetchInterval: (query) =>
       query.state.data?.some((job) => job.status === "working" || job.question)
         ? ACTIVE_REFRESH_MS

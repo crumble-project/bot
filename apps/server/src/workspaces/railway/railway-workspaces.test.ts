@@ -42,12 +42,10 @@ import { credentialProxy } from "../../credentials/credential-proxy";
 import { credentialsAccess } from "../../credentials/credentials";
 import { Store } from "../../../test/support/store";
 
-// Live tests create billed sandboxes, so they need an explicit opt-in besides the credentials.
 const railwayTests =
   process.env["CRUMBLE_RAILWAY_TESTS"] === "1" &&
   Boolean(process.env["RAILWAY_TOKEN"] ?? process.env["RAILWAY_API_TOKEN"]);
 
-// Checkpoint names are global to the Railway environment, so each run gets its own.
 const namePrefix = `crumble-test-${process.pid}`;
 const size = () => ({ cpus: 2, memoryMib: 4096 });
 const dataDir = mkdtempSync(path.join(tmpdir(), "crumble-railway-test-"));
@@ -442,7 +440,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       upstream.listen(0, "127.0.0.1", resolve),
     );
     const upstreamCa = await authorities.certificate(upstreamAgent.id);
-    // SAFETY: listen completed on a TCP port, not a Unix socket.
+
     const upstreamPort = (upstream.address() as AddressInfo).port;
 
     const workspaces = new RailwayWorkspaces({
@@ -583,7 +581,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
 
       const { sandboxId } = readRecord("lost");
       await (await Sandbox.connect(sandboxId!)).destroy();
-      // A call in flight when the sandbox goes fails; the heartbeat notices within seconds and the next call boots.
+
       await Bun.sleep(15_000);
 
       expect(await readText(lossy.env("lost"), "/workspace/note")).toBe(

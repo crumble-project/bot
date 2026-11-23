@@ -10,12 +10,10 @@ import { modelsQuery, visionModelQuery } from "@/features/providers/api";
 
 type ImageBot = Pick<Bot, "id" | "name" | "provider" | "model">;
 
-/** Images the bot's model gets as images; larger ones arrive as file references. */
 const sentAsImage = (upload: Upload) =>
   attachmentKind(upload.mimeType) === "image" &&
   (upload.size ?? 0) <= MAX_IMAGE_BYTES;
 
-/** False only when the catalog says the model can't read images and no vision model describes them. */
 function useReadsImages(bot: ImageBot) {
   const models = useQuery(modelsQuery(bot.provider));
   const vision = useQuery(visionModelQuery);
@@ -28,7 +26,6 @@ function useReadsImages(bot: ImageBot) {
   return model.images || vision.data.visionModel !== null;
 }
 
-/** Warns before sending an image the bot can't read; the server refuses the message. */
 export function ImageWarning({
   bot,
   uploads,

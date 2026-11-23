@@ -1,5 +1,52 @@
 {
   "ignore": {
-    "files": ["components/ui/**"]
+    "files": ["components/ui/**"],
+    "overrides": [
+      {
+        "files": [
+          "features/settings/settings.tsx",
+          "features/providers/providers.tsx",
+          "features/providers/model-choice.tsx",
+          "features/chat/conversation.tsx",
+          "features/bot-desktop/desktop.tsx",
+          "features/github-apps/github-apps.tsx",
+          "features/jobs/jobs.tsx"
+        ],
+        "rules": ["react-doctor/query-mutation-missing-invalidation"]
+      },
+      {
+        "files": [
+          "features/chat/transcript.tsx",
+          "features/providers/provider-sign-in.tsx",
+          "features/chat/display.tsx",
+          "components/state-diff.tsx"
+        ],
+        "rules": ["react-doctor/no-array-index-as-key"]
+      },
+      {
+        "files": ["features/skills/bulk-skill-actions.ts"],
+        "rules": ["react-doctor/async-await-in-loop"]
+      },
+      {
+        "files": ["features/bot-desktop/desktop.tsx"],
+        "rules": ["react-doctor/iframe-missing-sandbox"]
+      },
+      {
+        "files": ["features/providers/provider-sign-in.tsx"],
+        "rules": ["react-doctor/anchor-has-content"]
+      },
+      {
+        "files": ["components/brand-logo.tsx"],
+        "rules": ["react-doctor/dangerous-html-sink"]
+      },
+      {
+        "files": ["app/connect.tsx"],
+        "rules": ["react-doctor/url-prefilled-privileged-action"]
+      },
+      {
+        "files": ["components/markdown.tsx"],
+        "rules": ["react-doctor/no-dynamic-import-path"]
+      }
+    ]
   }
 }

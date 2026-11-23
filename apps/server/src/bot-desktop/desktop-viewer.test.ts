@@ -77,6 +77,6 @@ test("the bridge filters the viewer's input and forwards the desktop's output", 
   await until(() => toViewer.length > 0 && toDesktop.length === 2);
 
   expect(new TextDecoder().decode(toViewer[0])).toBe("RFB 003.008\n");
-  expect(toDesktop.map((d) => d[0])).toEqual([82, 5]); // handshake ("R..."), then only the allowed pointer event
+  expect(toDesktop.map((d) => d[0])).toEqual([82, 5]);
   await bridge.close();
 });

@@ -106,7 +106,6 @@ for (const backend of WORKSPACE_BACKENDS) {
         BACKGROUND_CONTEXT,
       );
 
-      // The capture can come before the page updates on a remote machine; capture again until it shows.
       expect(
         text(after).includes("Ada Lovelace|Berlin|yes") ||
           (await eventually(async () =>
@@ -335,7 +334,6 @@ for (const backend of WORKSPACE_BACKENDS) {
 
       let tree = "";
 
-      // The window maps before its accessibility tree fills in on a remote machine.
       await eventually(async () => {
         tree = text(
           await tool.run(
@@ -391,7 +389,6 @@ for (const backend of WORKSPACE_BACKENDS) {
 
     test("Chromium offers no session restore after a restart", async () => {
       await cu().run({ action: "capture" }, BACKGROUND_CONTEXT);
-      // Chromium writes its profile some seconds after start; until then a stop leaves nothing to restore.
       await env().exec(
         "for i in $(seq 120); do test -f /workspace/.desktop/chromium/Default/Preferences && break; sleep 0.5; done",
         undefined,
@@ -496,7 +493,6 @@ for (const backend of WORKSPACE_BACKENDS) {
           method: "POST",
         });
 
-        // SAFETY: The route returns the DesktopViewer schema.
         return ((await created.json()) as { path: string }).path;
       };
 
@@ -538,7 +534,6 @@ for (const backend of WORKSPACE_BACKENDS) {
         });
 
         expect(auth.status).toBe(200);
-        // SAFETY: Better Auth returns a token on successful bearer sign-up.
         token = ((await auth.json()) as { token: string }).token;
 
         const created = await api("/v1/agents", {
@@ -546,7 +541,6 @@ for (const backend of WORKSPACE_BACKENDS) {
           body: JSON.stringify({ name: "Desk", tools: ["desktop"] }),
         });
 
-        // SAFETY: The route returns the Agent schema.
         agentId = ((await created.json()) as { id: string }).id;
       }, 120_000);
 

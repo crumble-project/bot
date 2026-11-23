@@ -579,7 +579,7 @@ function GatewayEditor({
 
   return (
     <>
-      {/* Outside the form: the token sheet's submit would bubble into it through the portal. */}
+      {}
       <ConnectionSection gateway={gateway} {...fields} />
       <form
         className="flex flex-col gap-8"

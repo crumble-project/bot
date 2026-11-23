@@ -50,7 +50,6 @@ export class WorkspaceSyncFailed extends Schema.TaggedError<WorkspaceSyncFailed>
   { message: Schema.String, cause: Schema.Defect() },
 ) {}
 
-/** The bot's machine did not stop cleanly; on Railway it then keeps running for the next boot. */
 export class WorkspaceStopFailed extends Schema.TaggedError<WorkspaceStopFailed>()(
   "WorkspaceStopFailed",
   { message: Schema.String, cause: Schema.Defect() },

@@ -51,7 +51,6 @@ export class MessageGateway extends Context.Service<
         });
       }
 
-      // A spoken message's origin carries this as its `via`, the field adapter IDs also fill.
       if (adapters.some((adapter) => adapter.id === VOICE_VIA)) {
         return yield* new InvalidInput({
           message: `Message gateway adapter ID ${VOICE_VIA} is reserved for the voice gateway`,

@@ -110,7 +110,6 @@ function setup(
 
   closes.push(() => service.close());
 
-  // The voice gateway's layers as the account builds them.
   function started(): Started {
     const gateway = testVoiceGateway(store.runtime);
 
@@ -158,7 +157,6 @@ function setup(
   const voiceGateway = current!.gateway;
   const callRequests = () => current!.requests;
 
-  // A server restart: a fresh service over the same store, which ends call requests the restart left calling.
   const restart = async () => {
     app = serve();
     await service.effects.runPromise(
@@ -943,7 +941,6 @@ async function calling(wrap?: Wrap, marking?: WrapBots) {
   };
 }
 
-// SAFETY: call_owner reads only the tool API's taskId and the context's abort signal.
 const execute = (
   tool: ToolRegistration,
   greeting: string,
@@ -2085,7 +2082,6 @@ const OPENING =
 
 type Seen = { systemPrompt: string; tools: { name: string }[] };
 
-// A faux reply that records the prompt and the tools the model was given, folded from the system messages.
 const seeing =
   (seen: Seen[], reply: ReturnType<typeof fauxAssistantMessage>) =>
   (context: { messages: Message[] }) => {
@@ -2152,7 +2148,6 @@ async function outside(wrap?: Wrap, marking?: WrapBots) {
   const status = async (id: string) =>
     (await listed()).find((request) => request.id === id);
 
-  // An approved call that rings; `answer` sends its start report.
   const dialed = async () => {
     const proposed = await propose();
     const before = callEvents(await voice.events.until(() => true)).length;
@@ -2302,9 +2297,7 @@ test("request_call is offered only to a line that may call other people, and one
         goal: "Book a table",
         opening: OPENING,
       },
-      // SAFETY: request_call reads neither the tool API nor the context.
       {} as never,
-      // SAFETY: as above.
       {} as never,
     );
 
@@ -2585,7 +2578,6 @@ test("a call turn gets no learning review, reply preview, or reply announcement"
   ]);
   const { callId } = await voice.answered();
 
-  // The call started marker in the bot chat announces its preview first.
   await Bun.sleep(50);
   voice.service.onActivity((event) => activity.push(event.type));
   const execution = await said(voice, callId, "Hallo?");

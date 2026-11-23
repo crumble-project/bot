@@ -2,6 +2,7 @@
   "include": ["src", "styled-system", "*.ts"],
   "compilerOptions": {
     "strict": true,
+    "types": ["vite/client"],
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",

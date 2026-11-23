@@ -1,4 +1,3 @@
-// Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { randomBytes } from "node:crypto";
 import { Predicate } from "effect";
 import { logWarning } from "../../shared/process-log";
@@ -15,7 +14,6 @@ import {
 } from "./relay-request";
 import type { Block } from "./relay-request";
 
-// Native's own byte-level watchdog against api.anthropic.com (180 s); behind the relay it widens to 300 s.
 const UPSTREAM_IDLE_MS = 180_000;
 
 const DENIAL = JSON.stringify({
@@ -36,7 +34,6 @@ const FORWARDED_REQUEST_HEADERS_EXCLUDED = new Set([
   "accept-encoding",
 ]);
 
-// Bun's fetch has already decoded the body and frames it itself.
 const FORWARDED_RESPONSE_HEADERS_EXCLUDED = new Set([
   "connection",
   "transfer-encoding",
@@ -75,7 +72,7 @@ function forwardedResponseHeaders(response: Response) {
 export type AdmissionOptions = {
   queried?: ReadonlyArray<Block> | undefined;
   oneShot?: boolean;
-  /** The environment the child runs in, whose proxy and certificate settings forbid compression. */
+
   env: Record<string, string | undefined>;
   gzip: GzipFallback;
 };
@@ -93,7 +90,6 @@ function rewrittenPayload(
   try {
     payload = restoreQueriedTurn(payload, queried);
   } catch (error) {
-    // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
     if (!Predicate.isError(error) || error.name !== "QueriedTurnMismatch") {
       throw error;
     }
@@ -112,10 +108,6 @@ class UpstreamIdle extends Error {
   }
 }
 
-/**
- * One loopback listener per model request on a random port and route. Claude Code is pointed at it through
- * `ANTHROPIC_BASE_URL`; its authorization headers pass through memory to the upstream and are never logged or kept.
- */
 export class Admission {
   readonly url: string;
   used = false;
@@ -155,7 +147,7 @@ export class Admission {
     this.server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      // A healthy upstream can think for minutes before its next byte; the upstream idle limit bounds it instead.
+
       idleTimeout: 0,
       fetch: (request) => this.handle(request),
     });

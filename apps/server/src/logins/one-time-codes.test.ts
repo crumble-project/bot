@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 
-// RFC 6238 appendix B, SHA-1: the ASCII key "12345678901234567890" in base32.
 const RFC_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
 test("codes match the RFC 6238 SHA-1 vectors", () => {
@@ -31,7 +30,7 @@ test("a URI's algorithm and period are honored", () => {
 
   expect(sha256).toMatchObject({ algorithm: "sha256", periodSeconds: 60 });
   expect(oneTimeCode(sha256, 59_999)).toBe("18920136");
-  // RFC 6238's SHA-256 vector for step 1 (59 s at 30 s), reached at 60 s here.
+
   expect(oneTimeCode(sha256, 60_000)).toBe("46119246");
 });
 

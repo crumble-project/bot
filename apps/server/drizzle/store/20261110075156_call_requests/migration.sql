@@ -15,6 +15,6 @@ CREATE TABLE `call_requests` (
 	`ended_at` text,
 	CONSTRAINT `fk_call_requests_agent_id_agents_id_fk` FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE CASCADE
 );
---> statement-breakpoint
-CREATE INDEX `call_requests_by_agent` ON `call_requests` (`agent_id`);--> statement-breakpoint
+
+CREATE INDEX `call_requests_by_agent` ON `call_requests` (`agent_id`);
 CREATE INDEX `call_requests_by_call` ON `call_requests` (`call_id`);

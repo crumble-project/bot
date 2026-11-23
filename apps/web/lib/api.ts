@@ -171,7 +171,7 @@ export async function apiBlob(path: string, signal?: AbortSignal) {
 
 type StreamHandlers = {
   onEvent: (event: string, data: string) => void;
-  /** After every (re)connection, since streams have no replay. */
+
   onOpen?: () => void;
   onStatus?: (status: "connected" | "reconnecting") => void;
   onGone?: () => void;
@@ -199,7 +199,6 @@ function dispatchStreamFrame(frame: string, handlers: StreamHandlers) {
   handlers.onEvent(event, data);
 }
 
-// A read that fails is a dropped connection, like one that ends; handlers run outside this catch.
 async function nextChunk(reader: ReadableStreamDefaultReader<string>) {
   try {
     const { value, done } = await reader.read();

@@ -36,7 +36,6 @@ const SUBJECT_ALT_NAME = "2.5.29.17";
 const EXTENDED_KEY_USAGE = "2.5.29.37";
 const SERVER_AUTH = "1.3.6.1.5.5.7.3.1";
 
-// Key usage bits, first byte of the BIT STRING: digitalSignature 0x80, keyCertSign 0x04, cRLSign 0x02.
 const CA_KEY_USAGE = 0x06;
 const SERVER_KEY_USAGE = 0x80;
 
@@ -72,7 +71,6 @@ const extension = (extnID: string, critical: boolean, value: BaseBlock) =>
 const keyUsage = (bits: number) =>
   new BitString({ valueHex: Uint8Array.of(bits).buffer });
 
-/** SHA-1 of the subject public key, as RFC 5280 suggests for key identifiers. */
 async function keyIdentifier(certificate: Certificate) {
   return crypto.subtle.digest(
     "SHA-1",
@@ -83,7 +81,6 @@ async function keyIdentifier(certificate: Certificate) {
 export function serialNumber(bytes: Uint8Array) {
   const serial = Uint8Array.from(bytes);
 
-  // Positive (DER integers are signed) and without a leading zero byte, which BoringSSL rejects as non-minimal.
   serial[0] = ((serial[0] ?? 0) & 0x7f) | 0x40;
 
   return new Integer({ valueHex: serial });
@@ -124,10 +121,6 @@ type Authority = {
 
 type HostContext = { context: tls.SecureContext; expires: number };
 
-/**
- * One certificate authority per bot, which its workspace trusts, and the certificates the credential proxy presents
- * for the bot's credential hosts. The authority's key stays on the server, encrypted in the database.
- */
 export class CredentialAuthorities extends Context.Service<
   CredentialAuthorities,
   {
@@ -222,7 +215,7 @@ export class CredentialAuthorities extends Context.Service<
                 altNames: [new GeneralName({ type: 2, value: host })],
               }).toSchema(),
             ),
-            // Strict verifiers, such as Python 3.13 and later, require it.
+
             extension(
               AUTHORITY_KEY_ID,
               false,
@@ -294,7 +287,6 @@ async function newAuthority() {
       signingKey: keys.privateKey,
     },
     async (self) => [
-      // pathLenConstraint 0: it signs host certificates, never another authority.
       extension(
         BASIC_CONSTRAINTS,
         true,

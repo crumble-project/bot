@@ -10,7 +10,6 @@ export class FileTooLarge extends Data.TaggedError("FileTooLarge")<{
   limit: number;
 }> {}
 
-/** A `FileTooLarge` thrown inside a stream, recognised by its tag rather than by `instanceof`. */
 const isFileTooLarge = (value: unknown): value is FileTooLarge =>
   Predicate.isTagged(value, "FileTooLarge") &&
   Predicate.hasProperty(value, "limit") &&
@@ -132,9 +131,7 @@ export class FileStore extends Context.Service<
                 Effect.promise(async () => {
                   try {
                     await pending;
-                  } catch {
-                    // The read already failed; this only waits for it to settle.
-                  }
+                  } catch {}
                 }),
               ),
             );

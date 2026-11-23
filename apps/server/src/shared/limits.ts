@@ -1,5 +1,3 @@
-// Contract `maxLength`s and tool schemas read these: a new value is a wire change.
-
 export const MAX_MESSAGE_CHARS = 32_000;
 export const MAX_MEMORY_CHARS = 32_000;
 export const MAX_INSTRUCTIONS_CHARS = 32_000;
@@ -42,7 +40,6 @@ export const MAX_SECRET_CHARS = 16_000;
 export const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
-/** Theme colors a chart may use, `series-1` on; native clients read them too. */
 export const CHART_SERIES_COLORS = 8;
 
 export const MAX_WAIT_SECONDS = 60;

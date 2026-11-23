@@ -61,7 +61,6 @@ export class BotRequests extends Context.Service<
       input: { proposal: AgentInput; reason: string },
     ) => Effect.Effect<BotRequest, AppError>;
     readonly list: (agentId: string) => Effect.Effect<Array<BotRequest>>;
-    /** `decide` runs only on a pending request: what the owner approves, given what the bot proposed. */
     readonly approve: (
       agentId: string,
       requestId: string,
@@ -359,7 +358,6 @@ const requestBotTool = (agent: Agent, service: BotRequests["Service"]) =>
         service.request(agent.id, { proposal, reason: args.reason }),
       );
 
-      // The tool answer is JSON: optional fields BotRequest leaves undefined stay out of it.
       const details: JsonValue = copyJson(saved, {
         omitUndefinedProperties: true,
       });

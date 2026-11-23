@@ -44,7 +44,6 @@ async function desktopApps(state: ComputerUseState, context: Context) {
 }
 
 export async function listApps(state: ComputerUseState, context: Context) {
-  // cua-driver lists a running app once per process.
   const running = new Map<string, boolean>();
 
   for (const app of await desktopApps(state, context)) {
@@ -89,10 +88,6 @@ const WINDOW_WAIT_MS = 8000;
 
 const POLL_MS = 250;
 
-/**
- * Starts an installed app, optionally on a folder or file, and reports its window. The panel's launchers sit outside
- * any window a job can target, so this is how a job starts an app.
- */
 export async function launchApp(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -122,7 +117,6 @@ export async function launchApp(
     (await listWindows(state, context)).map((each) => each.window_id),
   );
 
-  // setsid and closed streams let the app outlive this command.
   await sh(
     state.shell,
     `setsid ${command} >/dev/null 2>&1 </dev/null &`,

@@ -47,7 +47,6 @@ import {
 } from "../../test/fixtures/scripted-guest";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
-// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -372,7 +371,6 @@ test("the desktop job list reports each job's token usage", async () => {
 });
 
 test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
-  // SAFETY: the tool is built from the bot's ID alone.
   const agent = { id: "00000000-0000-4000-8000-000000000501" } as Agent;
 
   const [kind] =

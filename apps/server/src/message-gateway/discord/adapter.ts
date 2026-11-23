@@ -255,7 +255,6 @@ async function login(
     try {
       await client.destroy();
     } catch {
-      // Preserve the login failure when cleanup also fails.
     } finally {
       client.removeAllListeners();
     }
@@ -379,7 +378,6 @@ export function discordAdapter(
     label: "Discord",
     secretKey: DISCORD_SECRET_KEY,
     maxMessageLength: 2000,
-    // The indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
     typingRenewalMs: 8000,
     async connect(host) {
       const client = clientFactory(options);

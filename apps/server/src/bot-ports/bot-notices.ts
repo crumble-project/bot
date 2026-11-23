@@ -10,14 +10,9 @@ export type NoticeHandler = (
   requestId: string,
 ) => Effect.Effect<void, unknown>;
 
-/**
- * Notices for bots' chats from features the chat itself depends on, such as credentials: the owner of the chats
- * registers the handler, which breaks what would otherwise be a cycle between the layers.
- */
 export class BotNotices extends Context.Service<
   BotNotices,
   {
-    /** Fails when nothing takes notices yet, or when the handler does. */
     readonly notice: NoticeHandler;
     readonly handle: (
       handler: NoticeHandler,

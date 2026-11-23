@@ -8,7 +8,6 @@ const compiler = new ChartCompiler();
 
 afterAll(() => compiler.close());
 
-// The module form the TanStack docs use, so a library upgrade that breaks it fails here first.
 const bars = `
 import { barY, defineChart } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts/scales/band"

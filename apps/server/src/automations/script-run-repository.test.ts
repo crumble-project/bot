@@ -28,7 +28,6 @@ const schedulerOver = (store: Store) =>
     store.runtime,
     async () => recordedDispatch,
     undefined,
-    // SAFETY: these tests never start a run, so no method is called.
     {} as Workspaces,
   );
 

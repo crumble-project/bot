@@ -13,7 +13,6 @@ export type PasswordManagerConnection = {
 export class PasswordManagerRepository extends Context.Service<
   PasswordManagerRepository,
   {
-    /** Metadata only: listing never decrypts a token. */
     readonly list: Effect.Effect<Array<PasswordManagerConnection>>;
     readonly token: (
       id: PasswordManagerId,
@@ -23,7 +22,7 @@ export class PasswordManagerRepository extends Context.Service<
       token: Redacted.Redacted,
       connectedAt: string,
     ) => Effect.Effect<void>;
-    /** The foreign key from `secrets` refuses this while a secret reads from it; check `SecretRepository.usedBy` first. */
+
     readonly delete: (id: PasswordManagerId) => Effect.Effect<boolean>;
   }
 >()("crumble/password-managers/PasswordManagerRepository") {

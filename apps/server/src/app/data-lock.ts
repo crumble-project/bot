@@ -33,7 +33,6 @@ function readOwner(dataDir: string) {
   }
 }
 
-/** Whether another live process on this host has the pid; our own pid is a run replaced by a watch restart. */
 function othersAlive(owner: { pid: number; host: string | undefined }) {
   if (owner.host !== HOST || owner.pid === process.pid) {
     return false;

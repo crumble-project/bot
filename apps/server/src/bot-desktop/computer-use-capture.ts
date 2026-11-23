@@ -59,7 +59,6 @@ const NO_SCREENSHOT: TextContent = {
   text: "no screenshot: a password was typed into this Chromium, and a screenshot could show it; screenshots return once Chromium restarts",
 };
 
-/** The window's tree, compacted, scrubbed, and cut to fit this tool's result; scrubbed first, so no cut splits a value. */
 function treeOf(state: ComputerUseState, reply: DriverReply) {
   const tree = scrubText(state, compactTree(replyTree(reply)));
 
@@ -82,8 +81,6 @@ export const elementToken = (
   return `${snapshot}:${element}`;
 };
 
-// `- [3] push button "Pay now" [actions=...]` in a full tree; a diff marks lines `+`, `~`, or `-` (removed). The role
-// runs up to the name's quote or the first `[`, so it keeps every word.
 const ELEMENT_LINE =
   /^\s*([-+~])?\s*\[(\d+)\]\s+([^"[\n]*)(?:"((?:[^"\\]|\\.)*)")?/;
 
@@ -122,7 +119,6 @@ function elementLine(
     target.name = scrubText(state, unquote(name));
   }
 
-  // Only a diff marks removals; a full tree's `-` is a list bullet.
   return { index: Number(index), removed: diff && mark === "-", target };
 }
 
@@ -185,7 +181,6 @@ const diffBase = (
     ? state.snapshots.get(target.window_id)
     : undefined;
 
-// A screenshot can't be scrubbed, so a vision capture goes without one while a password may show.
 const screenshotMode = async (
   state: ComputerUseState,
   mode: string,

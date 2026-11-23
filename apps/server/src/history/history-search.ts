@@ -207,7 +207,6 @@ function toolActivityOf(
 }
 
 function bodyOf(message: TranscriptMessage): string | null {
-  // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
   if (isOwnerInput(message)) {
     return message.content;
   }
@@ -936,7 +935,6 @@ export class HistorySearch {
 
       frozen.push(scanned.snapshot);
 
-      // One push per match: a whole transcript's matches can exceed the engine's argument limit.
       for (const candidate of matchesIn(
         scanned.snapshot,
         scanned.rows,

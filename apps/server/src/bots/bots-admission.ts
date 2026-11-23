@@ -50,7 +50,6 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     return (yield* scriptRuns.status(request.runId)) === "succeeded";
   });
 
-  // An outside call's goal and transcript reach the model, never the stored message.
   const callNote = (execution: Execution) => {
     const request = parseRequestId(execution.requestId);
 
@@ -169,8 +168,6 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
       return;
     }
 
-    // Admission can fail after Pi has committed but before the host gets its ID.
-    // Reuse the durable request ID; never create another user turn to recover it.
     if (execution.status === "failed" && execution.submissionId) {
       return;
     }

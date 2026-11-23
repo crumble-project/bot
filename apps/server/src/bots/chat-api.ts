@@ -120,10 +120,6 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
-/**
- * A bot chat's snapshot stream, or another of the bot's conversations' with `conversationId`. `opened` can refuse the
- * stream before it sends anything, by returning null.
- */
 export const chatEventStream = async (
   c: Context,
   service: BotsAccess,

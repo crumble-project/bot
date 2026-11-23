@@ -40,7 +40,6 @@ export const RELAY_TOKEN_KEY = pluginSettingKey(
 
 export const EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-// A hello the protocol schema rejects still names the version the relay speaks.
 const anyHello = z.object({ type: z.literal("hello"), protocol: z.number() });
 
 const relayUrlOf = fallingBackTo(z.string().nullable(), null);

@@ -21,21 +21,19 @@ export type TlsAuthorities = {
 export type CredentialProxyOptions = {
   agentId: string;
   authorities: TlsAuthorities;
-  /** Read for every request, so a changed or deleted credential applies at once. */
+
   grants: () => Array<CredentialGrant>;
-  /** Reads a used credential's value; rejects with the reason the request can't be sent. */
+
   value: (name: string, target: CredentialTarget) => Promise<string>;
   recordUse: (name: string, use: Omit<CredentialUse, "id">) => void;
   lookup?: (host: string) => Promise<Array<string>>;
   isPublicAddress?: (address: string) => boolean;
-  /** Extra certificate authorities upstream servers may use, in PEM; the system's are always trusted. */
+
   upstreamCa?: string;
 };
 
-// Shorter values would match ordinary bytes in responses; a reflected one that short is not worth corrupting bodies.
 const MIN_SCRUBBED_LENGTH = 8;
 
-// Hop-by-hop headers belong to the connection with the workspace; Node sets its own towards the upstream.
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -109,7 +107,6 @@ export const requestHeaders = (
   return headers;
 };
 
-// A scrubbed body can change length; Node frames it anew.
 const forwardable = (key: string, scrubbing: boolean) =>
   !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
 
@@ -221,12 +218,12 @@ export async function answerOverTls(
   const secure = new tls.TLSSocket(client, {
     isServer: true,
     secureContext,
-    // HTTP/2 would need its own relay; clients fall back to HTTP/1.1.
+
     ALPNProtocols: ["http/1.1"],
   });
 
   secure.on("error", () => secure.destroy());
-  // The TLS socket takes over reading the client; resuming the client as well stalls the handshake in Bun.
+
   http.createServer(answer).emit("connection", secure);
 }
 
@@ -253,11 +250,6 @@ function answerUpstreamError(response: http.ServerResponse, error: Error) {
   response.end(`Crumble credential proxy: ${error.message}\n`);
 }
 
-/**
- * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
- * in responses. It sees only TLS connections the workspace proxy hands it, so a placeholder sent anywhere else, or from
- * another bot's workspace, stays a placeholder.
- */
 export function credentialProxy(
   options: CredentialProxyOptions,
 ): WorkspaceInterceptor {
@@ -268,8 +260,6 @@ export function credentialProxy(
     (async (host: string) =>
       (await dns.lookup(host, { all: true })).map((entry) => entry.address));
 
-  // Resolves once more for the upstream connection and keeps only public addresses, so a host that resolves to the
-  // server's own network gets no credential.
   const publicLookup: LookupFunction = (host, lookupOptions, callback) => {
     resolve(host).then(
       (addresses) => {
@@ -318,9 +308,8 @@ export function credentialProxy(
       swappingPlaceholders(values),
     );
 
-    // Uncompressed responses, so the value can be scrubbed from them.
     headers["accept-encoding"] = ["identity"];
-    // Never in the URL: services log, store, and echo URLs, which would let a job read the value back.
+
     const path = request.url ?? "/";
 
     const scrub = scrubPairs(values);

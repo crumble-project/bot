@@ -339,7 +339,6 @@ describe("Discord connection", () => {
       throw new Error("the close should have rejected both sends");
     }
 
-    // The send whose REST request had started keeps the rejection the close cut short.
     expect(inFlight.reason).toBeInstanceOf(Error);
     expect(inFlight.reason.cause).toEqual(new Error("aborted test-token"));
     expect(queued.reason).toBeInstanceOf(Error);

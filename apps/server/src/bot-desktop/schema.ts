@@ -37,7 +37,6 @@ export const heldActions = sqliteTable(
     page: text("page"),
     ownerMessages: text("owner_messages").notNull(),
     reason: text("reason").notNull(),
-    /** pending, approved, declined, or expired: a restart ends every wait. */
     status: text("status").notNull(),
     declineReason: text("decline_reason"),
     heldAt: text("held_at").notNull(),

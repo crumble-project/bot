@@ -21,7 +21,6 @@ import { BOT_TOOL } from "../contract/tools";
 
 const WORKSPACE_EXTENSION = "workspace";
 
-// Tools whose success may have changed the workspace's files. A failed bash can still have written files.
 const FILE_CHANGING_TOOLS = new Set(["write", "edit", "bash"]);
 
 const CODING_JOBS = {
@@ -59,13 +58,11 @@ const credentialSection = (
       : undefined,
 });
 
-// A crash then loses at most the call in flight.
 const syncAfter = (workspaces: Workspaces, agentId: string, name: string) =>
   FILE_CHANGING_TOOLS.has(name)
     ? Effect.runPromise(workspaces.sync(agentId))
     : Promise.resolve();
 
-// Holds the workspace awake for the grace period after a job asks; wake ends the hold early.
 const questionHold = (
   coding: JobKind,
   agentId: string,
@@ -106,7 +103,6 @@ type CodingBuild = {
   credentials: CredentialsAccess;
 };
 
-// The chat selects every installed extension, this one included, so its sections and hook check for a job.
 const jobExtension = (
   { coding, agentId, workspaces, credentials }: CodingBuild,
   tools: CodingTools,
@@ -195,7 +191,6 @@ export const codingPlugin = (
   credentials: CredentialsAccess,
 ): CrumblePlugin => {
   const coding = defineJobKind(JOB_KINDS.coding);
-  // One build per bot: the grace period's hold lives in its closure, and a later build could not release it.
   const built = new Map<string, JobExtensions>();
 
   return {

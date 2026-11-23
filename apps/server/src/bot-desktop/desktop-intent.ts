@@ -16,7 +16,6 @@ import type { JudgeModelRef } from "./intent-judge";
 import type { JobRequest } from "../jobs/owner-request";
 
 export type DesktopIntent = {
-  /** The judge over the harness's models, and its name; undefined when no model can judge. */
   judgeFor(models: Models): Promise<{ judge: Judge; name: string } | undefined>;
   held: HeldActionsAccess;
 };

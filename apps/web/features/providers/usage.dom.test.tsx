@@ -35,7 +35,6 @@ async function render(usage: Usage, providers: Array<Provider> = [anthropic]) {
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   });
 
-  // Fresh cached data, so the view makes no request.
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -66,7 +65,6 @@ async function render(usage: Usage, providers: Array<Provider> = [anthropic]) {
   };
 }
 
-// Logos carry an SVG title, but are aria-hidden: leave them out as a screen reader would.
 const heading = (section: Element) => {
   const h2 = section.querySelector("h2");
 

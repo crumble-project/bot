@@ -13,7 +13,7 @@ export const callRequestsQuery = (id: string) =>
     queryKey: ["call-requests", id],
     queryFn: ({ signal }) =>
       api("listCallRequests", `${agentPath(id)}/call-requests`, { signal }),
-    // Another client can decide a request, and a call ends without the owner.
+
     refetchInterval: (query) =>
       query.state.data?.some(
         (request) =>
@@ -28,7 +28,6 @@ export const callRequestPath = (id: string, requestId: string) =>
 
 const LIVE_CALL_POLL_MS = 2000;
 
-/** `live`: the call is going on, so the transcript grows. */
 export const callTranscriptQuery = (
   id: string,
   requestId: string,

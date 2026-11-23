@@ -54,7 +54,6 @@ type WindowInput = (
 
 type Pointer = { element_token: string } | { x: number; y: number };
 
-// Background first, then foreground: GTK apps need background accessibility actions, Chromium foreground keys.
 export async function act(
   state: ComputerUseState,
   tool: string,
@@ -374,17 +373,11 @@ const inPage: Run = (state, args, context) =>
 const reportedInput = inWindow(actAndReport);
 
 type ActionEntry = {
-  /**
-   * `observe`: stays allowed right after control changed hands, and no intent check runs.
-   * `act`: refused as stale after a handover, and checked by the intent check.
-   * `unchecked`: refused as stale after a handover, but not checked. Choosing it for a new action needs a reason here.
-   */
   effect: "observe" | "act" | "unchecked";
   run?: Run;
   input?: WindowInput;
   targeted?: boolean;
   refCall?: RefCallBuilder;
-  /** Where an action lands that doesn't act in a target window, so no window is pinned for it. */
   place?: (args: ComputerUseArgs) => Place;
 };
 
@@ -418,7 +411,6 @@ export const ACTIONS = new Map<string, ActionEntry>([
     },
   ],
   ["drag", { effect: "act", input: drag }],
-  // Unchecked on its own; as a step of a `steps` call the whole call is judged.
   [
     "scroll",
     {
@@ -449,7 +441,6 @@ export const ACTIONS = new Map<string, ActionEntry>([
   ],
   ["wait", { effect: "observe", run: pause }],
   ["list_windows", { effect: "observe", run: listing }],
-  // Moves focus only.
   ["focus_window", { effect: "unchecked", input: focusWindow }],
   ["launch", { effect: "act", run: launchApp, place: () => ({}) }],
   ["list_apps", { effect: "observe", run: (s, _a, c) => listApps(s, c) }],

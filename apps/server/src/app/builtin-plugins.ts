@@ -22,7 +22,7 @@ import type { SecretUnavailable } from "../secrets/secret-values";
 export const builtinVendors: Array<PluginVendors> = [
   { id: "1password", passwordManagers: [onePassword] },
   { id: "bitwarden", passwordManagers: [bitwarden] },
-  // Railway first: it runs only when CRUMBLE_WORKSPACE_BACKEND asks for it, while dev servers always set an image.
+
   { id: "railway", workspaceBackends: [railwayWorkspacesFromEnv] },
   { id: "microsandbox", workspaceBackends: [microsandboxWorkspacesFromEnv] },
 ];

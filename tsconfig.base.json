@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    // Environment setup & latest features
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
@@ -9,13 +8,11 @@
     "allowJs": false,
     "types": ["bun"],
 
-    // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
-    // Type checking: every strictness flag on
     "strict": true,
     "checkJs": false,
     "exactOptionalPropertyTypes": true,
@@ -31,7 +28,6 @@
     "allowUnusedLabels": false,
     "isolatedModules": true,
 
-    // Third-party declarations fail their own checks under these flags
     "skipLibCheck": true
   },
   "exclude": ["node_modules"]

@@ -2,7 +2,6 @@ import { Effect } from "effect";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import type { ChangeBy, ChangeSource } from "../shared/domain";
 
-/** What a tool call knows of its turn: its inputs and the execution its review digests. */
 export type ChangeContext = {
   submissionIds: Array<string>;
   reviewOf: string | null;
@@ -33,7 +32,6 @@ export const changeSourceOf = Effect.fnUntraced(function* (
   } satisfies ChangeSource;
 });
 
-/** Who made a tool call's change: the review of an execution, or the bot in the turn that called it. */
 export const changeByOf = Effect.fnUntraced(function* (
   agentId: string,
   context: ChangeContext,

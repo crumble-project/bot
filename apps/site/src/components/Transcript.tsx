@@ -660,7 +660,6 @@ function subscribeReducedMotion(onChange: () => void) {
   return () => media.removeEventListener("change", onChange);
 }
 
-// Read during render, so it subscribes instead of touching window on the server.
 function useReducedMotion() {
   return useSyncExternalStore(
     subscribeReducedMotion,
@@ -685,8 +684,6 @@ function useTimeline(started: boolean, times: Array<number>) {
     return () => timers.forEach(clearTimeout);
   }, [started, reducedMotion, times]);
 
-  // Reduced motion shows the finished timeline at once; started still hides
-  // rows that have not begun.
   return reducedMotion && started ? times.length : step;
 }
 
@@ -851,8 +848,6 @@ function useCursorPoint(
   return point;
 }
 
-// Deriving the press prevents a success flash before the timer starts.
-// Replay remounts Desktop and each choice is final, so completion needs no reset.
 function usePayPress(verdict: Verdict) {
   const [pressDone, setPressDone] = useState(false);
 

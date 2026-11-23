@@ -55,7 +55,6 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
   let connections = 0;
   const current = ++activityFollower;
 
-  // A stopped follower may settle after its replacement connected; only the latest reports.
   const report = (next: Status) => {
     if (current === activityFollower) {
       setStatus(next);
@@ -73,7 +72,6 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
     {
       onStatus: report,
       onOpen: () => {
-        // Bots and pins may have changed while the stream was down.
         if (connections++ > 0) {
           void invalidateBots();
           authClient.$store.notify("$sessionSignal");
@@ -81,7 +79,6 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
       },
       onEvent: (name, data) => {
         if (name === "pins") {
-          // Checked against the contract, but the session is what the sidebar reads.
           pinsEvent.parse(JSON.parse(data));
           authClient.$store.notify("$sessionSignal");
 

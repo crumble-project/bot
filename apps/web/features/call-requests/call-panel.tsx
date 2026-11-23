@@ -110,7 +110,6 @@ function CallLines({
   );
 }
 
-/** A call request's call beside the chat: its goal, then what was said, live while it goes on. */
 export function CallPanel({
   botId,
   botName,

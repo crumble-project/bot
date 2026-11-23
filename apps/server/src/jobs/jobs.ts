@@ -102,10 +102,6 @@ type Job = {
   conversationId: ConversationId;
   reported: Array<EntryId>;
   stops: number;
-  /**
-   * Deliveries not yet admitted to the job, by reporter task ID: waiting for their turn, or submitting right now. A job
-   * with any counts as working, and stop waits for submitting ones so its abort covers their work.
-   */
   deliveries?: Record<string, "waiting" | "submitting">;
 };
 
@@ -129,7 +125,6 @@ export type JobAnswer = {
   name: string;
   entryId: string;
   preview: string;
-  /** Stable per report, so a repeated announcement can be recognized. */
   eventId: string;
 };
 
@@ -151,7 +146,6 @@ type ReporterInput = {
   turn?: string;
 };
 
-/** `frame` and `text` are what the bot reads. `failure` is the owner's line for a job that ended without an answer. */
 type JobReport = { frame: string; text?: string; failure?: string };
 
 type ReporterState =
@@ -168,7 +162,6 @@ type ReporterState =
 const WAIT_MS = 1000;
 const STOP_POLL_MS = 50;
 
-// A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
 const STOP_WAIT_MS = 10_000;
 
 const COMPLETED = {
@@ -291,7 +284,6 @@ type StartOrSend = {
 
 type Started = { text: string; found: JobInfo | undefined };
 
-// Both tasks belong to the bot's chat and are background: its Esc and idle waits skip them.
 const BACKGROUND = {
   ownership: { kind: "conversation" },
   background: true,
@@ -308,7 +300,6 @@ function jobReply(
     return result;
   }
 
-  // Clients attach a job card to the job's conversation through the details.
   return {
     ...result,
     details: {
@@ -392,7 +383,6 @@ const jobDocuments = (kind: string) => ({
     history: "latest",
     fork: "initial",
     initial: () => ({ jobs: {} }),
-    // Every job's status change is a delta; a periodic full value bounds the replay on open.
     checkpointWhen: (_value, _ops, { deltasSinceBase }) =>
       deltasSinceBase >= 32,
   }),
@@ -438,8 +428,6 @@ const deliveryTarget = async (
   return { state, job, stopped: true as const };
 };
 
-// Drops a delivery whose job was stopped since, and for an exclusive kind takes the screen in the same commit, so two
-// waiting deliveries cannot both pass. A restart re-enters this phase and waits again.
 const jobReporterWait =
   (kindState: JobKindBase) =>
   async (
@@ -495,8 +483,6 @@ const jobReporterWait =
     }
   };
 
-// Admission checks the stop count and marks the delivery as submitting in one commit; stop waits for submitting
-// deliveries before it aborts. So work is either never submitted, or submitted before the abort that cancels it.
 const admitDelivery = async (
   kindState: JobKindBase,
   reporter: ReporterTask<"deliver">,
@@ -654,7 +640,6 @@ const submitAndReport = async (
 
   const { agentId } = reporter.input;
 
-  // After the commit, so a review never reads a turn that a crash would deliver again.
   if (reported) {
     for (const listener of kindState.finishedListeners) {
       listener({
@@ -820,7 +805,6 @@ const jobReporterReport =
     const { turn } = reporter.input;
     const id = String(reporter.id);
 
-    // A rerun after a restart asks again; listeners recognize the question by its ID.
     if (asked?.turn.length) {
       await Promise.allSettled(
         [...kindState.questionListeners].map((listener) => listener(asked)),
@@ -924,8 +908,6 @@ const jobReporterAbort =
       return { status: "terminal", outcome: { status: "aborted" } };
     }, taskContext);
 
-// Delivers one message to a job and reports its answer to the bot. Request IDs keep a restart from delivering the
-// message or the report twice.
 const defineJobReporter = (kindState: JobKindBase): JobReporter =>
   defineTask<ReporterInput, ReporterState, null>({
     name: `crumble.${kindState.kind}-reporter`,
@@ -960,9 +942,6 @@ const startJob = async (
 
   const anchor = await tx.createTask(kindState.Anchor, null, BACKGROUND);
 
-  // Starts as a copy of the bot's agent, then keeps only the job's own tools and the bot's knowledge. Selecting exactly
-  // these drops the bot's other tools, hooks, and prompt sections, so a job can neither start jobs nor delegate,
-  // schedule, write memory, or reach integrations.
   const child = await tx.createConversation({
     ownership: { kind: "task", taskId: anchor },
   });
@@ -1009,7 +988,6 @@ const stopJob = async (
     }
   }, context);
 
-  // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
   for (
     let waited = 0;
     waited < STOP_WAIT_MS && (await submitting(kindState, api, context, name));
@@ -1058,7 +1036,6 @@ const turnOf = async (api: ToolExecutionApi, context: Context) => {
   return inputs.length ? inputs.map(String).join(",") : undefined;
 };
 
-/** The chat excerpt a new job starts with. Read before the start writes anything: a commit's table reads come first. */
 const startExcerpt = (
   tx: Tx,
   chatId: ConversationId,
@@ -1234,7 +1211,6 @@ const statusReply = async (
   return reply(text);
 };
 
-/** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
 const listedJobs = async (
   kindState: JobKindBase,
   harness: Harness,
@@ -1354,7 +1330,6 @@ const jobTool = (kindState: JobKindState, input: JobToolInput) =>
       ? ownerRequestParameters
       : Type.Object(jobParameters),
     callers: ["model"],
-    // A rerun of stop or send after a crash could hit newer work; the model can check with status.
     replay: "unsafe",
     execute: (args, api, callContext) =>
       runJobTool(kindState, input, args, api, callContext),
@@ -1475,7 +1450,6 @@ const subscribe =
   };
 
 const jobKindReads = (state: JobKindState) => ({
-  /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
   list: (harness: Harness, chatId: ConversationId) =>
     listedJobs(state, harness, chatId),
 
@@ -1522,20 +1496,12 @@ const jobKindApi = (state: JobKindState) => {
     questionTool: (onAsked?: (conversationId: ConversationId) => void) =>
       questionTool(state, onAsked),
 
-    /**
-     * Sends the answer of the owner or of the delegating bot to the job's open question, which resumes the job. False
-     * when the job asked nothing or `questionId` names an older question.
-     */
     answer: (
       harness: Harness,
       chatId: ConversationId,
       answer: JobQuestionAnswer,
     ) => answerQuestion(state, harness, chatId, answer),
 
-    /**
-     * Hears each question a job asks about work a bot turn sent it, once its card is in the chat; it may hear one again
-     * after a restart. From all the bots of this definition.
-     */
     onQuestion: subscribe(state.questionListeners),
   };
 };
@@ -1680,7 +1646,6 @@ const jobKindBase = (facts: JobKindFacts): JobKindBase => {
     finishedListeners: new Set<(finished: JobFinished) => void>(),
     questionListeners: new Set<(asked: JobAsked) => Promise<void>>(),
     ...jobDocuments(kind),
-    // The job's conversation is owned by this task so it outlives the bot's turns and Esc.
     Anchor: defineAnchorTask(`crumble.${kind}-anchor`),
   };
 };
@@ -1693,11 +1658,6 @@ const jobKindState = (facts: JobKindFacts): JobKindState => {
 
 export type JobKind = ReturnType<typeof defineJobKind>;
 
-/**
- * Background jobs a bot hands work to: child conversations of its chat, built on Pi Durable's background subagent
- * pattern. Documents and tasks are named by the facts alone, so any definition reads a kind's jobs, while listeners
- * hear only the jobs of the definition whose extensions run them.
- */
 export function defineJobKind(facts: JobKindFacts) {
   return jobKindApi(jobKindState(facts));
 }

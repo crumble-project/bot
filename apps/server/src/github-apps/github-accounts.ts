@@ -26,13 +26,12 @@ export type GitHubAccountOfBot = {
     SecretUnavailable | GitHubUnavailable
   >;
   signingKey: string;
-  /** Signs a commit or tag with the account's key, as `ssh-keygen -Y sign -n git` would. */
+
   sign: (data: Uint8Array) => string;
 };
 
 const tokenKey = (id: string) => secretKey("github-account", id);
 
-// Made by the server, never entered by the owner, so it stays in Crumble's own encrypted store.
 const signingKeyKey = (id: string) => secretKey("github-account-signing", id);
 
 const userOf = (token: Redacted.Redacted) =>
@@ -53,10 +52,6 @@ type AccountRow = typeof githubAccounts.$inferSelect;
 const publicSigningKey = (privateKey: string, login: string) =>
   sshPublicKey(privateKey, `${login}@crumble`);
 
-/**
- * GitHub users the owner made for bots, added with a personal access token. A bot acts as its machine account
- * wherever none of its GitHub Apps does: in other accounts' repositories, forks, and public issues.
- */
 export class GitHubAccounts extends Context.Service<
   GitHubAccounts,
   {
@@ -220,7 +215,6 @@ export class GitHubAccounts extends Context.Service<
           ),
         );
 
-        // A renamed user keeps its ID; the login follows the token.
         yield* db
           .update(githubAccounts)
           .set({ login: owner.login })
@@ -278,10 +272,6 @@ export class GitHubAccounts extends Context.Service<
   );
 }
 
-/**
- * Who acts as a machine account. Only `GitHubApps` runs these: each bot they change needs its `GH_TOKEN` credential
- * synced, which takes the bot's Apps too.
- */
 export const accountMembership = Effect.gen(function* () {
   const db = yield* ProductDatabase;
   const secrets = yield* Secrets;

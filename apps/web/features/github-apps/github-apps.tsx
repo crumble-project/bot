@@ -46,10 +46,8 @@ import { BotSwitchField } from "@/features/bots/bot-switch-field";
 
 type GitHubAppStep = keyof typeof GITHUB_APP_WEB_PATHS;
 
-/** The App GitHub sends the owner back for after installing; GitHub's redirect doesn't say which. */
 const INSTALLING_KEY = "crumble.github-app.installing";
 
-/** GitHub creates an App only from a form post with the manifest, so the browser leaves for github.com here. */
 function postManifest({ url, manifest }: GitHubAppManifest) {
   const form = document.createElement("form");
   const field = document.createElement("input");
@@ -77,7 +75,7 @@ function InstallButton({ app }: { app: GitHubApp }) {
     <a
       href={app.installUrl}
       className={buttonVariants({ size: "sm", variant: "outline" })}
-      // Same tab: GitHub returns to /github-app/installed, which reads the App from this tab's sessionStorage.
+
       onClick={() => sessionStorage.setItem(INSTALLING_KEY, app.id)}
     >
       Install
@@ -132,8 +130,6 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [organization, setOrganization] = useState("");
 
-  // Success leaves the page for GitHub, so there is no cached data to refresh.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const create = useMutation({
     mutationFn: async () =>
       postManifest(
@@ -260,11 +256,9 @@ function InstallationField({ app }: { app: GitHubApp }) {
   );
 }
 
-/** Where GitHub sends the owner back after signing in; every App lists it as a callback URL. */
 const authorizedUrl = () =>
   `${location.origin}${GITHUB_APP_WEB_PATHS.authorized}`;
 
-/** GitHub refuses the sign-in until the App lists this URL; Apps Crumble creates already do. */
 function CallbackUrl() {
   return (
     <div className="flex items-center gap-2">
@@ -701,7 +695,6 @@ export function AccountsSection() {
   );
 }
 
-/** Where GitHub sends the owner back: after creating an App or signing in through one with a code, and after installing one without. */
 function finishGitHubApp(
   step: GitHubAppStep,
   params: URLSearchParams,

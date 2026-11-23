@@ -32,7 +32,6 @@ function HeldActionCard({
   const heldIn = (actions: Array<HeldAction>) =>
     actions.find((item) => item.id === held.id);
 
-  // A settled action stays settled; a waiting one in the cache may have ended since.
   const { data, reading } = useFreshRequest(
     heldActionsQuery(botId),
     (actions) => {

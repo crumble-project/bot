@@ -266,7 +266,6 @@ export class BotSchedules extends Context.Service<
       const present = Effect.fnUntraced(function* (schedule: Schedule) {
         const agentName = (yield* agents.get(schedule.agentId))?.name ?? "";
 
-        // Every presented field, named once: the row's id and its bot's name, but never its createdAt.
         return {
           id: schedule.id,
           agentId: schedule.agentId,

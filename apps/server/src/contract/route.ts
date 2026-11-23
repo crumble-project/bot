@@ -3,10 +3,6 @@ import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Effect } from "effect";
 import type { Env } from "hono";
 
-/**
- * Registers a contract route's handler on the API app, behind the route's request schemas. `parsesBody` leaves the
- * body to a handler that must read it first, such as a PATCH that merges it over the stored record.
- */
 export type EffectRouteHandler<
   R extends RouteConfig,
   E extends Env = Env,
@@ -101,7 +97,6 @@ export function define<const R extends RouteConfig>(config: R) {
   });
 }
 
-/** A route under `/v1/voice/`: only a voice gateway token reaches it, never a session. */
 export function defineVoiceGateway<const R extends RouteConfig>(config: R) {
   const security: NonNullable<RouteConfig["security"]> = [
     { VoiceGatewayToken: [] },

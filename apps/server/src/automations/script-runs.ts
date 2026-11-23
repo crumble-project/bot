@@ -165,7 +165,6 @@ const shellOutcome = (shellRun: ScriptShellRun) =>
 export class ScriptRuns extends Context.Service<
   ScriptRuns,
   {
-    /** With `event`, the command reads the event from the file `CRUMBLE_EVENT_FILE` names. */
     readonly start: (
       schedule: Schedule,
       event?: ScriptEvent,
@@ -191,7 +190,6 @@ export class ScriptRuns extends Context.Service<
       const inFlight = new Set<string>();
       let closing = false;
 
-      // Keep the execution scope open until pending admissions finish recording their rows.
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           closing = true;

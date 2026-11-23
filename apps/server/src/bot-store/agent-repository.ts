@@ -38,7 +38,6 @@ const columns = (input: AgentPatch & AgentInput) => ({
 export class AgentRepository extends Context.Service<
   AgentRepository,
   {
-    /** Oldest first. */
     readonly list: Effect.Effect<Array<Agent>>;
     readonly get: (agentId: string) => Effect.Effect<Agent | null>;
     readonly create: (

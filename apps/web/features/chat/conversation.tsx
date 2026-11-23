@@ -56,8 +56,6 @@ function useHistory(
 ) {
   const [older, setOlder] = useState<HistoryPage | null>(null);
 
-  // A read kept in local state: pages merge into `older`, not a query cache.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const loadEarlier = useMutation({
     mutationFn: (before: string) =>
       api("history", historyPage(path, 100, before)),
@@ -145,8 +143,6 @@ export function useConversation<S extends HistoryPage>(
     }
   }, [target, live]);
 
-  // The live transcript reports the stopped turn.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const stop = useMutation({ mutationFn: target.stop });
 
   const messages = mergeMessages(older?.messages ?? [], live ?? []);
@@ -357,7 +353,7 @@ export function ConversationMessages({
   conversation: Conversation;
   empty: ReactNode;
   renderMessage: (message: Message) => ReactNode;
-  /** Replaces a notice's row; `row` is the default one. */
+
   renderNotice?: (message: Message, row: ReactNode) => ReactNode;
 }) {
   const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;

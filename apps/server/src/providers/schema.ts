@@ -2,10 +2,6 @@ import { sql } from "drizzle-orm";
 import { check, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { SIGN_IN_METHODS } from "../shared/domain";
 
-/**
- * A provider's credential as Pi AI keeps it, encrypted; an API key's `key` is a secret of its own instead, so `value`
- * is null for an API key with no other fields.
- */
 export const providerCredentials = sqliteTable(
   "provider_credentials",
   {

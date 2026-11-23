@@ -44,7 +44,6 @@ import {
   type DesktopOpenError,
 } from "../workspaces/workspace-errors";
 
-// Password hashing alone can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
@@ -64,7 +63,7 @@ async function signUp(running: Running, suffix = crypto.randomUUID()) {
   );
 
   expect(response.status).toBe(200);
-  // SAFETY: Better Auth returns a token on successful bearer sign-up.
+
   const body = (await response.json()) as { token?: string };
   expect(body.token).toEqual(expect.any(String));
 
@@ -82,7 +81,7 @@ async function signIn(running: Running, email: string) {
   );
 
   expect(response.status).toBe(200);
-  // SAFETY: Better Auth returns a token on successful bearer sign-in.
+
   const body = (await response.json()) as { token?: string };
   expect(body.token).toEqual(expect.any(String));
 
@@ -188,7 +187,6 @@ test.serial(
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-killed-"));
     const first = await startServer({ dataDir, port: 0 });
 
-    // SAFETY: Better Auth returns a token on successful bearer sign-up.
     const { token } = (await (
       await fetch(new URL("/api/auth/sign-up/email", first.server.url), {
         method: "POST",
@@ -584,11 +582,9 @@ test.serial(
         { method: "POST", headers },
       );
 
-      // SAFETY: The route returns the DesktopViewer schema.
       const link = ((await viewer.json()) as { path: string }).path;
       const [owner, secret] = link.split("/").at(-1)!.split(".");
 
-      // A web view sends neither the session cookie nor a bearer token.
       expect((await fetch(new URL(link, running.server.url))).status).toBe(200);
       expect(
         (
@@ -623,7 +619,6 @@ test.serial(
 
         socket.binaryType = "arraybuffer";
         socket.addEventListener("message", (event) => {
-          // SAFETY: binaryType is arraybuffer, so binary messages arrive as ArrayBuffer.
           resolve(new TextDecoder().decode(event.data as ArrayBuffer));
           socket.close();
         });
@@ -735,7 +730,6 @@ test.serial(
           { method: "POST", headers },
         );
 
-        // SAFETY: The route returns the DesktopViewer schema.
         const link = ((await viewer.json()) as { path: string }).path;
 
         return new Promise<CloseEvent>((resolve) => {
@@ -952,7 +946,6 @@ test.serial(
       const refusedHeaders = new Set<string>();
 
       const issue = async (headers: Record<string, string>) =>
-        // SAFETY: the route returns the voice gateway token schema.
         (
           (await (
             await fetch(url("/v1/voice-gateway/token"), {

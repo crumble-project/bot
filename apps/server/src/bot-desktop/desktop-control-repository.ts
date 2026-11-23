@@ -7,7 +7,6 @@ import { desktopControl } from "./schema";
 export class DesktopControlRepository extends Context.Service<
   DesktopControlRepository,
   {
-    /** Null until control first changes. */
     readonly get: (agentId: string) => Effect.Effect<ControlState | null>;
     readonly set: (agentId: string, state: ControlState) => Effect.Effect<void>;
   }

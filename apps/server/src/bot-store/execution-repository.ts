@@ -35,9 +35,7 @@ const executionOf = (row: typeof executions.$inferSelect): Execution => ({
 export class ExecutionRepository extends Context.Service<
   ExecutionRepository,
   {
-    /** Newest first. */
     readonly list: (agentId?: string) => Effect.Effect<Array<Execution>>;
-    /** The pending and running ones, of one bot or of every bot; newest first. */
     readonly active: (agentId?: string) => Effect.Effect<Array<Execution>>;
     readonly latestIn: (
       conversationId: string,
@@ -47,7 +45,6 @@ export class ExecutionRepository extends Context.Service<
       conversationId: string,
       requestId: string,
     ) => Effect.Effect<Execution | null>;
-    /** The bot's newest execution under `requestId`, whichever conversation holds it. */
     readonly findByRequest: (
       agentId: string,
       requestId: string,
@@ -64,7 +61,6 @@ export class ExecutionRepository extends Context.Service<
       executionId: string,
       patch: Partial<Execution>,
     ) => Effect.Effect<Execution | null>;
-    /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
     readonly attachments: (
       executionId: string,
     ) => Effect.Effect<

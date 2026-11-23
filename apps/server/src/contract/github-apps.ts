@@ -5,9 +5,7 @@ export const MAX_GITHUB_APP_NAME_CHARS = 34;
 
 export const githubAppManifestInput = z
   .object({
-    /** The App's name on GitHub, unique across GitHub. */
     name: z.string().trim().min(1).max(MAX_GITHUB_APP_NAME_CHARS),
-    /** The web UI's origin; GitHub sends the owner back to its callback page. */
     origin: z.url({ protocol: /^https?$/ }).max(2000),
     organization: z
       .string()
@@ -26,7 +24,6 @@ export const githubAppCompleteInput = z
 
 export const githubAppSignInInput = z
   .object({
-    /** The web UI's origin; GitHub sends the owner back to its sign-in page. */
     origin: z.url({ protocol: /^https?$/ }).max(2000),
   })
   .strict();
@@ -95,7 +92,6 @@ export const githubAccountsResponse = z.object({
   accounts: z.array(githubAccountResponse),
 });
 
-/** The web pages GitHub sends the owner back to, published in each App's manifest; older Apps keep what they registered. */
 export const GITHUB_APP_WEB_PATHS = {
   created: "/github-app/callback",
   installed: "/github-app/installed",

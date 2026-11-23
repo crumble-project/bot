@@ -34,7 +34,6 @@ function CallRequestCard({
   const requestIn = (requests: Array<CallRequest>) =>
     requests.find((item) => item.id === request.id);
 
-  // Declined and ended requests stay so; a pending or calling one in the cache may have moved on.
   const { data, reading } = useFreshRequest(
     callRequestsQuery(botId),
     (requests) => {
@@ -245,7 +244,6 @@ function CallRequestPlaced({
 const ENDED_CALL = /^voice-call:([^:]+):ended$/u;
 const SWEPT_REQUEST = /^call-request:([^:]+)$/u;
 
-/** The call request an end notice belongs to; owner calls have none. */
 function noticeRequest(message: Message, requests: Array<CallRequest>) {
   const callId = ENDED_CALL.exec(message.requestId ?? "")?.[1];
   const requestId = SWEPT_REQUEST.exec(message.requestId ?? "")?.[1];
@@ -257,7 +255,6 @@ function noticeRequest(message: Message, requests: Array<CallRequest>) {
   );
 }
 
-/** What the notice says after the callee's name: "ended after 2 minutes: the bot hung up." */
 function noticeDetail(message: Message, request: CallRequest) {
   const lead = `Call to ${request.callee} `;
 
@@ -291,7 +288,6 @@ function OutsideCallNotice({
   );
 }
 
-/** An outside call's end notice as one card that opens the call; any other notice keeps its row. */
 export function CallNotice({
   message,
   chat,

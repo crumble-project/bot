@@ -78,7 +78,7 @@ function useSaveSecretSetting(
         invalidateSecrets(),
         onChange?.(),
       ]);
-      // Drop the submitted value from the mutation state.
+
       save.reset();
     },
   });

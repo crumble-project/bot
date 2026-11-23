@@ -35,8 +35,6 @@ export type ComputerUseOptions = {
   fills?: DesktopFills | undefined;
 };
 
-// One label for every job on a bot desktop, which runs one job at a time: cua-driver lets only the session that attached
-// Chromium use its page tools, and another session can't attach while that one lives.
 const DESKTOP_SESSION = "crumble-desktop";
 
 export function computerUseState(
@@ -73,7 +71,6 @@ export const refOf = (state: ComputerUseState, ref: string | undefined) =>
 export const currentPage = (state: ComputerUseState) =>
   state.lastRead?.read.page?.url ?? state.lastRead?.page.url;
 
-/** A page's host without its port, as logins name hosts. Undefined for a URL without one. */
 export function pageHost(url: string | undefined) {
   if (!url || !URL.canParse(url)) {
     return;

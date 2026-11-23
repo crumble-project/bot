@@ -49,7 +49,6 @@ const skillSchema = skillInput.extend({
 
 const snapshotSchema = z.union([skillSchema, memorySchema]);
 
-/** Which of `snapshotSchema`'s shapes a change's before or after state holds. */
 export const isSkillSnapshot = (
   snapshot: Skill | Memory | null,
 ): snapshot is Skill =>
@@ -60,7 +59,6 @@ export const isMemorySnapshot = (
 ): snapshot is Memory =>
   snapshot !== null && memorySchema.safeParse(snapshot).success;
 
-/** The change IDs `addReviewResult` writes as a JSON array. */
 const reviewChangeIds = z.array(z.string());
 
 const changeOf = (row: typeof learnedChanges.$inferSelect): LearnedChange => ({
@@ -91,10 +89,6 @@ export type ReviewResult = {
 export class LearnedChangeRepository extends Context.Service<
   LearnedChangeRepository,
   {
-    /**
-     * Records a change by `by`, or nothing when `by` is null. Recording is telemetry: a failure is logged and returns
-     * null, so it can neither fail nor undo the change itself.
-     */
     readonly record: (
       by: ChangeBy | null,
       target: LearnedChange["target"],
@@ -104,13 +98,11 @@ export class LearnedChangeRepository extends Context.Service<
       after: Skill | Memory | null,
       revertsId?: string | null,
     ) => Effect.Effect<string | null>;
-    /** Newest first: one bot's, the shared ones for `null`, or every change when `agentId` is undefined. */
     readonly list: (
       agentId: string | null | undefined,
       options?: { limit?: number | undefined; before?: string | undefined },
     ) => Effect.Effect<Array<LearnedChange>>;
     readonly get: (changeId: string) => Effect.Effect<LearnedChange | null>;
-    /** The changes one execution's review made, oldest first. */
     readonly listOfExecution: (
       executionId: string,
       actor: LearnedChange["actor"],

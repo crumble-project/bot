@@ -34,14 +34,12 @@ function lasted(ms: number) {
     : count(hours, "hour");
 }
 
-/** The one line both the owner and the woken bot read. */
 export function callEndedText(reason: VoiceCallEnd, ms: number) {
   const because = ENDED_BECAUSE[reason];
 
   return `Call ended after ${lasted(ms)}${because ? `: ${because}` : ""}.`;
 }
 
-/** An outside call's line: the owner reads it, and the woken bot reads it above the call's note. */
 export function outsideEndedText(
   callee: string,
   reason: VoiceCallEnd,

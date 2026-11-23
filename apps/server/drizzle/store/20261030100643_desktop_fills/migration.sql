@@ -7,5 +7,5 @@ CREATE TABLE `desktop_fills` (
 	`filled_at` text NOT NULL,
 	CONSTRAINT `fk_desktop_fills_agent_id_agents_id_fk` FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE CASCADE
 );
---> statement-breakpoint
+
 CREATE INDEX `desktop_fills_agent` ON `desktop_fills` (`agent_id`);

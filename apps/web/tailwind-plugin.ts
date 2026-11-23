@@ -5,10 +5,6 @@ import type { BunPlugin } from "bun";
 
 const USES_TAILWIND = /@(import|reference)\s+["']tailwindcss/;
 
-/**
- * Compiles the web UI's stylesheet with the project's own Tailwind. `bun-plugin-tailwind` bundles Tailwind 4.1 and
- * silently drops newer utilities that shadcn components use.
- */
 const tailwind: BunPlugin = {
   name: "tailwind",
   setup(build) {
@@ -27,7 +23,6 @@ const tailwind: BunPlugin = {
         onDependency: () => {},
       });
 
-      // As Tailwind's own integrations: `@import "tailwindcss" source(...)` sets the root, and `none` turns it off.
       const root =
         compiler.root === "none"
           ? []

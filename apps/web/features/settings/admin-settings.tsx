@@ -132,7 +132,6 @@ function InviteRow({ invite }: { invite: Invite }) {
   );
 }
 
-/** Shows a new invite link once: the server keeps only its hash. */
 function NewInviteSheet({
   url,
   error,

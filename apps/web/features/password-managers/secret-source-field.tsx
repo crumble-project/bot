@@ -52,12 +52,7 @@ const secretInputOf = (
   return draft.kind === "value" && draft.value ? { value: draft.value } : null;
 };
 
-/**
- * A secret's draft for `SecretSourceField`, starting from its saved status. `input` is the body to send, null while the
- * draft is empty; `changed` is false for the saved reference, so saving other fields doesn't read it again.
- */
 export function useSecretDraft(saved?: SecretStatus) {
-  // A saved reference starts the draft; a value stored in Crumble is never shown, so it starts empty.
   const [draft, setDraft] = useState<SecretSourceDraft>(() =>
     saved?.passwordManager && saved.reference
       ? {

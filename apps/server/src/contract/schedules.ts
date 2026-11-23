@@ -71,6 +71,5 @@ export type Schedule = ScheduleInput & {
   id: string;
   nextRunAt: string | null;
   createdAt: string;
-  /** The bot that saved this task, or null when the owner saved it. */
   createdByAgentId: string | null;
 };

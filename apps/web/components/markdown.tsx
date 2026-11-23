@@ -10,15 +10,13 @@ import type { mountAsync } from "pele/lazy";
 
 const PELE = `${PELE_PREFIX}/lazy.js`;
 
-// The server hosts this module at run time, so the bundler must not resolve it.
-// react-doctor-disable-next-line react-doctor/no-dynamic-import-path
 type Pele = { mountAsync: typeof mountAsync };
 
 const loadPele = (): Promise<Pele> => import(PELE);
 
 function Diagram({ source }: { source: string }) {
   const box = useRef<HTMLDivElement>(null);
-  // The source that failed to draw: a new source is not failed until it fails itself.
+
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const failed = failedSource === source;
 
@@ -38,7 +36,6 @@ function Diagram({ source }: { source: string }) {
           return;
         }
 
-        // Bot text is untrusted: no links or remote images, and Pele's size limits apply.
         const mounted = await mountAsync(box.current, source, {
           links: false,
           images: false,
@@ -82,7 +79,6 @@ const link = (props: ComponentProps<"a">) => (
 const components = {
   a: link,
   pre: (props: ComponentProps<"pre"> & { "data-lang"?: string }) => {
-    // TanStack Markdown passes a code block's text as one string child of `code`.
     if (
       props["data-lang"] !== "mermaid" ||
       !isValidElement<{ children?: string }>(props.children)
@@ -97,7 +93,6 @@ const components = {
 const BARE_URL = /^https?:\/\/[^\s<>"]+/;
 const ANGLE_URL = /^<(https?:\/\/[^\s<>"]+)>/;
 
-/** Drops what GitHub drops from a bare URL's end: sentence punctuation, and closing brackets it didn't open. */
 function trimUrl(url: string) {
   let end = url.length;
 
@@ -117,7 +112,6 @@ function trimUrl(url: string) {
   }
 }
 
-/** Bots often write bare links; TanStack Markdown only links `[text](url)`, so this links `https://…` and `<https://…>`. */
 const autolinks: MarkdownExtension = {
   name: "autolinks",
   inlineParser: {

@@ -1,6 +1,4 @@
 #!/bin/sh
-# Run the checks CI runs on a pull request, against the commit being pushed and the current origin/main.
-# Skip once with `git push --no-verify`.
 set -eu
 hooks=$(cd "$(dirname "$0")" && pwd)
 cd "$(git rev-parse --show-toplevel)"
@@ -27,7 +25,6 @@ fi
 "$hooks/check-bun-version.sh"
 bun install --frozen-lockfile
 
-# CI compares against the pull request base, which is main's tip when the run starts.
 git fetch --quiet origin main || echo "pre-push: could not fetch origin/main; comparing against the local copy." >&2
 base=$(git rev-parse origin/main)
 

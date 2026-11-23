@@ -259,8 +259,6 @@ const requestCard = async (
   toolDetails: Logins["requests"][number] | Credentials["requests"][number],
 ) => {
   const { ToolResultRow } = await import("@/features/bot-chat/chat-cards");
-
-  // The sheet it opens links to the password manager settings.
   const router = createRouter({ routeTree: createRootRoute() });
 
   return (
@@ -304,7 +302,6 @@ test("declining a request for more hosts keeps the saved login", async () => {
 });
 
 test("a request newer than the cached logins offers its answers", async () => {
-  // The cache was filled before the bot asked, and is still fresh.
   queryClient.setQueryData(["logins", "bot"], {
     logins: [github],
     requests: [],
@@ -342,7 +339,6 @@ test("declining a request for more hosts keeps the saved credential", async () =
 });
 
 test("a request newer than the cached credentials offers its answers", async () => {
-  // The cache was filled before the bot asked, and is still fresh.
   queryClient.setQueryData(["credentials", "bot"], {
     credentials: [acme],
     requests: [],

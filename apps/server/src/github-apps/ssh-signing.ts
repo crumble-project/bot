@@ -7,7 +7,6 @@ import {
 } from "node:crypto";
 import type { KeyObject } from "node:crypto";
 
-// OpenSSH's signature format: PROTOCOL.sshsig in the OpenSSH sources.
 const MAGIC = Buffer.from("SSHSIG");
 const KEY_TYPE = "ssh-ed25519";
 const HASH = "sha512";
@@ -36,7 +35,6 @@ export const newSigningKey = () =>
 export const sshPublicKey = (privateKeyPem: string, comment: string) =>
   `${KEY_TYPE} ${publicKeyBlob(createPrivateKey(privateKeyPem)).toString("base64")} ${comment}`;
 
-/** An armored SSH signature of `data`, as `ssh-keygen -Y sign -n <namespace>` writes it. */
 export function sshSign(
   privateKeyPem: string,
   data: Uint8Array,

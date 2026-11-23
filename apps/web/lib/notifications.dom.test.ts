@@ -37,8 +37,7 @@ function browser(NotificationClass: NotificationConstructor) {
     localStorage: window.localStorage,
     location: window.location,
     Notification: NotificationClass,
-    // A browser hands the error to its global error channel and keeps running;
-    // Bun's `reportError` ends the process, so the report is recorded instead.
+
     reportError: (error: unknown) => {
       reported.push(error);
     },
@@ -53,7 +52,6 @@ function browser(NotificationClass: NotificationConstructor) {
 }
 
 const reply = (eventId: string) =>
-  // SAFETY: notifyReply reads only the fields set here.
   ({
     eventId,
     agentId: "bot-1",

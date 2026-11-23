@@ -114,7 +114,6 @@ describe("real Streamable HTTP MCP integration", () => {
     );
 
     if (!extension) throw new Error("missing extension");
-    // SAFETY: MCP extensions expose their registered tool list.
     const tools = (extension as any).tools as any[];
     expect(tools).toHaveLength(2);
     const echo = tools.find((tool) => tool.name.endsWith("_echo"));
@@ -126,7 +125,6 @@ describe("real Streamable HTTP MCP integration", () => {
       BACKGROUND_CONTEXT,
     );
 
-    // SAFETY: The faux MCP tool returns a text output item.
     expect((read.output as any)[0].text).toBe("echo:hello");
 
     const sent = await send.execute(
@@ -135,7 +133,6 @@ describe("real Streamable HTTP MCP integration", () => {
       BACKGROUND_CONTEXT,
     );
 
-    // SAFETY: The faux MCP tool returns a text output item.
     expect((sent.output as any)[0].text).toBe("sent:hello");
     expect(mcp.calls()).toBe(1);
     await close();
@@ -166,7 +163,6 @@ describe("real Streamable HTTP MCP integration", () => {
 
     if (!extension) throw new Error("missing extension");
 
-    // SAFETY: MCP extensions expose their registered tool list.
     const send = ((extension as any).tools as any[]).find((tool) =>
       tool.name.endsWith("_send"),
     );

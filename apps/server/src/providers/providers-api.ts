@@ -47,20 +47,17 @@ type ProviderRoutesOptions = {
   externalAuth: ReadonlyMap<string, () => Promise<ExternalAuth>>;
 };
 
-/** The providers this server can serve; a saved credential may name a provider that has since been dropped. */
 export const providerSchema = (models: Models) =>
   z
     .string()
     .refine((value) => Boolean(models.getProvider(value)), "Unknown provider");
 
-/** Dynamic providers list their models only after a refresh with the saved credential. */
 const availableModels = async (models: Models, name: string | undefined) => {
   await models.refresh(name ? { providers: [name] } : {});
 
   try {
     return await models.getAvailable(name);
   } catch {
-    // Pi AI errors can carry provider responses; keep them out of logs and clients.
     throw new Unavailable({
       message: "Provider credentials could not be read",
     });
@@ -164,7 +161,6 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
     async (c) => {
       const input = providerLoginAnswerInput.safeParse(await c.req.json());
 
-      // Answers can be secrets or callback URLs; never echo them in validation details.
       if (!input.success) {
         throw new InvalidInput({ message: "Invalid answer" });
       }

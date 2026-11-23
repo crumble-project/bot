@@ -194,7 +194,6 @@ const makeAgent = (): Agent => ({
     .parse({ name: "Test", tools: ["desktop"] }),
   avatar: defaultAvatarDefinition("test"),
   id: crypto.randomUUID(),
-  // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,
   model: "test",
   createdAt: "",

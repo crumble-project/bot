@@ -58,10 +58,8 @@ test("a stored default this server doesn't know searches with Mixed, as Settings
     (tool) => tool.name === WEB_SEARCH_TOOL_NAME,
   );
 
-  // SAFETY: the web tools read only the context's abort signal.
   const context = { abortSignal: new AbortController().signal } as never;
 
-  // SAFETY: the web tools never touch the tool API.
   const result = await search?.execute(
     { query: "crumble" },
     undefined as never,

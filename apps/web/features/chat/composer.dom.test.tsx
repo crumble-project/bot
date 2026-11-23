@@ -4,7 +4,6 @@ import { act } from "react";
 import { waitFor } from "@/test/wait-for";
 import { Composer } from "./composer";
 
-/** `fetch` bodies also allow strings, buffers, forms and streams; these tests upload files. */
 const isFile = (body: BodyInit | null | undefined): body is File =>
   typeof body === "object" && body !== null && "lastModified" in body;
 
@@ -22,7 +21,7 @@ async function withComposer(
     window: { configurable: true, value: window },
     document: { configurable: true, value: window.document },
     HTMLElement: { configurable: true, value: window.HTMLElement },
-    // The + menu's positioning checks for elements with the global constructor.
+
     Element: { configurable: true, value: window.Element },
     Event: { configurable: true, value: window.Event },
     localStorage: { configurable: true, value: window.localStorage },

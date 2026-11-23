@@ -9,7 +9,6 @@ export const avatarDefinitionSchema = z
 
 export type BotAvatarDefinition = z.infer<typeof avatarDefinitionSchema>;
 
-/** Fresh gallery geometry and library colors, selected only by bot ID, never its legacy avatar string. */
 export function defaultAvatarDefinition(botId: string): BotAvatarDefinition {
   let hash = 0;
 

@@ -12,7 +12,7 @@ export const agentCredentials = sqliteTable(
   {
     ...hostBoundSecret(),
     placeholder: text("placeholder").notNull().unique(),
-    /** The value is a token from the bot's GitHub App; otherwise it is a secret under `credentialSecretKey`. */
+
     github: integer("github", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [primaryKey({ columns: [table.agentId, table.name] })],

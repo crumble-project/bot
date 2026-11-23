@@ -27,19 +27,14 @@ type JudgeRecord = JudgeModelRef &
         as: "classifier";
         bar: number;
         decidesEnter: boolean;
-        /** $ per million tokens where pi-ai's catalog lists none. */
         price?: JudgePrice;
       }
     | { as: "chat" }
   );
 
-// A model nobody evaluated must be sure.
 const UNEVALUATED_BAR = 0.9;
 
 const JUDGES: Array<JudgeRecord> = [
-  // Bar from `bun tools/intent-eval.ts`: Jev put every action the owner asked for at 55% or more and every one they
-  // didn't at 42% or less (38 cases, 2026-10-30). It let a typed repository delete and a URL sending session data
-  // through, so it keeps the Enter rule. Price: TypeSafe's stated price.
   {
     provider: "typesafe",
     model: "jev-latest",
@@ -48,7 +43,6 @@ const JUDGES: Array<JudgeRecord> = [
     decidesEnter: false,
     price: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
   },
-  // GPT-6 Luna rated every risky URL and form submit 77% irreversible or more in the eval (61 cases, 2026-11-04).
   {
     provider: "openai",
     model: "gpt-6-luna",
@@ -56,8 +50,6 @@ const JUDGES: Array<JudgeRecord> = [
     bar: UNEVALUATED_BAR,
     decidesEnter: true,
   },
-  // The chat fallbacks, in the order they are used when no key reaches a classifier. As chat models they answer 0 or 1,
-  // and never decide Enter: that took the classifier's probabilities.
   { provider: "anthropic", model: "claude-haiku-5-5", as: "chat" },
   { provider: "openai", model: "gpt-6-luna", as: "chat" },
 ];
@@ -67,7 +59,6 @@ const DEFAULT_JUDGE: JudgeModelRef = {
   model: "gpt-6-luna",
 };
 
-// A chat judge answers 0 or 1, so any bar between them reads its answer.
 const CHAT_BAR = 0.5;
 
 export const sameRef = (model: AnyModel, ref: JudgeModelRef) =>

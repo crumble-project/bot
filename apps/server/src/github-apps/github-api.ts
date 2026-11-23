@@ -3,7 +3,6 @@ import { z } from "zod";
 
 const API = "https://api.github.com";
 
-/** The credential a bot's GitHub token is swapped in for; `gh` and most GitHub tools read it. */
 export const GITHUB_TOKEN_CREDENTIAL = "GH_TOKEN";
 
 export const GITHUB_HOSTS = [
@@ -25,7 +24,6 @@ export const githubUser = z.object({
   id: z.number().int(),
 });
 
-/** The name a GitHub App's commits and pull requests show. */
 export const botLogin = (slug: string) => `${slug}[bot]`;
 
 const timed = <A, E>(effect: Effect.Effect<A, E>) =>
@@ -122,7 +120,6 @@ export const githubOAuth = <T>(
     timed,
   );
 
-/** Revokes an OAuth app's grant, which also ends its refresh token; GitHub's answer is not awaited for more than that. */
 export const revokeGitHubGrant = (
   client: { clientId: string; clientSecret: string },
   accessToken: string,

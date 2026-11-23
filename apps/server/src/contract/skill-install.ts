@@ -3,7 +3,6 @@ import { skillDocumentResponse } from "./api-responses";
 
 export const skillLocationInput = z
   .object({
-    /** `owner/repo` or a github.com URL; a `/tree/<branch>/<folder>` URL narrows the search. */
     location: z.string().trim().min(1).max(2000),
   })
   .strict();

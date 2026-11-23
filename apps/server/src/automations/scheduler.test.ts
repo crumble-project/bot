@@ -584,7 +584,6 @@ describe("Scheduler", () => {
       enabled: true,
     });
 
-    // The loop ticks every second, so a shorter wait would pass with it still running.
     await Bun.sleep(1100);
     expect(calls).toEqual([]);
     store.close();

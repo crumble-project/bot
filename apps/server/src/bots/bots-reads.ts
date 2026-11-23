@@ -53,7 +53,6 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
           : "Deleted script automation"),
     }));
 
-  // An outside call's conversation is titled with the callee.
   const calleeOrigin = (execution: Execution) =>
     Effect.map(conversations.get(execution.conversationId), (found) => ({
       kind: "callee" as const,
@@ -150,7 +149,6 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     );
   });
 
-  // A bot with no conversation has never called a model; skipping it leaves its harness unopened.
   const usage = Effect.gen(function* () {
     const states = yield* Effect.forEach(
       yield* agents.list,

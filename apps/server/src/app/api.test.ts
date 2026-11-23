@@ -56,7 +56,6 @@ import { Library } from "../files/library";
 import { FileStore } from "../files/file-store";
 import { resolveMessageFiles } from "../files/message-files";
 
-// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -91,7 +90,6 @@ const agentInput = (name: string, enabled = true) => ({
   delegates: [],
 });
 
-// SAFETY: a route under test calls only the members given; script policy only checks that workspaces exist.
 const workspacesWith = (members: Partial<Workspaces>) => members as Workspaces;
 
 const dirs: string[] = [];
@@ -1461,7 +1459,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
         ),
       );
 
-    // Memories saved in the same millisecond have no defined order.
     expect(memories).toHaveLength(3);
     expect(memories.map((memory) => memory.source)).toEqual(
       expect.arrayContaining([

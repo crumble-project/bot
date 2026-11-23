@@ -1,7 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { WAITING_FOR } from "../shared/domain";
 
-/** Reply origins that name neither a job kind nor a message's origin; the rest are stored kinds, never renamed. */
 export const REPLY_ORIGIN = {
   bot: "bot",
 } as const;
@@ -45,9 +44,7 @@ export type ReplyActivity = {
   origin: string;
   preview: string;
   createdAt: string;
-  /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
   jobName?: string;
-  /** Set when the reply waits for the owner's answer: a held desktop action or call request, or a credential or login request. */
   waitingFor?: WaitingFor;
 };
 

@@ -137,7 +137,6 @@ async function fixture(
 
   const dependencies = Layer.mergeAll(
     Layer.succeed(Plugins, [{ id: adapterId, chatAdapters: [adapter] }]),
-    // SAFETY: MessageGateway only invokes response on the runtime test double.
     Layer.succeed(BotRuntime, {
       async response(_agent, _conversationId, submissionId) {
         responseCalls.push(submissionId);

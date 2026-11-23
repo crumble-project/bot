@@ -17,7 +17,6 @@ export type BackendWorkspacesOptions = {
 export type WorkspaceBackend = {
   name: string;
   enabled: boolean;
-  /** How long the first boot may take; Railway builds the desktop template on first use. */
   firstBootTimeoutMs: number;
   create(options: BackendWorkspacesOptions): BackendWorkspaces;
   cleanup(namePrefix: string): Promise<void>;

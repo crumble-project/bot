@@ -12,7 +12,6 @@ type Options = {
 export function registerCallRequestRoutes(options: Options) {
   const { register, service } = options;
 
-  // Looks the bot up first, so an unknown bot answers 404.
   const agentOf = (id: string) => service.agent(id).id;
 
   register(routes.listCallRequests, function* (c) {

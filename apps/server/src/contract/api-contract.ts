@@ -229,7 +229,6 @@ export const scriptRunsInput = credentialUsesInput.extend({
 });
 
 export const changesInput = credentialUsesInput.extend({
-  /** One bot's changes; `shared` for the shared library; omit for every change. */
   agentId: z.union([z.uuid(), z.literal("shared")]).optional(),
 });
 
@@ -240,12 +239,10 @@ export const reviewsInput = z.object({
 export const activityInput = z.object({
   agentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
-  /** Only this kind of item; pass the same kind with every page's cursor. */
   kind: z.enum([...ACTIVITY_KINDS, "change"]).optional(),
   cursor: z.string().min(1).max(8000).optional(),
 });
 
-/** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({
   token: z.string().trim().min(1).max(MAX_SECRET_CHARS),
 });
@@ -257,7 +254,6 @@ const pluginSettingParams = z.object({
   key: z.string().min(1).max(200),
 });
 
-/** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16_384;
 
 export const providerLoginInput = z.object({
@@ -266,11 +262,12 @@ export const providerLoginInput = z.object({
 
 export const providerLoginAnswerInput = z.object({
   promptId: z.string().min(1).max(200),
-  value: z.string().refine(
-    // oxlint-disable-next-line typescript/no-misused-spread -- the limit counts code points, as spreading does
-    (value) => [...value].length <= MAX_LOGIN_VALUE,
-    `Use at most ${MAX_LOGIN_VALUE} characters`,
-  ),
+  value: z
+    .string()
+    .refine(
+      (value) => Array.from(value).length <= MAX_LOGIN_VALUE,
+      `Use at most ${MAX_LOGIN_VALUE} characters`,
+    ),
 });
 
 export const oauthInput = z.object({
@@ -295,11 +292,8 @@ export const mcpInput = z.object({
       "Use an HTTP or HTTPS URL",
     ),
   enabled: z.boolean().default(true),
-  /** The bearer token; null removes it. */
   token: secretInput.nullable().optional(),
-  /** The client ID of an OAuth app the owner registered with the server's authorization server; null removes it. */
   oauthClientId: z.string().trim().min(1).max(500).nullable().optional(),
-  /** The OAuth app's client secret; null removes it. */
   oauthClientSecret: secretInput.nullable().optional(),
 });
 
@@ -320,7 +314,6 @@ const credentialParams = id.extend({ name: z.string() });
 const heldActionParams = id.extend({ actionId: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
 
-/** A field with a default: zod's `def.type` names it and `unwrap` reaches the wrapped schema. */
 const isDefaultField = (
   field: z.ZodType,
 ): field is z.ZodType & { unwrap: () => z.ZodType } =>
@@ -342,7 +335,6 @@ export function patchInput(schema: z.ZodObject<Record<string, z.ZodType>>) {
   return z.object(fields);
 }
 
-/** Replaces the bot's proposal with the owner's edit of it; an approval may have no body at all. */
 export const botRequestApproval = z.object({ proposal: agentInput.optional() });
 
 const gone = json(error, "Login session ended or was lost on restart");

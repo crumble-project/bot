@@ -68,7 +68,6 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
       body["skills"] ? { ...input, skills } : input,
     );
 
-    // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
     if (options.workspaces && usesDesktop(old) !== usesDesktop(input)) {
       yield* options.workspaces.restart(old.id);
     }

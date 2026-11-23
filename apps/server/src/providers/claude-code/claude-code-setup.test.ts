@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverModels, type ClaudeCodeOptions } from "./setup";
 
-// Spawned CLIs can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 let dirs: string[] = [];

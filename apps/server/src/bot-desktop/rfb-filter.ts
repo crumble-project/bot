@@ -1,29 +1,25 @@
-/** A client message type the filter does not know: the connection must close, since its length is unknown. */
 export class RfbProtocolError extends Error {}
 
-// Handshake for RFB 3.8 with security None: version (12 bytes), security type (1), ClientInit (1).
 const HANDSHAKE_BYTES = 14;
 
-// KeyEvent, PointerEvent, ClientCutText, xvp (power operations), SetDesktopSize, QEMU extended key event.
 const INPUT = new Set([4, 5, 6, 250, 251, 255]);
 
 type Length = (bytes: Uint8Array, view: DataView) => number;
 
 const FIXED_LENGTH = new Map([
-  [0, 20], // SetPixelFormat
-  [3, 10], // FramebufferUpdateRequest
-  [4, 8], // KeyEvent
-  [5, 6], // PointerEvent
-  [150, 10], // EnableContinuousUpdates
-  [250, 4], // xvp
+  [0, 20],
+  [3, 10],
+  [4, 8],
+  [5, 6],
+  [150, 10],
+  [250, 4],
 ]);
 
 const COMPUTED_LENGTH = new Map<number, Length>([
-  [2, (bytes, view) => (bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2))], // SetEncodings
-  // The extended clipboard (noVNC, TigerVNC) sends a negative length: the payload is its absolute value.
+  [2, (bytes, view) => (bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2))],
   [6, (bytes, view) => (bytes.length < 8 ? 0 : 8 + Math.abs(view.getInt32(4)))],
-  [248, (bytes) => (bytes.length < 9 ? 0 : 9 + (bytes[8] ?? 0))], // ClientFence
-  [251, (bytes) => (bytes.length < 7 ? 0 : 8 + 16 * (bytes[6] ?? 0))], // SetDesktopSize
+  [248, (bytes) => (bytes.length < 9 ? 0 : 9 + (bytes[8] ?? 0))],
+  [251, (bytes) => (bytes.length < 7 ? 0 : 8 + 16 * (bytes[6] ?? 0))],
   [255, qemuLength],
 ]);
 

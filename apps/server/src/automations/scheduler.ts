@@ -42,10 +42,6 @@ const mergeScheduleInput = (
 const nextRun = (cron: string, timezone: string, from: Date) =>
   nextOccurrence(cron, timezone, from).toISOString();
 
-/**
- * The schedule as the schema reads it. A schema failure stays a `ZodError`, for each caller to word; anything else
- * that throws here is a defect rather than a bad schedule.
- */
 const parsed = (input: ScheduleInput) => {
   const result = scheduleInput.safeParse(input);
 
@@ -79,7 +75,6 @@ const firstRun = (value: ScheduleInput, now: Date) =>
       }),
   });
 
-/** Persistent schedule coordinator. A dispatch that succeeds means the work was durably admitted. */
 const logDispatchError = (scheduleId: string, cause: unknown) =>
   Effect.logError(
     `Schedule dispatch failed (${scheduleId}): ${errorText(cause)}`,
@@ -88,13 +83,11 @@ const logDispatchError = (scheduleId: string, cause: unknown) =>
 export class Scheduler extends Context.Service<
   Scheduler,
   {
-    /** Who may give a bot a script automation. `by` is the bot acting, or null for the owner. */
     readonly scriptPolicy: (
       agentId: string,
       by: string | null,
       createdByAgentId?: string | null,
     ) => Effect.Effect<void, AppError>;
-    /** Input that does not parse fails with the ZodError, for each caller to word. */
     readonly create: (
       input: ScheduleInput,
       by?: string | null,
@@ -104,11 +97,8 @@ export class Scheduler extends Context.Service<
       input: Partial<ScheduleInput>,
       by?: string | null,
     ) => Effect.Effect<Schedule | null, AppError | z.ZodError>;
-    /** Starts an automation now; not admitted while a start of it is in flight. */
     readonly runNow: (id: string) => Effect.Effect<AutomationStarted, unknown>;
-    /** Dispatches every due automation once; a tick in progress is joined instead of repeated. */
     readonly tick: (now?: Date) => Effect.Effect<void>;
-    /** Ticks every second until the scheduler's scope ends, which waits for a tick in progress. */
     readonly start: Effect.Effect<void>;
   }
 >()("crumble/automations/Scheduler") {
@@ -347,7 +337,6 @@ export class Scheduler extends Context.Service<
         current = done;
         const at = now ?? new Date(yield* Clock.currentTimeMillis);
 
-        // Uninterruptible, so stopping waits for a dispatch in progress to be recorded.
         yield* pass(at).pipe(
           Effect.uninterruptible,
           Effect.ensuring(

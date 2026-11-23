@@ -16,13 +16,11 @@ export const runnerOf = <R>(context: Context.Context<R>): Runner<R> => ({
   runFork: Effect.runForkWith(context),
 });
 
-/** The services a runner holds, as a layer for a runtime built on top of it. */
 export const layerOfRunner = <R>(runner: Runner<R>) =>
   Layer.succeedContext(runner.runSync(Effect.context<R>()));
 
 export const noServices = runnerOf(Context.empty());
 
-/** A service's effects as plain calls for code outside Effect: members named in `Sync` return their value, others a Promise. */
 export type Access<S, Sync extends keyof S = never> = {
   readonly [K in keyof S]: S[K] extends Effect.Effect<infer A, unknown, unknown>
     ? () => K extends Sync ? A : Promise<A>
@@ -33,11 +31,6 @@ export type Access<S, Sync extends keyof S = never> = {
       : S[K];
 };
 
-/**
- * Whether `access` holds an entry for every member of `service`, and a call where the service has an effect or a
- * function. `accessOf` builds it from those members, so this restates the shape for the type system and fails loudly
- * if a member goes missing or stays an effect.
- */
 const isAccessOf = <S extends object, Sync extends keyof S>(
   access: unknown,
   service: S,
@@ -61,10 +54,6 @@ const isAccessOf = <S extends object, Sync extends keyof S>(
   });
 };
 
-/**
- * `runner` runs the service's effects: it was built from the layer the service came from, so its context satisfies
- * what they ask for. An effect that asks for something the runner's context lacks fails as a defect.
- */
 export function accessOf<S extends object, const Sync extends keyof S = never>(
   service: S,
   runner: Runner<unknown>,

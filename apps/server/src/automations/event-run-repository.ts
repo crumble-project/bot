@@ -12,7 +12,6 @@ export class EventRunRepository extends Context.Service<
   EventRunRepository,
   {
     readonly sourceUsage: (sourceId: string) => Effect.Effect<number>;
-    /** A run for each enabled automation of an enabled bot on the event's source. */
     readonly record: (
       event: { id: string; sourceId: string },
       at: string,

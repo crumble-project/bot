@@ -37,7 +37,6 @@ export const EMOJI = /^\p{RGI_Emoji}$/v;
 
 const reaction = reactionDetails.extend({ emoji: z.string().regex(EMOJI) });
 
-/** The emoji of a successful `react` tool result; clients attach it to the latest input before it. */
 export const reactionOf = (message: ToolResultMessage) =>
   toolResult(message, REACTION_TOOL_NAME, reaction)?.emoji;
 

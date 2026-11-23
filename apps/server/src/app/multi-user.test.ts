@@ -8,7 +8,6 @@ import { openWebSocket } from "../shared/web-socket";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 
-// Password hashing alone can pass the default 5 seconds on a loaded machine.
 setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
@@ -28,7 +27,7 @@ async function signUp(running: Running, suffix = crypto.randomUUID()) {
   );
 
   expect(response.status).toBe(200);
-  // SAFETY: Better Auth returns a token on successful bearer sign-up.
+
   const body = (await response.json()) as { token?: string };
   expect(body.token).toEqual(expect.any(String));
 
@@ -49,7 +48,7 @@ async function signIn(running: Running, email: string) {
   );
 
   expect(response.status).toBe(200);
-  // SAFETY: Better Auth returns a token on successful bearer sign-in.
+
   const body = (await response.json()) as { token?: string };
   expect(body.token).toEqual(expect.any(String));
 
@@ -78,7 +77,7 @@ test.serial(
       });
 
       expect(created.status).toBe(201);
-      // SAFETY: The agent route returns the documented agent object.
+
       const agent = (await created.json()) as { id: string };
 
       expect(
@@ -127,7 +126,7 @@ test.serial(
       });
 
       expect(memory.status).toBe(201);
-      // SAFETY: The memory route returns the documented memory object.
+
       const memoryId = ((await memory.json()) as { id: string }).id;
       expect(
         (
@@ -234,7 +233,6 @@ test.serial(
 
       expect(configured.status).toBe(200);
 
-      // SAFETY: The providers route returns the documented provider list.
       const providers = (await (
         await fetch(new URL("/v1/providers", running.server.url), {
           headers: second,
@@ -308,7 +306,6 @@ test.serial("deleting a bot or an account removes the workspaces", async () => {
         body: JSON.stringify({ name }),
       });
 
-      // SAFETY: The agent route returns the documented agent object.
       return ((await created.json()) as { id: string }).id;
     };
 
@@ -323,7 +320,6 @@ test.serial("deleting a bot or an account removes the workspaces", async () => {
     expect(gone.status).toBe(204);
     expect(removed).toEqual([deleted]);
 
-    // SAFETY: The admin route returns the documented user list.
     const { users } = (await (
       await fetch(url("/v1/admin/users"), { headers: admin })
     ).json()) as { users: { id: string }[] };
@@ -391,7 +387,7 @@ test.serial(
       });
 
       expect(agent.status).toBe(201);
-      // SAFETY: The agent route returns the documented agent object.
+
       const agentId = ((await agent.json()) as { id: string }).id;
 
       const ticketResponse = await fetch(
@@ -401,7 +397,6 @@ test.serial(
 
       expect(ticketResponse.status).toBe(201);
 
-      // SAFETY: The viewer route returns the documented ticket path.
       const ticketPath = ((await ticketResponse.json()) as { path: string })
         .path;
 
@@ -695,7 +690,6 @@ test.serial(
 
       expect(listed.status).toBe(200);
 
-      // SAFETY: The route returns the documented user list.
       const { users } = (await listed.json()) as {
         users: { id: string; role: string }[];
       };
@@ -726,7 +720,6 @@ test.serial(
   },
 );
 
-/** Reads a stream until `text` arrives or `ms` pass, and returns what it saw. */
 async function readFor(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   text: string,

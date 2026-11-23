@@ -1,5 +1,4 @@
 #!/bin/sh
-# Shared by the commit-msg hook and the PR title workflow, so both accept the same messages.
 set -eu
 
 subject=$1

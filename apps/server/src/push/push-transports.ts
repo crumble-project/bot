@@ -77,7 +77,6 @@ const configError = (message: string) =>
 const temporaryFailure = (cause: unknown) =>
   new TemporaryFailure({ message: String(cause) });
 
-/** What a provider's success status means: neither provider confirms the device showed it. */
 export const deliveryOutcome = (status: number): "delivered" | "expired" =>
   status >= 200 && status < 300 ? "delivered" : "expired";
 
@@ -233,7 +232,6 @@ export const apnsHost = (environment: PushDevice["environment"]) =>
     ? "https://api.sandbox.push.apple.com"
     : "https://api.push.apple.com";
 
-/** A signed APNs provider token; the key file is read per send so a rotated key needs no restart. */
 export function apnsJwt(settings: ApnsSettings, seconds: number) {
   const key = createPrivateKey(readFileSync(settings.keyPath));
   const head = b64(JSON.stringify({ alg: "ES256", kid: settings.keyId }));
@@ -245,7 +243,6 @@ export function apnsJwt(settings: ApnsSettings, seconds: number) {
   return `${head}.${claims}.${b64(signer.sign({ key, dsaEncoding: "ieee-p1363" }))}`;
 }
 
-/** The APNs headers for one notification; the collapse ID replaces the notification for the same answer. */
 export function apnsHeaders(
   topic: string,
   device: PushDevice,
@@ -380,7 +377,6 @@ const FcmError = Schema.Struct({
   ),
 });
 
-/** The FCM data payload: everything the app needs to render the answer itself, as FCM's string values. */
 export function fcmData(event: ReplyEvent): Record<string, string> {
   return Object.fromEntries(
     Object.entries(replyFields(event)).map(([key, value]) => [

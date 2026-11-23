@@ -5,7 +5,6 @@ import type { Window } from "./computer-use-driver";
 import { textResult } from "./computer-use-state";
 import type { ComputerUseState } from "./computer-use-state";
 
-/** Terminal emulators: Enter runs a shell command in the bot's own workspace, and the tree holds none of their text. */
 const TERMINAL_APP = /terminal|xterm|konsole|alacritty|kitty/i;
 
 export const isTerminal = (window: Window | undefined) =>
@@ -13,10 +12,6 @@ export const isTerminal = (window: Window | undefined) =>
 
 const TAIL_CHARS = 6000;
 
-/**
- * A terminal's text, which its accessibility tree doesn't expose: select all and copy in the terminal, then read the
- * clipboard. It replaces the clipboard's content.
- */
 export async function terminalText(
   state: ComputerUseState,
   window: Window,

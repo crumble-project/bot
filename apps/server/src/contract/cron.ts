@@ -15,7 +15,6 @@ export const validTimezone = (timezone: string) => {
   }
 };
 
-// cron-parser reads weekday `1/2` as `1-7/2`, Sunday included; other cron tools disagree.
 export const hasBareWeekdayStep = (cron: string) => {
   const fields = cron.trim().split(/\s+/);
 

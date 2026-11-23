@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove repository-owned source comments, preserve consequential decisions in ADRs, and enforce a zero-comment baseline across source and configuration. Add the repository-local `/delete-comment` skill. Move migration separators into metadata without changing historical hashes or execution groups, and replace inline lint/type directives with configuration.
+
 - Replace custom lint rules and vendored plugins with `@cloudflare/oxlint-config`.
 - The web client validates JSON API responses against their route schemas and rejects malformed responses instead of trusting unchecked types.
 

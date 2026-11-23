@@ -56,10 +56,6 @@ const refuseMinted = (record: CredentialRecord | undefined) =>
       )
     : Effect.void;
 
-/**
- * Credentials the owner gives a bot for named hosts. Jobs see only a placeholder per credential; the credential proxy
- * swaps it for the value on requests to those hosts.
- */
 export class Credentials extends Context.Service<
   Credentials,
   {
@@ -67,7 +63,7 @@ export class Credentials extends Context.Service<
       credentials: Array<AgentCredential>;
       requests: Array<CredentialRequest>;
     }>;
-    /** Fails when the bot already has the credential for every host it names. */
+
     readonly request: (
       agentId: string,
       request: CredentialRequestInput,
@@ -95,7 +91,7 @@ export class Credentials extends Context.Service<
       agentId: string,
     ) => Effect.Effect<string | undefined>;
     readonly grants: (agentId: string) => Effect.Effect<Array<CredentialGrant>>;
-    /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
+
     readonly value: (
       agentId: string,
       name: string,
@@ -274,7 +270,6 @@ export type CredentialsAccess = Omit<
   Access<Credentials["Service"], (typeof SYNC_CREDENTIALS)[number]>,
   "value"
 > & {
-  /** Rejects with the message the credential proxy answers with. */
   value(
     agentId: string,
     name: string,

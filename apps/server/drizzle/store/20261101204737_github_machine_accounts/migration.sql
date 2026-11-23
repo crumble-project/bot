@@ -5,7 +5,7 @@ CREATE TABLE `github_account_bots` (
 	CONSTRAINT `fk_github_account_bots_agent_id_agents_id_fk` FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_github_account_bots_account_id_github_accounts_id_fk` FOREIGN KEY (`account_id`) REFERENCES `github_accounts`(`id`) ON DELETE CASCADE
 );
---> statement-breakpoint
+
 CREATE TABLE `github_accounts` (
 	`id` text PRIMARY KEY,
 	`login` text NOT NULL,

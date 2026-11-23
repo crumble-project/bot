@@ -51,10 +51,6 @@ type TestBots = BotsAccess & {
   runtime: AgentRuntime;
 };
 
-/**
- * A stand-in for a service the suites' routes don't reach: what a test implements works, and reaching any other
- * member fails with Effect's `UnimplementedError`, which names it, instead of reading `undefined`.
- */
 const mocked = <I, S extends object>(
   service: Context.Key<I, S>,
   implementation: Layer.PartialEffectful<S>,
@@ -76,7 +72,6 @@ const noScriptRuns = ScriptRuns.of({
   list: () => Effect.succeed([]),
 });
 
-/** A member that is neither an Effect nor returns one, for a service whose routes these suites don't reach. */
 const unreached = (member: string): never => {
   throw new Error(`${member} is not available in these tests`);
 };
@@ -98,7 +93,6 @@ const noMessageGateway = mocked(MessageGateway, { list: Effect.succeed([]) });
 const testPush = (push: Runner<Push> | undefined) =>
   push?.runSync(Effect.flatMap(Push, Effect.succeed)) ?? noPush;
 
-// Its scope stays open, as an account's does: an outside call settles in it. Nothing starts its ticker.
 export const testVoiceGateway = (core: Runner<CoreServices>) =>
   core.runSync(
     Layer.buildWithScope(

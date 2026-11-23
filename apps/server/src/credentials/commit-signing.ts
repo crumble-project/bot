@@ -6,18 +6,12 @@ import type { TlsAuthorities } from "./credential-proxy";
 
 export const GUEST_SIGN_PATH = "/usr/local/bin/crumble-ssh-sign";
 
-/** The host the signing helper posts to; the interceptor answers it itself and never resolves it. */
 export const SIGNING_HOST = "signing.crumble.internal";
 
 const SIGNING_PATH = "/sign";
 
-// A commit object is far smaller; a larger body is not a commit.
 const MAX_SIGNED_BYTES = 1024 * 1024;
 
-/**
- * git's `gpg.ssh.program` in the guest: posts the commit to `SIGNING_HOST` and writes the signature where git reads
- * it. Any address works for the connection: the workspace proxy routes by the TLS server name.
- */
 export const signingHelper = () => `#!/bin/sh
 set -eu
 mode= file=
@@ -84,7 +78,7 @@ async function answerSigning(
 export const commitSigning = (options: {
   agentId: string;
   authorities: TlsAuthorities;
-  /** Signs a commit as the bot; undefined when it has no key to sign with. */
+
   sign: (data: Buffer) => Promise<string | undefined>;
 }): WorkspaceInterceptor => ({
   wants: (host) => host === SIGNING_HOST,

@@ -1,4 +1,3 @@
--- The schema a fresh database got from servers before Drizzle (commit edccef9), dumped from sqlite_master.
 CREATE TABLE push_delivery (
         outbox_id TEXT NOT NULL REFERENCES push_outbox(id) ON DELETE CASCADE,
         installation_id TEXT NOT NULL REFERENCES push_devices(installation_id) ON DELETE CASCADE,

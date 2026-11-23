@@ -23,10 +23,6 @@ export type StandaloneDispatch = (
   scheduleId: string,
 ) => Promise<DispatchedExecution>;
 
-/**
- * What a dispatcher reports when a test records the call without modelling an execution: the scheduler copies the id
- * and status into its answer, and tests that assert on their own recording ignore both.
- */
 export const recordedDispatch = {
   id: "dispatch",
   status: "running",

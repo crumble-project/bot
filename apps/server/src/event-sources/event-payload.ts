@@ -2,7 +2,6 @@ import type { RelayEvent } from "./event-repository";
 
 export const EVENT_BODY_LIMIT = 32_768;
 
-// ignoreBOM keeps a byte order mark as text, so a page or an inline body never drops bytes it reports.
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 export type InlineBody = {
@@ -64,7 +63,6 @@ export function eventRelayText(
 ) {
   const body = inlineBody(event.body);
 
-  // JSON.stringify escapes the payload, so no text in it can end the JSON line or pose as instructions outside it.
   const payload = JSON.stringify({
     method: event.method,
     query: event.query,
