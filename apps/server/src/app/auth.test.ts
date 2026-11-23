@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { z } from "zod";
 import { createAuth, passkeyOriginFor } from "./auth";
 import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { INVITE_HEADER } from "./invites";
@@ -193,50 +192,6 @@ const pinsOf = async (
 
   return session.user.pinnedConversations;
 };
-
-test("the avatar material is flat until the account chooses fluffy", async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "auth-material-"));
-  let accounts = await createAuth(dataDir, ORIGIN);
-
-  const materialOf = async (token: string) => {
-    const response = await authRequest(accounts, token, "get-session");
-
-    const session = z
-      .object({ user: z.object({ avatarMaterial: z.unknown() }) })
-      .parse(await response.json());
-
-    return session.user.avatarMaterial;
-  };
-
-  try {
-    const { token } = await signUp(accounts, "material@example.com");
-    expect(await materialOf(token!)).toBe("flat");
-
-    const saved = await authRequest(accounts, token!, "update-user", {
-      avatarMaterial: "fluffy",
-    });
-
-    expect(saved.status).toBe(200);
-    expect(await materialOf(token!)).toBe("fluffy");
-
-    const rejected = await authRequest(accounts, token!, "update-user", {
-      avatarMaterial: "plush",
-    });
-
-    expect(rejected.status).toBe(400);
-    expect(await materialOf(token!)).toBe("fluffy");
-
-    accounts.close();
-    const database = new Database(join(dataDir, "auth.sqlite"));
-    database.run("ALTER TABLE user DROP COLUMN avatarMaterial");
-    database.close();
-    accounts = await createAuth(dataDir, ORIGIN);
-
-    expect(await materialOf(token!)).toBe("flat");
-  } finally {
-    accounts.close();
-  }
-});
 
 test("a new account has no pins", async () => {
   const accounts = await createAuth(

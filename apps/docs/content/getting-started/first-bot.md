@@ -25,6 +25,10 @@ In the bot's settings, click its avatar to open the editor. Choose a shape from
 **Gallery**, or paste an Open Bot Avatar definition into **Import**. Invalid
 geometry is rejected with validation errors. Click **Save** to keep your changes.
 
+**Material** makes the avatar **Flat** or **Fluffy**. Fluffy shows on larger,
+animated avatars in browsers with WebGL2. Small avatars, and the Apple and
+Android apps, stay flat.
+
 To design a shape, open **Generate** and enter a description. Click
 **Copy generation prompt**, give the prompt to any bot or model, then paste its
 JSON response into **Import**. The copied prompt includes your description.

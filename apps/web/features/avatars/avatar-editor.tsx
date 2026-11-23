@@ -107,6 +107,48 @@ function ColorFields({
   );
 }
 
+const MATERIALS = [
+  { value: "flat", label: "Flat" },
+  { value: "fluffy", label: "Fluffy" },
+] as const;
+
+function MaterialField({
+  value,
+  onChange,
+}: {
+  value: BotAvatarDefinition;
+  onChange: (value: BotAvatarDefinition) => void;
+}) {
+  const id = useId();
+
+  return (
+    <div
+      role="group"
+      aria-labelledby={id}
+      className="flex flex-col gap-1 text-sm"
+    >
+      <span id={id}>Material</span>
+      <div className="flex gap-1">
+        {MATERIALS.map((material) => {
+          const chosen = (value.material ?? "flat") === material.value;
+
+          return (
+            <Button
+              key={material.value}
+              type="button"
+              variant={chosen ? "secondary" : "ghost"}
+              aria-pressed={chosen}
+              onClick={() => onChange({ ...value, material: material.value })}
+            >
+              {material.label}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function GalleryTab({
   value,
   onPick,
@@ -254,7 +296,10 @@ export function AvatarEditor({
           size={80}
           live
         />
-        <ColorFields value={value} onChange={onChange} onError={setError} />
+        <div className="flex min-w-0 flex-1 flex-wrap gap-3">
+          <ColorFields value={value} onChange={onChange} onError={setError} />
+          <MaterialField value={value} onChange={onChange} />
+        </div>
       </div>
       <Tabs defaultValue="gallery">
         <TabsList>

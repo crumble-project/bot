@@ -1,13 +1,11 @@
-import { useContext, useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { renderAvatarSvg } from "open-bot-avatar";
 import type { AvatarState } from "open-bot-avatar";
 import { mountAvatar } from "open-bot-avatar/dom";
 import type { MountedAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
-import type { AvatarMaterial } from "@crumble/server/contract/user-preferences";
 import { cn } from "@/lib/utils";
-import { AvatarMaterialContext } from "./avatar-material";
 
 export type BotState = AvatarState | "question";
 
@@ -34,11 +32,13 @@ function useLiveAvatar(
   still: boolean,
   look: BotAvatarDefinition,
   state: BotState,
-  material: AvatarMaterial,
+  size: number,
 ) {
+  const material = size >= FLUFFY_MIN_SIZE ? (look.material ?? "flat") : "flat";
+
   const host = useRef<HTMLSpanElement>(null);
   const avatar = useRef<MountedAvatar | null>(null);
-  const latest = useRef({ state, material });
+  const latest = useRef(state);
 
   useLayoutEffect(() => {
     if (still || !host.current) {
@@ -47,8 +47,8 @@ function useLiveAvatar(
 
     const mounted = mountAvatar(host.current, {
       ...look,
-      ...avatarOptions(latest.current.state),
-      material: latest.current.material,
+      ...avatarOptions(latest.current),
+      material,
       reducedMotion: "system",
       followPointer: true,
       label: "",
@@ -60,12 +60,12 @@ function useLiveAvatar(
       mounted.destroy();
       avatar.current = null;
     };
-  }, [still, look]);
+  }, [still, look, material]);
 
   useLayoutEffect(() => {
-    latest.current = { state, material };
-    avatar.current?.update({ ...avatarOptions(state), material });
-  }, [state, material]);
+    latest.current = state;
+    avatar.current?.update(avatarOptions(state));
+  }, [state]);
 
   return host;
 }
@@ -86,9 +86,7 @@ export function BotAvatar({
   const look = bot.avatar;
 
   const still = !live;
-  const chosen = useContext(AvatarMaterialContext);
-  const material = size >= FLUFFY_MIN_SIZE ? chosen : "flat";
-  const host = useLiveAvatar(still, look, state, material);
+  const host = useLiveAvatar(still, look, state, size);
 
   const svg = useMemo(
     () =>

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { validateAvatar } from "open-bot-avatar";
 
+export const AVATAR_MATERIALS = ["flat", "fluffy"] as const;
+
 export const avatarDefinitionSchema = z.object({
   definition: z
     .strictObject({
@@ -30,4 +32,5 @@ export const avatarDefinitionSchema = z.object({
   eyeColor: z
     .string()
     .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Use #rgb or #rrggbb"),
+  material: z.enum(AVATAR_MATERIALS).optional(),
 });

@@ -53,6 +53,7 @@ Contract version `6.0.0` intentionally replaces the `avatar` string with one val
 The definition uses Open Bot Avatar v1 geometry in a `0 0 100 100` viewBox.
 The server checks geometry with `validateAvatar` and accepts colors only as `#rgb` or `#rrggbb`.
 Invalid input returns `400`, including the geometry validator's error messages.
+The optional `material` is `flat` or `fluffy`; absent means `flat`. A patch whose `avatar` omits it keeps the stored material, so clients that don't know it can save the rest.
 Omitting `avatar` from a patch preserves it. Omitting it on create selects fresh gallery geometry from the bot ID, with library default colors.
 Legacy string input returns `400`. JSON imports contain the definition alone; the editor sets colors separately.
 

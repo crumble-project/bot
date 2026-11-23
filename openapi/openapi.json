@@ -1126,6 +1126,14 @@
           "eyeColor": {
             "type": "string",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+          },
+          "material": {
+            "type": "string",
+            "enum": [
+              "flat",
+              "fluffy"
+            ],
+            "description": "The body's finish. Absent means flat. A patch whose avatar leaves it out keeps the bot's material; send flat to change it back."
           }
         },
         "required": [
@@ -2532,6 +2540,13 @@
                   "eyeColor": {
                     "type": "string",
                     "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "material": {
+                    "type": "string",
+                    "enum": [
+                      "flat",
+                      "fluffy"
+                    ]
                   }
                 },
                 "required": [
@@ -12767,6 +12782,13 @@
                       "eyeColor": {
                         "type": "string",
                         "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "material": {
+                        "type": "string",
+                        "enum": [
+                          "flat",
+                          "fluffy"
+                        ]
                       }
                     },
                     "required": [
@@ -13302,6 +13324,13 @@
                       "eyeColor": {
                         "type": "string",
                         "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "material": {
+                        "type": "string",
+                        "enum": [
+                          "flat",
+                          "fluffy"
+                        ]
                       }
                     },
                     "required": [
@@ -17042,6 +17071,13 @@
                           "eyeColor": {
                             "type": "string",
                             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                          },
+                          "material": {
+                            "type": "string",
+                            "enum": [
+                              "flat",
+                              "fluffy"
+                            ]
                           }
                         },
                         "required": [

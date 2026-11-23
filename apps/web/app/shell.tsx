@@ -13,14 +13,12 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { AvatarMaterialContext } from "@/components/avatar-material";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { botsQuery } from "@/features/bots/api";
 import type { Bot } from "@/features/bots/api";
 import { authClient } from "@/lib/auth-client";
 import { setThemeColor, useAccountTheme, useTheme } from "@/lib/theme";
 import { resetSession, signedOut } from "@/lib/session";
-import { useAccountAvatarMaterial } from "@/lib/avatar-material";
 import { usePins } from "@/lib/pins";
 import { followActivity } from "./activity-stream";
 import { markSeen, useUnreadCount } from "@/lib/notifications";
@@ -120,27 +118,24 @@ export function Shell() {
   useFollowActivity(userId);
   useDocumentTitle(bots.data);
   useAccountTheme();
-  const material = useAccountAvatarMaterial();
 
   return (
-    <AvatarMaterialContext value={material}>
-      <TooltipProvider>
-        <SidebarProvider>
-          <AppSidebar
-            bots={bots}
-            pins={pins}
-            onSearch={() => setPaletteOpen(true)}
-          />
-          <SidebarThemeColor />
-          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-          <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:shadow-sm md:ring-1 md:ring-sidebar-border dark:md:shadow-none">
-            <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
-              <SidebarTrigger className="size-9" />
-            </header>
-            <Outlet />
-          </SidebarInset>
-        </SidebarProvider>
-      </TooltipProvider>
-    </AvatarMaterialContext>
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppSidebar
+          bots={bots}
+          pins={pins}
+          onSearch={() => setPaletteOpen(true)}
+        />
+        <SidebarThemeColor />
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:shadow-sm md:ring-1 md:ring-sidebar-border dark:md:shadow-none">
+          <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
+            <SidebarTrigger className="size-9" />
+          </header>
+          <Outlet />
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
