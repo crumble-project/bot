@@ -1,4 +1,5 @@
-import { Deferred, Effect, Option, type Scope } from "effect";
+import { Deferred, Effect, Option } from "effect";
+import type { Scope } from "effect";
 import type {
   VoiceCallEvent,
   VoiceCallReport,
@@ -34,17 +35,20 @@ const UNREPORTED = {
 };
 
 function missOf(result: SettledCall): OutsideCallMiss {
-  if (result.outcome === "unanswered" || result.outcome === "busy")
+  if (result.outcome === "unanswered" || result.outcome === "busy") {
     return { outcome: result.outcome };
+  }
 
-  if (result.outcome === "failed")
+  if (result.outcome === "failed") {
     return { outcome: "failed", error: result.error };
+  }
 
-  if (result.outcome === "answered")
+  if (result.outcome === "answered") {
     return {
       outcome: "failed",
       error: "the call was answered but did not start",
     };
+  }
 
   return { outcome: "failed", error: UNREPORTED[result.outcome] };
 }
@@ -94,7 +98,9 @@ export const createPendingCalls = (
 
     const live = boundary.connection();
 
-    if (live?.calls) live.send({ event: "cancel", data: { callId } });
+    if (live?.calls) {
+      live.send({ event: "cancel", data: { callId } });
+    }
   };
 
   const availability = (current: VoiceGatewayServedConfig) => ({
@@ -150,9 +156,13 @@ export const createPendingCalls = (
     placed.add(key);
 
     for (const kept of placed) {
-      if (placed.size <= KEPT_PLACED) break;
+      if (placed.size <= KEPT_PLACED) {
+        break;
+      }
 
-      if (!ringing.has(kept)) placed.delete(kept);
+      if (!ringing.has(kept)) {
+        placed.delete(kept);
+      }
     }
 
     const call: PendingCall = {
@@ -171,8 +181,9 @@ export const createPendingCalls = (
   const place = (request: CallRequest) =>
     locked(
       Effect.gen(function* () {
-        if (placed.has(request.key))
+        if (placed.has(request.key)) {
           return { refusal: "This call was already placed.", call: null };
+        }
 
         const current = yield* boundary.reconcile();
 
@@ -182,7 +193,9 @@ export const createPendingCalls = (
           availability(current),
         );
 
-        if (!target) return { refusal, call: null };
+        if (!target) {
+          return { refusal, call: null };
+        }
 
         const call = yield* ring(request.key, request.botId, {
           callId: crypto.randomUUID(),
@@ -199,11 +212,12 @@ export const createPendingCalls = (
   const placeOutside = (request: OutsideCallRequest) =>
     locked(
       Effect.gen(function* () {
-        if (placed.has(request.requestId))
+        if (placed.has(request.requestId)) {
           return {
             refusal: "This call request was already placed.",
             call: null,
           };
+        }
 
         const current = yield* boundary.reconcile();
 
@@ -214,7 +228,9 @@ export const createPendingCalls = (
           availability(current),
         );
 
-        if (!line) return { refusal, call: null };
+        if (!line) {
+          return { refusal, call: null };
+        }
 
         const call = yield* ring(request.requestId, request.botId, {
           callId: request.callId,
@@ -245,7 +261,9 @@ export const createPendingCalls = (
       Effect.sync(() => {
         const { callId } = call.event;
 
-        if (pending.get(callId) !== call) return;
+        if (pending.get(callId) !== call) {
+          return;
+        }
         pending.delete(callId);
         cancel(callId);
       }),
@@ -271,7 +289,9 @@ export const createPendingCalls = (
   ) {
     const { refusal, call } = yield* place(request);
 
-    if (!call) return { outcome: "refused" as const, reason: refusal };
+    if (!call) {
+      return { outcome: "refused" as const, reason: refusal };
+    }
 
     return yield* settle(call).pipe(Effect.ensuring(drop(call)));
   });
@@ -280,7 +300,9 @@ export const createPendingCalls = (
   const missed = (call: PendingCall, result: SettledCall) =>
     locked(
       Effect.sync(() => {
-        if (call.started) return;
+        if (call.started) {
+          return;
+        }
         const { callId } = call.event;
 
         tombstone(callId);
@@ -293,7 +315,9 @@ export const createPendingCalls = (
   ) {
     const { refusal, call } = yield* placeOutside(request);
 
-    if (!call) return refusal;
+    if (!call) {
+      return refusal;
+    }
 
     yield* settle(call).pipe(
       Effect.ensuring(drop(call)),
@@ -310,39 +334,48 @@ export const createPendingCalls = (
     started: (callId: string) => {
       const call = pending.get(callId);
 
-      if (!call) return;
+      if (!call) {
+        return;
+      }
       call.started = true;
       settlePending(call, { outcome: "answered" });
     },
     report: (callId: string, report: VoiceCallReport) => {
       const call = pending.get(callId);
 
-      if (!call) return false;
+      if (!call) {
+        return false;
+      }
       Deferred.doneUnsafe(call.acknowledged, Effect.void);
 
-      if (report.outcome === "ended")
+      if (report.outcome === "ended") {
         settlePending(call, { outcome: "failed", error: report.error });
-      else if (report.outcome !== "ringing")
+      } else if (report.outcome !== "ringing") {
         settlePending(call, { outcome: report.outcome, error: report.error });
+      }
 
       return true;
     },
     reassign: (username: string) => {
       // A ringing call belongs to the bot that placed it, not to the line's next bot.
-      for (const call of pending.values())
+      for (const call of pending.values()) {
         if (call.event.username === username) {
           cancel(call.event.callId);
           settlePending(call, { outcome: "failed", error: LINE_CHANGED });
         }
+      }
     },
     revoke: () => {
-      for (const call of pending.values())
+      for (const call of pending.values()) {
         settlePending(call, { outcome: "revoked" });
+      }
     },
     replay: () => {
-      for (const call of pending.values())
-        if (!Deferred.isDoneUnsafe(call.acknowledged))
+      for (const call of pending.values()) {
+        if (!Deferred.isDoneUnsafe(call.acknowledged)) {
           boundary.connection()?.send({ event: "call", data: call.event });
+        }
+      }
     },
     api: { callRefusal, othersRefusal, callsOthers, callOwner, callOutside },
   };

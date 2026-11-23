@@ -34,10 +34,14 @@ export class HarnessFiles<Opened extends { harness: Harness }> {
   }
 
   async get(key: string, open: (storage: Storage) => Promise<Opened>) {
-    if (this.closed) throw new Error(this.closedMessage);
+    if (this.closed) {
+      throw new Error(this.closedMessage);
+    }
     const existing = this.opened.get(key);
 
-    if (existing) return existing;
+    if (existing) {
+      return existing;
+    }
     const opening = this.openFile(key, open);
     this.opened.set(key, opening);
 
@@ -53,10 +57,13 @@ export class HarnessFiles<Opened extends { harness: Harness }> {
     const pending = this.opened.get(key);
     this.opened.delete(key);
 
-    if (pending) await (await pending).harness.close(BACKGROUND_CONTEXT);
+    if (pending) {
+      await (await pending).harness.close(BACKGROUND_CONTEXT);
+    }
 
-    for (const suffix of ["", "-wal", "-shm"])
+    for (const suffix of ["", "-wal", "-shm"]) {
       await rm(`${this.path(key)}${suffix}`, { force: true });
+    }
   }
 
   async close() {

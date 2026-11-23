@@ -23,8 +23,9 @@ function novncFile(requested: string) {
   if (
     !relative.endsWith(".js") ||
     !SERVED.some((prefix) => relative.startsWith(prefix))
-  )
+  ) {
     return;
+  }
 
   const file = path.resolve(NOVNC, relative);
 
@@ -34,7 +35,9 @@ function novncFile(requested: string) {
 export async function novncResponse(requestPath: string) {
   const prefix = `${VIEWER_PREFIX}/novnc/`;
 
-  if (!requestPath.startsWith(prefix)) return;
+  if (!requestPath.startsWith(prefix)) {
+    return;
+  }
   const file = novncFile(requestPath.slice(prefix.length));
   const content = file && (await readFile(file).catch(() => {}));
 
@@ -96,8 +99,11 @@ export class ViewerTickets {
   private prune() {
     const now = this.now();
 
-    for (const [ticket, entry] of this.tickets)
-      if (entry.expires <= now) this.tickets.delete(ticket);
+    for (const [ticket, entry] of this.tickets) {
+      if (entry.expires <= now) {
+        this.tickets.delete(ticket);
+      }
+    }
   }
 }
 
@@ -152,7 +158,9 @@ export function bridgeDesktop(options: {
   let closed = false;
 
   const close = async () => {
-    if (closed) return;
+    if (closed) {
+      return;
+    }
 
     closed = true;
     options.close();
@@ -160,22 +168,31 @@ export function bridgeDesktop(options: {
   };
 
   void (async () => {
-    for await (const chunk of stream.output) options.send(chunk);
+    for await (const chunk of stream.output) {
+      options.send(chunk);
+    }
   })()
     .catch(() => {})
     .finally(() => void close());
 
   return {
     receive(data: Uint8Array) {
-      if (closed) return;
+      if (closed) {
+        return;
+      }
 
       try {
         const passed = filter.push(data);
 
-        if (passed.length) void stream.write(passed).catch(() => void close());
+        if (passed.length) {
+          void stream.write(passed).catch(() => void close());
+        }
       } catch (error) {
-        if (error instanceof RfbProtocolError) void close();
-        else throw error;
+        if (error instanceof RfbProtocolError) {
+          void close();
+        } else {
+          throw error;
+        }
       }
     },
     close,

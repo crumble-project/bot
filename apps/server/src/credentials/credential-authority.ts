@@ -1,9 +1,23 @@
 import { randomBytes } from "node:crypto";
 import tls from "node:tls";
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
+import { BitString, Integer, OctetString, Utf8String } from "asn1js";
+import type { BaseBlock } from "asn1js";
+import {
+  AltName,
+  AttributeTypeAndValue,
+  AuthorityKeyIdentifier,
+  BasicConstraints,
+  Certificate,
+  CryptoEngine,
+  ExtKeyUsage,
+  Extension,
+  GeneralName,
+  RelativeDistinguishedNames,
+  setEngine,
+} from "pkijs";
 import { Context, Effect, Layer } from "effect";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 
 const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -26,43 +40,40 @@ const SERVER_AUTH = "1.3.6.1.5.5.7.3.1";
 const CA_KEY_USAGE = 0x06;
 const SERVER_KEY_USAGE = 0x80;
 
-pkijs.setEngine("crumble", new pkijs.CryptoEngine({ name: "crumble", crypto }));
+setEngine("crumble", new CryptoEngine({ name: "crumble", crypto }));
 
 const pem = (label: string, der: ArrayBuffer) =>
   `-----BEGIN ${label}-----\n${Buffer.from(der)
     .toString("base64")
-    .replace(/.{64}/g, "$&\n")
+    .replaceAll(/.{64}/g, "$&\n")
     .trimEnd()}\n-----END ${label}-----\n`;
 
 const der = (text: string) =>
   Uint8Array.from(
     Buffer.from(
-      text.replace(/-----[A-Z ]+-----/g, "").replace(/\s/g, ""),
+      text.replaceAll(/-----[A-Z ]+-----/g, "").replaceAll(/\s/g, ""),
       "base64",
     ),
   ).buffer;
 
 const commonName = (value: string) =>
-  new pkijs.RelativeDistinguishedNames({
+  new RelativeDistinguishedNames({
     typesAndValues: [
-      new pkijs.AttributeTypeAndValue({
+      new AttributeTypeAndValue({
         type: COMMON_NAME,
-        value: new asn1js.Utf8String({ value }),
+        value: new Utf8String({ value }),
       }),
     ],
   });
 
-const extension = (
-  extnID: string,
-  critical: boolean,
-  value: asn1js.BaseBlock,
-) => new pkijs.Extension({ extnID, critical, extnValue: value.toBER(false) });
+const extension = (extnID: string, critical: boolean, value: BaseBlock) =>
+  new Extension({ extnID, critical, extnValue: value.toBER(false) });
 
 const keyUsage = (bits: number) =>
-  new asn1js.BitString({ valueHex: Uint8Array.of(bits).buffer });
+  new BitString({ valueHex: Uint8Array.of(bits).buffer });
 
 /** SHA-1 of the subject public key, as RFC 5280 suggests for key identifiers. */
-async function keyIdentifier(certificate: pkijs.Certificate) {
+async function keyIdentifier(certificate: Certificate) {
   return crypto.subtle.digest(
     "SHA-1",
     certificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView.slice(),
@@ -73,9 +84,9 @@ export function serialNumber(bytes: Uint8Array) {
   const serial = Uint8Array.from(bytes);
 
   // Positive (DER integers are signed) and without a leading zero byte, which BoringSSL rejects as non-minimal.
-  serial[0] = (serial[0]! & 0x7f) | 0x40;
+  serial[0] = ((serial[0] ?? 0) & 0x7f) | 0x40;
 
-  return new asn1js.Integer({ valueHex: serial });
+  return new Integer({ valueHex: serial });
 }
 
 async function signed(
@@ -86,9 +97,9 @@ async function signed(
     publicKey: CryptoKey;
     signingKey: CryptoKey;
   },
-  extensions: (certificate: pkijs.Certificate) => Promise<pkijs.Extension[]>,
+  extensions: (certificate: Certificate) => Promise<Array<Extension>>,
 ) {
-  const certificate = new pkijs.Certificate();
+  const certificate = new Certificate();
   certificate.version = 2;
   certificate.serialNumber = serialNumber(randomBytes(16));
   certificate.subject = commonName(options.subject);
@@ -105,7 +116,7 @@ async function signed(
 const AUTHORITY_NAME = "Crumble credential proxy";
 
 type Authority = {
-  certificate: pkijs.Certificate;
+  certificate: Certificate;
   certificatePem: string;
   key: CryptoKey;
   keyId: ArrayBuffer;
@@ -149,7 +160,7 @@ export class CredentialAuthorities extends Context.Service<
           (await run(repository.getAuthority(agentId))) ??
           (await run(repository.saveAuthority(agentId, await newAuthority())));
 
-        const certificate = pkijs.Certificate.fromBER(der(saved.certificate));
+        const certificate = Certificate.fromBER(der(saved.certificate));
 
         return {
           certificate,
@@ -196,27 +207,27 @@ export class CredentialAuthorities extends Context.Service<
             extension(
               BASIC_CONSTRAINTS,
               true,
-              new pkijs.BasicConstraints({ cA: false }).toSchema(),
+              new BasicConstraints({ cA: false }).toSchema(),
             ),
             extension(KEY_USAGE, true, keyUsage(SERVER_KEY_USAGE)),
             extension(
               EXTENDED_KEY_USAGE,
               false,
-              new pkijs.ExtKeyUsage({ keyPurposes: [SERVER_AUTH] }).toSchema(),
+              new ExtKeyUsage({ keyPurposes: [SERVER_AUTH] }).toSchema(),
             ),
             extension(
               SUBJECT_ALT_NAME,
               false,
-              new pkijs.AltName({
-                altNames: [new pkijs.GeneralName({ type: 2, value: host })],
+              new AltName({
+                altNames: [new GeneralName({ type: 2, value: host })],
               }).toSchema(),
             ),
             // Strict verifiers, such as Python 3.13 and later, require it.
             extension(
               AUTHORITY_KEY_ID,
               false,
-              new pkijs.AuthorityKeyIdentifier({
-                keyIdentifier: new asn1js.OctetString({
+              new AuthorityKeyIdentifier({
+                keyIdentifier: new OctetString({
                   valueHex: issuer.keyId,
                 }),
               }).toSchema(),
@@ -240,8 +251,9 @@ export class CredentialAuthorities extends Context.Service<
         const key = `${agentId}\n${host}`;
         const cached = await hosts.get(key)?.catch(() => {});
 
-        if (cached && cached.expires - Date.now() > RENEW_MS)
+        if (cached && cached.expires - Date.now() > RENEW_MS) {
           return cached.context;
+        }
 
         const created = hostContext(agentId, host);
 
@@ -286,7 +298,7 @@ async function newAuthority() {
       extension(
         BASIC_CONSTRAINTS,
         true,
-        new pkijs.BasicConstraints({
+        new BasicConstraints({
           cA: true,
           pathLenConstraint: 0,
         }).toSchema(),
@@ -295,7 +307,7 @@ async function newAuthority() {
       extension(
         SUBJECT_KEY_ID,
         false,
-        new asn1js.OctetString({ valueHex: await keyIdentifier(self) }),
+        new OctetString({ valueHex: await keyIdentifier(self) }),
       ),
     ],
   );
@@ -316,4 +328,7 @@ export type CredentialAuthoritiesAccess = Access<
 export const credentialAuthoritiesAccess = (
   runtime: Runner<CredentialAuthorities>,
 ): CredentialAuthoritiesAccess =>
-  accessOf(runtime.runSync(CredentialAuthorities.use(Effect.succeed)), runtime);
+  accessOf(
+    runtime.runSync(Effect.flatMap(CredentialAuthorities, Effect.succeed)),
+    runtime,
+  );

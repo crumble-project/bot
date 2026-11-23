@@ -12,12 +12,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import {
-  Sandbox,
-  SandboxNotFoundError,
-  type SandboxResources,
-  type SandboxTemplate,
-} from "railway";
+import { Sandbox, SandboxNotFoundError } from "railway";
+import type { SandboxResources, SandboxTemplate } from "railway";
 import { Effect } from "effect";
 import { z } from "zod";
 import {
@@ -48,14 +44,16 @@ import {
   machineName,
   prepareGuest,
   untilBooted,
-  type GuestFile,
-  type GuestOps,
-  type GuestSetup,
-  type MachineStream,
-  type WorkspaceBackendOptions,
-  type WorkspaceMachine,
-  type WorkspaceMachines,
-  type WorkspaceSize,
+} from "../machine-workspaces";
+import type {
+  GuestFile,
+  GuestOps,
+  GuestSetup,
+  MachineStream,
+  WorkspaceBackendOptions,
+  WorkspaceMachine,
+  WorkspaceMachines,
+  WorkspaceSize,
 } from "../machine-workspaces";
 import {
   DesktopStartFailed,
@@ -64,11 +62,8 @@ import {
   WorkspaceStreamFailed,
   WorkspaceUnreachable,
 } from "../workspace-errors";
-import {
-  startWorkspaceProxy,
-  type WorkspaceInterceptor,
-  type WorkspaceProxy,
-} from "../workspace-proxy";
+import { startWorkspaceProxy } from "../workspace-proxy";
+import type { WorkspaceInterceptor, WorkspaceProxy } from "../workspace-proxy";
 import {
   GUEST_PROXY_PORT,
   TUNNEL_SCRIPT,
@@ -80,7 +75,7 @@ const GUEST_STREAM = `${GUEST_HELPERS}/railway-stream.py`;
 const GUEST_PYTHON = "/usr/bin/python3";
 const GUEST_TUNNEL = `${GUEST_HELPERS}/workspace-tunnel.py`;
 
-const TUNNEL_RESTART_MS = 1_000;
+const TUNNEL_RESTART_MS = 1000;
 const GUEST_PROXY = `http://127.0.0.1:${GUEST_PROXY_PORT}`;
 
 // Railway has no egress hook: jobs reach the workspace proxy only through the tunnel, by these variables.
@@ -197,7 +192,9 @@ export function railwayWorkspacesFromEnv(
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
 ) {
-  if (env["CRUMBLE_WORKSPACE_BACKEND"] !== "railway") return;
+  if (env["CRUMBLE_WORKSPACE_BACKEND"] !== "railway") {
+    return;
+  }
 
   const region = env["CRUMBLE_RAILWAY_REGION"];
   // Railway builds its images from recipes, so the admin's image setting does not apply.
@@ -274,10 +271,11 @@ export class RailwayMachines implements WorkspaceMachines {
     desktop: boolean,
     guest: GuestSetup = NO_GUEST,
   ) {
-    if (!this.recipes.has(image))
+    if (!this.recipes.has(image)) {
       return yield* Effect.die(
         new Error(`Railway workspaces have no image ${image}`),
       );
+    }
 
     const name = this.name(agentId);
     const record = yield* Effect.promise(() => this.readRecord(agentId));
@@ -321,11 +319,12 @@ export class RailwayMachines implements WorkspaceMachines {
 
     const reconnected = record?.image === image ? running : undefined;
 
-    if (running && !reconnected)
+    if (running && !reconnected) {
       yield* bootStep("Checkpointing the sandbox's other image", async () => {
         await checkpoint(running, name);
         await running.destroy();
       });
+    }
 
     // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
     return (
@@ -347,7 +346,9 @@ export class RailwayMachines implements WorkspaceMachines {
         const sandboxId = (await this.readRecord(agentId))?.sandboxId;
         const running = sandboxId && (await connectRunning(sandboxId));
 
-        if (running) await running.destroy();
+        if (running) {
+          await running.destroy();
+        }
 
         await deleteCheckpoints(name);
         await rm(this.recordPath(agentId), { force: true });
@@ -442,7 +443,11 @@ export class RailwayMachines implements WorkspaceMachines {
     let template = this.templates.get(image);
 
     if (!template) {
-      const recipe = this.recipes.get(image)!;
+      const recipe = this.recipes.get(image);
+
+      if (!recipe) {
+        throw new Error(`${image} is not a Railway workspace image`);
+      }
 
       template = Sandbox.template()
         .withPackages(...recipe.packages)
@@ -500,11 +505,15 @@ class RailwayMachine implements WorkspaceMachine {
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS);
     this.heartbeat.unref();
 
-    if (proxy) void this.openTunnel(proxy);
+    if (proxy) {
+      void this.openTunnel(proxy);
+    }
   }
 
   private async openTunnel(proxy: WorkspaceProxy) {
-    if (this.stopped) return;
+    if (this.stopped) {
+      return;
+    }
 
     const [host, port] = proxy.address.split(":");
 
@@ -520,7 +529,9 @@ class RailwayMachine implements WorkspaceMachine {
       // Retried below, like a tunnel that ended.
     }
 
-    if (this.stopped) return;
+    if (this.stopped) {
+      return;
+    }
     setTimeout(() => void this.openTunnel(proxy), TUNNEL_RESTART_MS).unref();
   }
 
@@ -532,12 +543,15 @@ class RailwayMachine implements WorkspaceMachine {
       () => this.alive().catch(() => true),
     );
 
-    if (alive) return;
+    if (alive) {
+      return;
+    }
 
     clearInterval(this.heartbeat);
 
-    for (const stream of this.streams)
+    for (const stream of this.streams) {
       stream.fail(new Error("Railway destroyed the sandbox"));
+    }
   }
 
   get desktopReady() {
@@ -555,7 +569,7 @@ class RailwayMachine implements WorkspaceMachine {
     });
   }
 
-  stream(command: string, args: readonly string[]) {
+  stream(command: string, args: ReadonlyArray<string>) {
     return Effect.try({
       try: () => this.open(command, args),
       catch: (cause) =>
@@ -570,15 +584,17 @@ class RailwayMachine implements WorkspaceMachine {
   private alive() {
     return this.sandbox.refresh().then(
       (sandbox) => sandbox.status === "RUNNING",
-      (error) => {
-        if (error instanceof SandboxNotFoundError) return false;
+      (error: unknown) => {
+        if (error instanceof SandboxNotFoundError) {
+          return false;
+        }
 
         throw error;
       },
     );
   }
 
-  private open(command: string, args: readonly string[]): MachineStream {
+  private open(command: string, args: ReadonlyArray<string>): MachineStream {
     const output = new ByteQueue();
     let pending = "";
 
@@ -597,7 +613,9 @@ class RailwayMachine implements WorkspaceMachine {
 
           pending = lines.pop() ?? "";
 
-          for (const line of lines) output.push(Buffer.from(line, "base64"));
+          for (const line of lines) {
+            output.push(Buffer.from(line, "base64"));
+          }
         },
       },
     );
@@ -606,7 +624,7 @@ class RailwayMachine implements WorkspaceMachine {
       .finally(() => this.streams.delete(output))
       .then(
         () => output.end(),
-        (error) =>
+        (error: unknown) =>
           output.fail(
             error instanceof Error ? error : new Error(String(error)),
           ),
@@ -652,7 +670,9 @@ class RailwayMachine implements WorkspaceMachine {
         await this.tunnel?.close();
         await this.proxy?.close();
 
-        if (await this.alive()) await this.checkpoint();
+        if (await this.alive()) {
+          await this.checkpoint();
+        }
 
         await this.sandbox.destroy().catch(() => {});
       },
@@ -676,7 +696,7 @@ class RailwayMachine implements WorkspaceMachine {
   }
 }
 
-async function desktopFiles(): Promise<GuestFile[]> {
+async function desktopFiles(): Promise<Array<GuestFile>> {
   const files = await readdir(DESKTOP_SOURCES);
 
   return Promise.all(
@@ -690,7 +710,7 @@ async function desktopFiles(): Promise<GuestFile[]> {
 
 const startDesktop = Effect.fn("startDesktop")(function* (
   sandbox: Sandbox,
-  ...args: string[]
+  ...args: Array<string>
 ) {
   const result = yield* Effect.tryPromise({
     try: () =>
@@ -704,11 +724,12 @@ const startDesktop = Effect.fn("startDesktop")(function* (
       }),
   });
 
-  if (result.exitCode !== 0)
+  if (result.exitCode !== 0) {
     return yield* new DesktopStartFailed({
       message: `The bot desktop did not start: ${result.stderr}`,
       cause: result.stderr,
     });
+  }
 });
 
 /** A checkpoint snapshots the disk, not the guest's page cache, so recent writes need a `sync` first. */
@@ -723,7 +744,9 @@ async function connectRunning(id: string) {
 
     return sandbox.status === "RUNNING" ? sandbox : undefined;
   } catch (error) {
-    if (error instanceof SandboxNotFoundError) return;
+    if (error instanceof SandboxNotFoundError) {
+      return;
+    }
 
     throw error;
   }
@@ -736,8 +759,11 @@ async function hasCheckpoint(name: string) {
 }
 
 async function deleteCheckpoints(name: string) {
-  for (const each of await Sandbox.checkpoints())
-    if (each.key === name) await Sandbox.deleteCheckpoint(each.id);
+  for (const each of await Sandbox.checkpoints()) {
+    if (each.key === name) {
+      await Sandbox.deleteCheckpoint(each.id);
+    }
+  }
 }
 
 async function copyWorkspace(
@@ -765,12 +791,13 @@ async function copyWorkspace(
 async function run(sandbox: Sandbox, command: string) {
   const result = await sandbox.exec(command);
 
-  if (result.exitCode !== 0)
+  if (result.exitCode !== 0) {
     throw new Error(`${command} failed: ${result.stderr || result.stdout}`);
+  }
 }
 
 class ByteQueue implements AsyncIterable<Uint8Array> {
-  private readonly chunks: Uint8Array[] = [];
+  private readonly chunks: Array<Uint8Array> = [];
   private done = false;
   private error: Error | undefined;
   private wake: (() => void) | undefined;
@@ -794,7 +821,9 @@ class ByteQueue implements AsyncIterable<Uint8Array> {
     while (true) {
       const chunk = await this.next();
 
-      if (!chunk) return;
+      if (!chunk) {
+        return;
+      }
 
       yield chunk;
     }
@@ -804,17 +833,25 @@ class ByteQueue implements AsyncIterable<Uint8Array> {
     while (true) {
       const chunk = this.chunks.shift();
 
-      if (chunk) return chunk;
+      if (chunk) {
+        return chunk;
+      }
 
-      if (this.done) return this.stop();
+      if (this.done) {
+        return this.stop();
+      }
 
-      await new Promise<void>((resolve) => (this.wake = resolve));
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+      });
       this.wake = undefined;
     }
   }
 
   private stop(): undefined {
-    if (this.error) throw this.error;
+    if (this.error) {
+      throw this.error;
+    }
 
     return undefined;
   }

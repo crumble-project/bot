@@ -7,7 +7,7 @@ export type ServerSettings = z.infer<typeof serverSettingsSchema>;
 
 export const serverSettingsQuery = queryOptions({
   queryKey: ["admin", "settings"],
-  queryFn: () => api<"serverSettings">("/v1/admin/settings"),
+  queryFn: () => api("serverSettings", "/v1/admin/settings"),
 });
 
 export const invalidateAdmin = () =>

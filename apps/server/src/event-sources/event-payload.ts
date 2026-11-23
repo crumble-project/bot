@@ -22,7 +22,9 @@ const decoded = (bytes: Uint8Array) => {
 const boundary = (bytes: Uint8Array, limit: number) => {
   let end = limit;
 
-  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--;
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
+    end--;
+  }
 
   return end;
 };
@@ -30,11 +32,13 @@ const boundary = (bytes: Uint8Array, limit: number) => {
 export function inlineBody(base64: string): InlineBody {
   const bytes = Buffer.from(base64, "base64");
 
-  if (decoded(bytes) === null)
+  if (decoded(bytes) === null) {
     return { text: null, bytes: bytes.length, truncated: false };
+  }
 
-  if (bytes.length <= EVENT_BODY_LIMIT)
+  if (bytes.length <= EVENT_BODY_LIMIT) {
     return { text: decoded(bytes), bytes: bytes.length, truncated: false };
+  }
 
   return {
     text: decoded(bytes.subarray(0, boundary(bytes, EVENT_BODY_LIMIT))),
@@ -44,7 +48,9 @@ export function inlineBody(base64: string): InlineBody {
 }
 
 const bodyNote = (body: InlineBody) => {
-  if (body.truncated) return "\n\nRead the rest with event_payload.";
+  if (body.truncated) {
+    return "\n\nRead the rest with event_payload.";
+  }
 
   return body.text === null && body.bytes > 0
     ? "\n\nThe body isn't UTF-8 text; read it with event_payload."
@@ -92,7 +98,7 @@ export type PayloadPage = {
   offset: number;
   bytes: number;
   totalBytes: number;
-  encoding: "utf-8" | "base64";
+  encoding: "utf8" | "base64";
   data: string;
 };
 
@@ -110,7 +116,7 @@ export function payloadPage(
     offset,
     bytes: slice.length,
     totalBytes: body.length,
-    encoding: text === null ? "base64" : "utf-8",
+    encoding: text === null ? "base64" : "utf8",
     data: text ?? Buffer.from(slice).toString("base64"),
   };
 }

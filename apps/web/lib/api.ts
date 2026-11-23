@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import type { routes } from "@crumble/server/contract/api-contract";
+import { routes } from "@crumble/server/contract/api-contract";
 import { onSessionReset, signedOut } from "@/lib/session";
 
 type Routes = typeof routes;
@@ -81,8 +81,9 @@ async function errorMessage(response: Response) {
 async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
 
-  if (init.body && !headers.has("Content-Type"))
+  if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(path, {
     ...init,
@@ -90,26 +91,48 @@ async function request(path: string, init: RequestInit = {}) {
     headers,
   });
 
-  if (response.status === 401) signedOut();
+  if (response.status === 401) {
+    signedOut();
+  }
 
-  if (!response.ok)
+  if (!response.ok) {
     throw new HttpError(response.status, await errorMessage(response));
+  }
 
   return response;
 }
 
-export async function bodyOf<N extends RouteName>(
+export function bodyOf<N extends RouteName>(
+  name: N,
   response: Response,
-): Promise<ResponseBody<N>> {
-  // SAFETY: the server answers in the shape its route's OpenAPI schema describes.
-  return (await response.json()) as ResponseBody<N>;
+): Promise<ResponseBody<N>>;
+export async function bodyOf(name: RouteName, response: Response) {
+  if (!response.ok) {
+    throw new HttpError(response.status, await errorMessage(response));
+  }
+
+  const result = Object.entries(routes[name].responses).find(
+    ([status]) => Number(status) === response.status,
+  )?.[1];
+  const media =
+    result && "content" in result && "application/json" in result.content
+      ? result.content["application/json"]
+      : undefined;
+  const schema = media && "schema" in media ? media.schema : undefined;
+
+  if (!schema) {
+    throw new Error(`No JSON response schema for ${name} (${response.status})`);
+  }
+
+  return schema.parse(await response.json());
 }
 
 export async function api<N extends RouteName>(
+  name: N,
   path: RoutePath<N>,
   init?: RequestInit,
 ): Promise<ResponseBody<N>> {
-  return bodyOf<N>(await request(path, init));
+  return bodyOf(name, await request(path, init));
 }
 
 function withBody<Body>(method: string, body: Body): RequestInit {
@@ -120,11 +143,12 @@ function withBody<Body>(method: string, body: Body): RequestInit {
 }
 
 export async function call<N extends RouteName>(
+  name: N,
   path: RoutePath<N>,
   method: Method<N>,
   ...[body]: BodyArgument<N>
 ): Promise<ResponseBody<N>> {
-  return bodyOf<N>(await request(path, withBody(method, body)));
+  return bodyOf(name, await request(path, withBody(method, body)));
 }
 
 export async function send<N extends RouteName>(
@@ -162,7 +186,9 @@ function dispatchStreamFrame(frame: string, handlers: StreamHandlers) {
       ?.slice(6)
       .trim() ?? "message";
 
-  if (event === "heartbeat") return;
+  if (event === "heartbeat") {
+    return;
+  }
 
   const data = lines
     .flatMap((line) =>
@@ -185,26 +211,36 @@ async function nextChunk(reader: ReadableStreamDefaultReader<string>) {
 }
 
 async function readEventStream(response: Response, handlers: StreamHandlers) {
-  const reader = response
-    .body!.pipeThrough(new TextDecoderStream())
-    .getReader();
+  const body = response.body;
+
+  if (!body) {
+    throw new Error("Event stream response has no body");
+  }
+
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
 
   let buffer = "";
 
   for (;;) {
     const chunk = await nextChunk(reader);
 
-    if (chunk === null) break;
+    if (chunk === null) {
+      break;
+    }
     buffer += chunk;
     const frames = buffer.split("\n\n");
     buffer = frames.pop() ?? "";
 
-    for (const frame of frames) dispatchStreamFrame(frame, handlers);
+    for (const frame of frames) {
+      dispatchStreamFrame(frame, handlers);
+    }
   }
 }
 
 function endsStream(error: HttpError, handlers: StreamHandlers) {
-  if (error.status === 404) handlers.onGone?.();
+  if (error.status === 404) {
+    handlers.onGone?.();
+  }
 
   return error.status === 401 || error.status === 404;
 }
@@ -217,7 +253,9 @@ async function connect(
   try {
     return await request(path, { signal });
   } catch (error) {
-    if (signal.aborted) return "ended";
+    if (signal.aborted) {
+      return "ended";
+    }
 
     return error instanceof HttpError && endsStream(error, handlers)
       ? "ended"
@@ -235,7 +273,9 @@ export async function follow(
   while (!signal.aborted) {
     const response = await connect(path, handlers, signal);
 
-    if (response === "ended") return;
+    if (response === "ended") {
+      return;
+    }
 
     if (response) {
       handlers.onStatus?.("connected");
@@ -244,11 +284,15 @@ export async function follow(
 
       await readEventStream(response, handlers);
 
-      if (signal.aborted) return;
+      if (signal.aborted) {
+        return;
+      }
     }
 
     handlers.onStatus?.("reconnecting");
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await new Promise((resolve) => {
+      setTimeout(resolve, delay);
+    });
     delay = Math.min(delay * 2, 8000);
   }
 }

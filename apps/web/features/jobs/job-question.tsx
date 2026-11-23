@@ -2,7 +2,8 @@ import { IconMessageQuestion } from "@tabler/icons-react";
 import { SettledCard, useFreshRequest } from "@/components/request-card";
 import { messageCard } from "@/features/chat/message-card";
 import { JobQuestionAnswer } from "./job-question-answer";
-import { type Job, jobsQuery } from "./api";
+import { jobsQuery } from "./api";
+import type { Job } from "./api";
 
 function JobQuestionCard({
   botId,
@@ -13,7 +14,7 @@ function JobQuestionCard({
   question: { id: string; job: string };
   text: string;
 }) {
-  const waitingIn = (jobs: Job[]) =>
+  const waitingIn = (jobs: Array<Job>) =>
     jobs.find((job) => job.question?.id === question.id)?.question;
 
   const { data, reading } = useFreshRequest(
@@ -23,10 +24,11 @@ function JobQuestionCard({
 
   const waiting = data && waitingIn(data);
 
-  if (waiting)
+  if (waiting) {
     return (
       <JobQuestionAnswer botId={botId} job={question.job} question={waiting} />
     );
+  }
 
   return (
     <SettledCard

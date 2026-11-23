@@ -1,12 +1,6 @@
 import { IconHistory } from "@tabler/icons-react";
-import {
-  type Credential,
-  type Credentials,
-  type CredentialUse,
-  credentialPath,
-  credentialsQuery,
-  invalidateCredentials,
-} from "./api";
+import { credentialPath, credentialsQuery, invalidateCredentials } from "./api";
+import type { Credential, Credentials, CredentialUse } from "./api";
 import { CredentialSheet } from "./credential-sheet";
 import { api } from "@/lib/api";
 import {
@@ -14,12 +8,10 @@ import {
   SecretRowMenu,
   SecretRowName,
   UsesDialog,
-  type Target,
 } from "@/features/bot-secrets/bot-secrets";
-import {
-  SecretPage,
-  type SecretRowProps,
-} from "@/features/bot-secrets/secret-page";
+import type { Target } from "@/features/bot-secrets/bot-secrets";
+import { SecretPage } from "@/features/bot-secrets/secret-page";
+import type { SecretRowProps } from "@/features/bot-secrets/secret-page";
 import { BOT_SECRET_USE_RETENTION_DAYS } from "@crumble/server/contract/limits";
 
 const credentialsOf = (data: Credentials) => data.credentials;
@@ -80,7 +72,8 @@ function CredentialUsesDialog({
       empty="Not used yet."
       queryKey={["credential-uses", botId, item.name]}
       load={(query, signal) =>
-        api<"agentCredentialUses">(
+        api(
+          "agentCredentialUses",
           `${credentialPath(botId, item.name)}/uses?${query}`,
           { signal },
         )

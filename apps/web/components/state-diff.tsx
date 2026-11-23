@@ -6,14 +6,18 @@ type Diffable =
       name: string;
       description: string;
       instructions: string;
-      documents: { path: string; content: string }[];
+      documents: Array<{ path: string; content: string }>;
     }
   | null;
 
 function lines(state: Diffable) {
-  if (!state) return [];
+  if (!state) {
+    return [];
+  }
 
-  if ("content" in state) return state.content.split("\n");
+  if ("content" in state) {
+    return state.content.split("\n");
+  }
 
   return [
     `# ${state.name}`,
@@ -30,69 +34,96 @@ function lines(state: Diffable) {
 
 type DiffLine = { kind: " " | "-" | "+"; text: string };
 
-function commonHead(before: string[], after: string[]) {
+function commonHead(before: Array<string>, after: Array<string>) {
   let head = 0;
 
   while (
     head < before.length &&
     head < after.length &&
     before[head] === after[head]
-  )
+  ) {
     head++;
+  }
 
   return head;
 }
 
-function commonTail(before: string[], after: string[], head: number) {
+function commonTail(before: Array<string>, after: Array<string>, head: number) {
   let tail = 0;
 
   while (
     tail < before.length - head &&
     tail < after.length - head &&
     before[before.length - 1 - tail] === after[after.length - 1 - tail]
-  )
+  ) {
     tail++;
+  }
 
   return tail;
 }
 
-function commonLengths(a: string[], b: string[]) {
-  const table = Array.from({ length: a.length + 1 }, () =>
+function commonLengths(a: Array<string>, b: Array<string>) {
+  const table: Array<Array<number>> = Array.from({ length: a.length + 1 }, () =>
     Array.from({ length: b.length + 1 }, () => 0),
   );
 
-  for (let i = a.length - 1; i >= 0; i--)
-    for (let j = b.length - 1; j >= 0; j--)
-      table[i]![j] =
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      const row = table[i];
+
+      if (!row) {
+        continue;
+      }
+
+      row[j] =
         a[i] === b[j]
-          ? table[i + 1]![j + 1]! + 1
-          : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
+          ? lengthAt(table, i + 1, j + 1) + 1
+          : Math.max(lengthAt(table, i + 1, j), lengthAt(table, i, j + 1));
+    }
+  }
 
   return table;
 }
 
-function walkDiff(a: string[], b: string[]) {
+function lengthAt(table: Array<Array<number>>, row: number, column: number) {
+  return table[row]?.[column] ?? 0;
+}
+
+function walkDiff(a: Array<string>, b: Array<string>) {
   const table = commonLengths(a, b);
-  const middle: DiffLine[] = [];
+  const middle: Array<DiffLine> = [];
   let i = 0;
   let j = 0;
 
   while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) {
-      middle.push({ kind: " ", text: a[i++]! });
+    const left = i < a.length ? a[i] : undefined;
+    const right = j < b.length ? b[j] : undefined;
+
+    if (left !== undefined && right !== undefined && left === right) {
+      middle.push({ kind: " ", text: left });
+      i++;
       j++;
     } else if (
-      i < a.length &&
-      (j === b.length || table[i + 1]![j]! >= table[i]![j + 1]!)
-    )
-      middle.push({ kind: "-", text: a[i++]! });
-    else middle.push({ kind: "+", text: b[j++]! });
+      left !== undefined &&
+      (right === undefined ||
+        lengthAt(table, i + 1, j) >= lengthAt(table, i, j + 1))
+    ) {
+      middle.push({ kind: "-", text: left });
+      i++;
+    } else if (right !== undefined) {
+      middle.push({ kind: "+", text: right });
+      j++;
+    }
   }
 
   return middle;
 }
 
-function diff(before: string[], after: string[]): DiffLine[] {
+function same(text: string): DiffLine {
+  return { kind: " ", text };
+}
+
+function diff(before: Array<string>, after: Array<string>): Array<DiffLine> {
   const head = commonHead(before, after);
   const tail = commonTail(before, after, head);
 
@@ -100,8 +131,6 @@ function diff(before: string[], after: string[]): DiffLine[] {
     before.slice(head, before.length - tail),
     after.slice(head, after.length - tail),
   );
-
-  const same = (text: string): DiffLine => ({ kind: " ", text });
 
   return [
     ...before.slice(0, head).map(same),

@@ -1,13 +1,10 @@
 import { asc, eq, isNull } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
-import {
-  memorySource,
-  type ChangeBy,
-  type Memory,
-  type MemorySource,
-} from "../shared/domain";
+import { memorySource } from "../shared/domain";
+import type { ChangeBy, Memory, MemorySource } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
 import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { memories } from "./schema";
@@ -33,7 +30,7 @@ export class MemoryRepository extends Context.Service<
   MemoryRepository,
   {
     /** One bot's memories, or the shared ones for `null`. */
-    readonly list: (agentId: string | null) => Effect.Effect<Memory[]>;
+    readonly list: (agentId: string | null) => Effect.Effect<Array<Memory>>;
     readonly get: (memoryId: string) => Effect.Effect<Memory | null>;
     readonly create: (
       input: NewMemory,
@@ -115,7 +112,10 @@ export class MemoryRepository extends Context.Service<
           updatedAt: at,
         });
 
-        const memory = (yield* get(memoryId))!;
+        const memory = required(
+          yield* get(memoryId),
+          "The memory was not stored",
+        );
         yield* changes.record(
           by,
           "memory",
@@ -135,7 +135,9 @@ export class MemoryRepository extends Context.Service<
       ) {
         const old = yield* get(memoryId);
 
-        if (!old) return null;
+        if (!old) {
+          return null;
+        }
 
         yield* db
           .update(memories)
@@ -145,7 +147,10 @@ export class MemoryRepository extends Context.Service<
           })
           .where(eq(memories.id, memoryId));
 
-        const memory = (yield* get(memoryId))!;
+        const memory = required(
+          yield* get(memoryId),
+          "The memory was not stored",
+        );
         yield* changes.record(by, "memory", old.agentId, old.id, old, memory);
 
         return memory;
@@ -163,7 +168,9 @@ export class MemoryRepository extends Context.Service<
       ) {
         const old = yield* get(memoryId);
 
-        if (!old) return false;
+        if (!old) {
+          return false;
+        }
         yield* discard(memoryId);
         yield* changes.record(by, "memory", old.agentId, old.id, old, null);
 

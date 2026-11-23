@@ -51,7 +51,7 @@ export class GatewayRepository extends Context.Service<
   {
     readonly insert: (receipt: GatewayReceiptInput) => Effect.Effect<boolean>;
     readonly save: (receipt: GatewayReceipt) => Effect.Effect<void>;
-    readonly pending: Effect.Effect<GatewayReceipt[]>;
+    readonly pending: Effect.Effect<Array<GatewayReceipt>>;
     readonly failedCount: (adapterId: string) => Effect.Effect<number>;
     readonly cooldown: (
       adapterId: string,

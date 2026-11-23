@@ -1,20 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { IconEye } from "@tabler/icons-react";
 import { RowTile, Section, SectionError, Page } from "@/components/page";
-import { type VisionModel, visionModelQuery } from "./api";
+import { visionModelQuery } from "./api";
+import type { VisionModel } from "./api";
 import { call, queryClient } from "@/lib/api";
 import { ModelChoiceRow, modelKey } from "./model-choice";
 
 function statusText({ visionModel, choices }: VisionModel) {
-  if (!visionModel)
+  if (!visionModel) {
     return "Off. A bot whose model can't read images refuses them in its bot chat.";
+  }
 
   const chosen = choices.find(
     (item) => modelKey(item) === modelKey(visionModel),
   );
 
-  if (!chosen)
+  if (!chosen) {
     return `No provider key reaches ${visionModel.model}, so images can't be read. Choose another model or turn it off.`;
+  }
 
   return `${chosen.name} describes images for bots whose model can't read them.`;
 }
@@ -33,7 +36,8 @@ function VisionModelRow({ data }: { data: VisionModel }) {
       choices={data.choices}
       description={statusText(data)}
       save={async (visionModel) => {
-        const next = await call<"updateVisionModel">(
+        const next = await call(
+          "updateVisionModel",
           "/v1/vision-model",
           "PUT",
           { visionModel },

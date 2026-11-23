@@ -11,7 +11,7 @@ export const appErrors = <A>(effect: Effect.Effect<A, unknown>) =>
 export const pi = <A>(run: () => Promise<A>) =>
   appErrors(Effect.tryPromise({ try: run, catch: (error) => error }));
 
-export const logged = (label: string, ...subjects: string[]) =>
+export const logged = (label: string, ...subjects: Array<string>) =>
   Effect.catchCause((cause: Cause.Cause<unknown>) =>
     Effect.logError(label, ...subjects, Cause.squash(cause)),
   );

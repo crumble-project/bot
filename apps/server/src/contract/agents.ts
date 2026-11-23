@@ -84,7 +84,7 @@ export const agentInput = z.object({
     .object({
       thinkingLevel: z.enum(THINKING_LEVELS).default("off"),
       temperature: z.number().min(0).max(2).optional(),
-      maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
+      maxOutputTokens: z.number().int().min(1).max(1_000_000).optional(),
     })
     .optional(),
   /** How the bot reviews its work afterwards to learn skills and memory. Thresholds count tool-activity rounds. */
@@ -104,7 +104,7 @@ export const agentInput = z.object({
         .max(1000)
         .default(DEFAULT_REVIEW_THRESHOLD),
       /** Caps the turn digest a review reads; unset, 75% of the review model's context window, at most 600000. */
-      maxInputTokens: z.number().int().min(1000).max(2000000).optional(),
+      maxInputTokens: z.number().int().min(1000).max(2_000_000).optional(),
     })
     .optional(),
   /** The model that runs this bot's reviews; unset or null, they use the bot's own model. Null clears it in a patch. */

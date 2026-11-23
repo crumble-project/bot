@@ -55,11 +55,12 @@ const requestCallTool = (agentId: string, service: CallRequests["Service"]) =>
         Effect.result(service.request(agentId, args)),
       );
 
-      if (Result.isFailure(saved))
+      if (Result.isFailure(saved)) {
         return {
           output: [{ type: "text" as const, text: errorText(saved.failure) }],
           isError: true,
         };
+      }
 
       // SAFETY: CallRequest holds only JSON data.
       const details = saved.success as JsonValue;

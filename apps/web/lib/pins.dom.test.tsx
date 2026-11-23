@@ -5,6 +5,7 @@ import type { Root } from "react-dom/client";
 import { z } from "zod";
 import { settle, waitFor } from "@/test/wait-for";
 import type { Pins } from "./pins";
+import { requestPath } from "@/test/request-path";
 
 type Conversation = { id: string };
 
@@ -26,8 +27,8 @@ const values = {
 };
 
 /** The account's list on the stub server, and every list written to it. */
-let stored: string[] = [];
-let written: string[][] = [];
+let stored: Array<string> = [];
+let written: Array<Array<string>> = [];
 let failWrites = false;
 
 /** Answers sessions without a pins list, as before it loads or from an older server. */
@@ -38,7 +39,7 @@ let pins: Pins | undefined;
 let root: Root;
 let notifySession: () => void;
 
-let renderPins: (bots?: Conversation[]) => Promise<void>;
+let renderPins: (bots?: Array<Conversation>) => Promise<void>;
 
 let fetch: ReturnType<typeof stubServer>;
 
@@ -48,7 +49,7 @@ const stubServer = () =>
   spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
         if (path.endsWith("/update-user")) {
           const body = z
@@ -70,13 +71,14 @@ const stubServer = () =>
           return Response.json({ status: true });
         }
 
-        if (path.endsWith("/get-session"))
+        if (path.endsWith("/get-session")) {
           return Response.json({
             session: { id: "s", userId: "u" },
             user: omitPins
               ? { id: "u" }
               : { id: "u", pinnedConversations: stored },
           });
+        }
 
         return Response.json(null);
       },
@@ -87,16 +89,18 @@ const stubServer = () =>
 const bots = [{ id: "a" }, { id: "b" }, { id: "c" }];
 
 const current = () => {
-  if (!pins) throw new Error("usePins has not rendered");
+  if (!pins) {
+    throw new Error("usePins has not rendered");
+  }
 
   return pins;
 };
 
-const shows = (keys: string[]) => () =>
+const shows = (keys: Array<string>) => () =>
   JSON.stringify(current().pinned) === JSON.stringify(keys);
 
 /** Loads `keys` as the session's list and waits for the hook to show `expected`. */
-async function load(keys: string[], expected = keys) {
+async function load(keys: Array<string>, expected = keys) {
   stored = keys;
   await act(async () => notifySession());
   await waitFor(shows(expected), `pins ${expected.join(",")}`);
@@ -106,8 +110,9 @@ async function load(keys: string[], expected = keys) {
 beforeAll(async () => {
   fetch = stubServer();
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const { createRoot } = await import("react-dom/client");
   const { usePins } = await import("./pins");
@@ -117,7 +122,7 @@ beforeAll(async () => {
   root = createRoot(container);
   notifySession = () => authClient.$store.notify("$sessionSignal");
 
-  function Harness(props: { bots: Conversation[] | undefined }) {
+  function Harness(props: { bots: Array<Conversation> | undefined }) {
     pins = usePins(props.bots);
 
     return null;
@@ -144,8 +149,11 @@ afterAll(async () => {
   fetch.mockRestore();
 
   for (const key of Object.keys(values)) {
-    if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-    else Reflect.deleteProperty(globalThis, key);
+    if (globals[key]) {
+      Object.defineProperty(globalThis, key, globals[key]);
+    } else {
+      Reflect.deleteProperty(globalThis, key);
+    }
   }
 
   window.close();

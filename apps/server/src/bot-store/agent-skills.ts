@@ -6,7 +6,7 @@ type InlineSkill = { name: string; instructions: string };
 export class AgentSkills extends Context.Service<
   AgentSkills,
   {
-    readonly list: (agentId: string) => Effect.Effect<InlineSkill[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<InlineSkill>>;
     readonly replace: (
       agentId: string,
       skills: ReadonlyArray<InlineSkill>,

@@ -6,7 +6,9 @@ function sourceKey(href: string) {
   try {
     const url = new URL(href);
 
-    if (url.protocol !== "https:" && url.protocol !== "http:") return;
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return;
+    }
 
     return `${url.host}${url.pathname.replace(/\/+$/, "")}${url.search}`;
   } catch {
@@ -17,7 +19,7 @@ function sourceKey(href: string) {
 const citation =
   /\[sources?\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)\)/gi;
 
-const slot = String.fromCodePoint(0xe000);
+const slot = String.fromCodePoint(0xe0_00);
 
 const separators = new RegExp(
   `${slot}[ \\t]*(?:,|;|&|and)[ \\t]*(?=${slot})`,
@@ -35,11 +37,16 @@ type Sources = Map<string, string>;
 
 type Citation = { href: string; title: string; site: string };
 
-function addSources(sources: Sources, pages: { url: string; title: string }[]) {
+function addSources(
+  sources: Sources,
+  pages: Array<{ url: string; title: string }>,
+) {
   for (const page of pages) {
     const key = sourceKey(page.url);
 
-    if (key) sources.set(key, page.title);
+    if (key) {
+      sources.set(key, page.title);
+    }
   }
 }
 
@@ -49,16 +56,18 @@ function collectSources(message: TranscriptMessage, sources: Sources) {
     message.isError ||
     (message.toolName !== WEB_SEARCH_TOOL_NAME &&
       message.toolName !== WEB_EXTRACT_TOOL_NAME)
-  )
+  ) {
     return;
+  }
 
   const pages = webPagesDetails.safeParse(message.toolDetails);
 
-  if (pages.success)
+  if (pages.success) {
     addSources(
       sources,
       pages.data.filter((page) => "title" in page),
     );
+  }
 }
 
 function replaceCitations(
@@ -67,24 +76,27 @@ function replaceCitations(
   chips: Map<string, Citation>,
 ) {
   return part
-    .replace(citation, (link, href: string) => {
+    .replaceAll(citation, (link, href: string) => {
       const key = sourceKey(href);
       const title = key === undefined ? undefined : sources.get(key);
 
-      if (key === undefined || title === undefined) return link;
+      if (key === undefined || title === undefined) {
+        return link;
+      }
 
-      if (!chips.has(key))
+      if (!chips.has(key)) {
         chips.set(key, {
           href,
           title,
           site: new URL(href).hostname.replace(/^www\./, ""),
         });
+      }
 
       return slot;
     })
-    .replace(separators, slot)
-    .replace(wrappers, "")
-    .replace(remaining, "");
+    .replaceAll(separators, slot)
+    .replaceAll(wrappers, "")
+    .replaceAll(remaining, "");
 }
 
 function present(message: TranscriptMessage, sources: Sources) {
@@ -100,7 +112,9 @@ function present(message: TranscriptMessage, sources: Sources) {
         return line;
       }
 
-      if (fenced) return line;
+      if (fenced) {
+        return line;
+      }
 
       return line
         .split(/(`[^`]*`)/)
@@ -115,16 +129,20 @@ function present(message: TranscriptMessage, sources: Sources) {
 }
 
 export function projectCitations(
-  messages: TranscriptMessage[],
-  context: TranscriptMessage[] = [],
+  messages: Array<TranscriptMessage>,
+  context: Array<TranscriptMessage> = [],
 ) {
   let sources: Sources = new Map();
 
   for (const message of [...context, ...messages]) {
-    if (message.role === "user") sources = new Map();
+    if (message.role === "user") {
+      sources = new Map();
+    }
 
     collectSources(message, sources);
 
-    if (message.role === "assistant") present(message, sources);
+    if (message.role === "assistant") {
+      present(message, sources);
+    }
   }
 }

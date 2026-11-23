@@ -27,6 +27,6 @@ const missing = files.flatMap((file) =>
 );
 
 if (missing.length > 0) {
-  console.error(missing.join("\n"));
+  process.stderr.write(`${missing.join("\n")}\n`);
   process.exit(1);
 }

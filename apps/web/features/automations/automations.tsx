@@ -1,9 +1,6 @@
 import { useState } from "react";
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   IconCircleCheck,
@@ -15,8 +12,8 @@ import {
   IconPlayerPlay,
   IconPlus,
   IconTrash,
-  type TablerIcon,
 } from "@tabler/icons-react";
+import type { TablerIcon } from "@tabler/icons-react";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,11 +42,11 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BotAvatar } from "@/components/bot-avatar";
 import { ErrorAlert, ConfirmDeleteContent, Page } from "@/components/page";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { call, queryClient, send } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  type Schedule,
   executionsQuery,
   invalidateSchedules,
   schedulePath,
@@ -57,10 +54,13 @@ import {
   scriptRunsQuery,
   toggleScheduleOptions,
 } from "./api";
-import { AutomationDialog, type Editing } from "./editor";
+import type { Schedule } from "./api";
+import { AutomationDialog } from "./editor";
+import type { Editing } from "./editor";
 import { RunsBody } from "./runs";
 import { Heading, TableFrame } from "@/components/table-frame";
-import { type Status, finished, listed, statusOf } from "./timing";
+import { finished, listed, statusOf } from "./timing";
+import type { Status } from "./timing";
 
 const STATUS = {
   active: {
@@ -119,7 +119,7 @@ function AutomationTable({
   byId,
   onEdit,
 }: {
-  schedules: Schedule[];
+  schedules: Array<Schedule>;
   byId: Map<string, Bot>;
   onEdit: (schedule: Schedule) => void;
 }) {
@@ -164,8 +164,8 @@ function AutomationsBody({
   onCreate,
   onEdit,
 }: {
-  bots: UseQueryResult<Bot[]>;
-  schedules: UseQueryResult<Schedule[]>;
+  bots: UseQueryResult<Array<Bot>>;
+  schedules: UseQueryResult<Array<Schedule>>;
   onCreate: () => void;
   onEdit: (schedule: Schedule) => void;
 }) {
@@ -173,14 +173,17 @@ function AutomationsBody({
   const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
   const shown = listed(schedules.data ?? []);
 
-  if (bots.isPending || schedules.isPending)
+  if (bots.isPending || schedules.isPending) {
     return <Skeleton className="h-40 rounded-xl" />;
+  }
 
-  if (schedules.isError)
+  if (schedules.isError) {
     return <ErrorAlert>{schedules.error.message}</ErrorAlert>;
+  }
 
-  if (!shown.length)
+  if (!shown.length) {
     return <AutomationsEmpty firstBot={firstBot} onCreate={onCreate} />;
+  }
 
   return <AutomationTable schedules={shown} byId={byId} onEdit={onEdit} />;
 }
@@ -285,9 +288,11 @@ export function runAutomationOptions(
 
   return {
     mutationFn: async () => {
-      const result = await call<"runSchedule">(`${path}/run`, "POST");
+      const result = await call("runSchedule", `${path}/run`, "POST");
 
-      if (!result.admitted) throw new Error("Automation could not be started");
+      if (!result.admitted) {
+        throw new Error("Automation could not be started");
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({

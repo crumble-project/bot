@@ -8,7 +8,10 @@ import { scheduleInput } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
 import type { Workspaces } from "../workspaces/workspace";
 import { ScheduleRepository } from "./schedule-repository";
-import { standaloneScheduler } from "./scheduler-test-support";
+import {
+  recordedDispatch,
+  standaloneScheduler,
+} from "./scheduler-test-support";
 import { ScriptRunRepository } from "./script-run-repository";
 
 const stores: { store: Store; dir: string }[] = [];
@@ -23,7 +26,7 @@ afterEach(() => {
 const schedulerOver = (store: Store) =>
   standaloneScheduler(
     store.runtime,
-    async () => undefined,
+    async () => recordedDispatch,
     undefined,
     // SAFETY: these tests never start a run, so no method is called.
     {} as Workspaces,

@@ -2,7 +2,8 @@ import { posix } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { Context, JsonValue } from "@earendil-works/chord";
-import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { getOrThrow } from "@earendil-works/pi-durable/env";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Effect } from "effect";
 import type { Agent } from "../contract/agents";
 import { toolOutput } from "../shared/tool-output";
@@ -32,7 +33,7 @@ export type LibraryArguments = {
 
 type Scope = {
   library: Library["Service"];
-  libraries: readonly LibraryRef[];
+  libraries: ReadonlyArray<LibraryRef>;
   workspace: boolean;
 };
 
@@ -45,31 +46,42 @@ const inside = (root: string, path: string) =>
   path === root || path.startsWith(`${root}/`);
 
 async function find(scope: Scope, id: string | undefined) {
-  if (!id) throw new Error("File ID is required");
+  if (!id) {
+    throw new Error("File ID is required");
+  }
 
   for (const library of scope.libraries) {
     const entry = (
       await Effect.runPromise(scope.library.entries(library, [id]))
     ).get(id);
 
-    if (entry) return entry;
+    if (entry) {
+      return entry;
+    }
   }
 
   throw new Error("File not found in the available libraries");
 }
 
 function queryWords(query: string | undefined) {
-  if (query === undefined) return;
+  if (query === undefined) {
+    return;
+  }
 
   const words = query.normalize("NFC").trim().split(/\s+/u).filter(Boolean);
 
-  if (!words.length || query.length > MAX_LIST_QUERY_CHARS)
+  if (!words.length || query.length > MAX_LIST_QUERY_CHARS) {
     throw new Error(
       `Search query must have words and at most ${MAX_LIST_QUERY_CHARS} characters`,
     );
+  }
 
   return words.map(
-    (word) => new RegExp(word.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "iu"),
+    (word) =>
+      new RegExp(
+        word.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`),
+        "iu",
+      ),
   );
 }
 
@@ -80,7 +92,9 @@ function excerptAt(text: string, start: number) {
   for (const point of text.slice(start)) {
     bytes += Buffer.byteLength(point, "utf8");
 
-    if (bytes > EXCERPT_BYTES) break;
+    if (bytes > EXCERPT_BYTES) {
+      break;
+    }
     excerpt += point;
   }
 
@@ -99,7 +113,9 @@ type ListedFile = {
 };
 
 const newestFirst = (a: LibraryEntry, b: LibraryEntry) => {
-  if (a.id === b.id) return 0;
+  if (a.id === b.id) {
+    return 0;
+  }
 
   return a.id < b.id ? 1 : -1;
 };
@@ -107,20 +123,22 @@ const newestFirst = (a: LibraryEntry, b: LibraryEntry) => {
 async function matchFile(
   scope: Scope,
   entry: LibraryEntry,
-  words: RegExp[],
+  words: Array<RegExp>,
 ): Promise<{ matched: boolean; excerpt?: string; textBytes: number }> {
   const known = `${entry.name}\n${entry.description ?? ""}`.normalize("NFC");
   const missing = words.filter((word) => !word.test(known));
 
-  if (!missing.length || entry.text !== "extracted")
+  if (!missing.length || entry.text !== "extracted") {
     return { matched: !missing.length, textBytes: 0 };
+  }
 
   const raw = await Effect.runPromise(scope.library.text(entry));
   const text = raw?.normalize("NFC") ?? "";
   const textBytes = Buffer.byteLength(text, "utf8");
 
-  if (!missing.every((word) => word.test(text)))
+  if (!missing.every((word) => word.test(text))) {
     return { matched: false, textBytes };
+  }
 
   const start = Math.min(
     ...words.flatMap((word) => {
@@ -143,9 +161,13 @@ function listed(entry: LibraryEntry, excerpt: string | undefined): ListedFile {
     library: entry.library,
   };
 
-  if (entry.description !== null) file.description = entry.description;
+  if (entry.description !== null) {
+    file.description = entry.description;
+  }
 
-  if (excerpt !== undefined) file.excerpt = excerpt;
+  if (excerpt !== undefined) {
+    file.excerpt = excerpt;
+  }
 
   return file;
 }
@@ -165,11 +187,15 @@ async function candidates(scope: Scope, before: string | undefined) {
   let cutoff: string | undefined;
 
   for (const page of pages) {
-    if (page.length !== LIST_PAGE) continue;
+    if (page.length !== LIST_PAGE) {
+      continue;
+    }
 
     const last = page.at(-1);
 
-    if (last && (cutoff === undefined || last.id > cutoff)) cutoff = last.id;
+    if (last && (cutoff === undefined || last.id > cutoff)) {
+      cutoff = last.id;
+    }
   }
 
   const entries = pages
@@ -180,8 +206,12 @@ async function candidates(scope: Scope, before: string | undefined) {
   return { entries, exhausted: cutoff === undefined };
 }
 
-async function scan(scope: Scope, entries: LibraryEntry[], words?: RegExp[]) {
-  const files: ListedFile[] = [];
+async function scan(
+  scope: Scope,
+  entries: Array<LibraryEntry>,
+  words?: Array<RegExp>,
+) {
+  const files: Array<ListedFile> = [];
   let textBytes = 0;
   let scanned: string | undefined;
 
@@ -207,8 +237,9 @@ async function scan(scope: Scope, entries: LibraryEntry[], words?: RegExp[]) {
 
     scanned = entry.id;
 
-    if (textBytes > MAX_SEARCH_TEXT_BYTES && entry !== entries.at(-1))
+    if (textBytes > MAX_SEARCH_TEXT_BYTES && entry !== entries.at(-1)) {
       return { files, scanned, stopped: true };
+    }
   }
 
   return { files, scanned, stopped: false };
@@ -231,15 +262,19 @@ async function describe(
   scope: Scope,
   args: LibraryArguments,
 ): Promise<JsonValue> {
-  if (!args.id) throw new Error("File ID is required");
+  if (!args.id) {
+    throw new Error("File ID is required");
+  }
 
-  if (args.description === undefined)
+  if (args.description === undefined) {
     throw new Error("Description is required");
+  }
 
-  if (args.description.length > MAX_DESCRIPTION_CHARS)
+  if (args.description.length > MAX_DESCRIPTION_CHARS) {
     throw new Error(
       `Description must be at most ${MAX_DESCRIPTION_CHARS} characters`,
     );
+  }
 
   const description = args.description.trim() || null;
 
@@ -248,7 +283,9 @@ async function describe(
       scope.library.describe(library, args.id, description),
     );
 
-    if (entry) return { id: entry.id, library: entry.library, description };
+    if (entry) {
+      return { id: entry.id, library: entry.library, description };
+    }
   }
 
   throw new Error("File not found in the available libraries");
@@ -292,16 +329,26 @@ function read(
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
 
-    if (byteSize(result(middle)) <= MAX_LIBRARY_OUTPUT_BYTES) low = middle;
-    else high = middle - 1;
+    if (byteSize(result(middle)) <= MAX_LIBRARY_OUTPUT_BYTES) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
   }
 
   end = low;
 
-  while (end > offset && end < bytes.length && (bytes[end]! & 0xc0) === 0x80)
+  while (
+    end > offset &&
+    end < bytes.length &&
+    ((bytes[end] ?? 0) & 0xc0) === 0x80
+  ) {
     end--;
+  }
 
-  if (end === offset && low > offset) end = low;
+  if (end === offset && low > offset) {
+    end = low;
+  }
 
   return result(end);
 }
@@ -311,10 +358,12 @@ function search(
   text: string,
   args: LibraryArguments,
 ): JsonValue {
-  if (!args.query) throw new Error("Search query is required");
+  if (!args.query) {
+    throw new Error("Search query is required");
+  }
   const bytes = Buffer.from(text, "utf8");
   const query = Buffer.from(args.query, "utf8");
-  const matches: { offset: number; text: string }[] = [];
+  const matches: Array<{ offset: number; text: string }> = [];
 
   const result = (nextOffset: number | null) => ({
     id: entry.id,
@@ -358,23 +407,28 @@ async function safeTarget(environment: Environment, target: string) {
   while (true) {
     const info = await env.fileInfo(ancestor, context);
 
-    if (info.ok && info.value.kind === "symlink")
+    if (info.ok && info.value.kind === "symlink") {
       throw new Error(
         "Copy target must stay inside /workspace and cannot use symbolic links",
       );
+    }
 
-    if (!info.ok && info.error.code !== "not_found") throw info.error;
+    if (!info.ok && info.error.code !== "not_found") {
+      throw info.error;
+    }
     const resolved = await env.canonicalPath(ancestor, context);
 
     if (resolved.ok) {
-      if (!inside(root, resolved.value))
+      if (!inside(root, resolved.value)) {
         throw new Error("Copy target must stay inside /workspace");
+      }
 
       return;
     }
 
-    if (resolved.error.code !== "not_found" || ancestor === WORKSPACE_PATH)
+    if (resolved.error.code !== "not_found" || ancestor === WORKSPACE_PATH) {
       throw resolved.error;
+    }
     ancestor = posix.dirname(ancestor);
   }
 }
@@ -385,13 +439,14 @@ async function copy(
   args: LibraryArguments,
   environment: Environment | undefined,
 ): Promise<JsonValue> {
-  if (!scope.workspace || !environment)
+  if (!scope.workspace || !environment) {
     throw new Error("Copy requires a workspace");
+  }
 
   const name = entry.name
     .split(/[\\/]/)
     .at(-1)
-    ?.replace(/[^\p{L}\p{N}._-]/gu, "_");
+    ?.replaceAll(/[^\p{L}\p{N}._-]/gu, "_");
 
   const safeName = name && name !== "." && name !== ".." ? name : "file";
 
@@ -400,8 +455,9 @@ async function copy(
     args.path ?? `library/${safeName}`,
   );
 
-  if (path === WORKSPACE_PATH || !inside(WORKSPACE_PATH, path))
+  if (path === WORKSPACE_PATH || !inside(WORKSPACE_PATH, path)) {
     throw new Error("Copy target must stay inside /workspace");
+  }
   await safeTarget(environment, path);
   const { env, context } = environment;
   getOrThrow(
@@ -421,7 +477,9 @@ async function copy(
     while (true) {
       const chunk = await reader.read();
 
-      if (chunk.done) break;
+      if (chunk.done) {
+        break;
+      }
       getOrThrow(await env.appendFile(path, chunk.value, context));
     }
   } finally {
@@ -440,29 +498,38 @@ export async function libraryAction(
   if (
     args.offset !== undefined &&
     (!Number.isSafeInteger(args.offset) || args.offset < 0)
-  )
+  ) {
     throw new Error("Offset must be a nonnegative byte offset");
+  }
 
   if (
     args.length !== undefined &&
     (!Number.isSafeInteger(args.length) || args.length <= 0)
-  )
+  ) {
     throw new Error("Length must be positive");
+  }
 
-  if (args.action === "list") return list(scope, args.before, args.query);
+  if (args.action === "list") {
+    return list(scope, args.before, args.query);
+  }
 
-  if (args.action === "describe") return describe(scope, args);
+  if (args.action === "describe") {
+    return describe(scope, args);
+  }
   const entry = await find(scope, args.id);
 
-  if (args.action === "copy") return copy(scope, entry, args, environment);
+  if (args.action === "copy") {
+    return copy(scope, entry, args, environment);
+  }
   const text = await Effect.runPromise(scope.library.text(entry));
 
-  if (text === null)
+  if (text === null) {
     return {
       id: entry.id,
       library: entry.library,
       note: "No text could be read from this file.",
     };
+  }
 
   return args.action === "read"
     ? read(entry, text, args)
@@ -472,7 +539,7 @@ export async function libraryAction(
 export function libraryExtension(options: {
   agent: Agent;
   library: Library["Service"];
-  libraries: () => LibraryRef[];
+  libraries: () => Array<LibraryRef>;
   workspace: boolean;
 }) {
   const actions = options.workspace
@@ -499,7 +566,9 @@ export function libraryExtension(options: {
     execute: async (args, api, context) => {
       let environment: Environment | undefined;
 
-      if (api.env) environment = { env: api.env, context };
+      if (api.env) {
+        environment = { env: api.env, context };
+      }
 
       return toolOutput(
         await libraryAction(

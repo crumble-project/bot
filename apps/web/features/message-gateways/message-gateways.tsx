@@ -36,14 +36,11 @@ import {
   SettingRow,
   Page,
 } from "@/components/page";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { BotSelect } from "@/features/bots/bot-select";
-import {
-  type GatewayConfig,
-  type MessageGateway,
-  messageGatewayPath,
-  messageGatewaysQuery,
-} from "./api";
+import { messageGatewayPath, messageGatewaysQuery } from "./api";
+import type { GatewayConfig, MessageGateway } from "./api";
 import { call, queryClient } from "@/lib/api";
 import { PluginSettingRows } from "@/features/plugin-settings/plugin-settings";
 
@@ -52,8 +49,8 @@ type Draft = Omit<
   "ownerId" | "allowedChannelIds" | "aliases"
 > & {
   ownerId: string;
-  allowedChannelIds: { id: string; value: string }[];
-  aliases: (GatewayConfig["aliases"][number] & { id: string })[];
+  allowedChannelIds: Array<{ id: string; value: string }>;
+  aliases: Array<GatewayConfig["aliases"][number] & { id: string }>;
 };
 
 const draftOf = (config: GatewayConfig): Draft => ({
@@ -97,7 +94,9 @@ function GatewayLogo({ gateway }: { gateway: MessageGateway }) {
 }
 
 function GatewayStatus({ gateway }: { gateway: MessageGateway }) {
-  if (!gateway.config.enabled) return <Badge variant="outline">Disabled</Badge>;
+  if (!gateway.config.enabled) {
+    return <Badge variant="outline">Disabled</Badge>;
+  }
 
   return (
     <Badge variant={gateway.status === "error" ? "destructive" : "secondary"}>
@@ -115,15 +114,22 @@ function GatewayStatus({ gateway }: { gateway: MessageGateway }) {
 
 type GatewayErrors = Record<string, string | undefined>;
 
-function gatewayIssueMessage(issue: { path: PropertyKey[]; message: string }) {
-  if (issue.path[0] === "ownerId")
+function gatewayIssueMessage(issue: {
+  path: Array<PropertyKey>;
+  message: string;
+}) {
+  if (issue.path[0] === "ownerId") {
     return "Enter one user ID, without spaces or commas.";
+  }
 
   if (issue.path[0] === "aliases") {
-    if (issue.path[2] === "handle")
+    if (issue.path[2] === "handle") {
       return "Use letters, numbers, underscores or hyphens, without @.";
+    }
 
-    if (issue.path[2] === "botId") return "Choose a bot for every alias.";
+    if (issue.path[2] === "botId") {
+      return "Choose a bot for every alias.";
+    }
   }
 
   return issue.message;
@@ -131,7 +137,7 @@ function gatewayIssueMessage(issue: { path: PropertyKey[]; message: string }) {
 
 function gatewayErrors(
   config: GatewayConfig,
-  bots: Bot[],
+  bots: Array<Bot>,
   parsed: ReturnType<typeof gatewayConfigInput.safeParse>,
 ) {
   const errors: Record<string, string> = {};
@@ -146,14 +152,20 @@ function gatewayErrors(
 
   const botExists = (id: string | null) => bots.some((bot) => bot.id === id);
 
-  if (config.enabled && config.defaultBotId && !botExists(config.defaultBotId))
+  if (
+    config.enabled &&
+    config.defaultBotId &&
+    !botExists(config.defaultBotId)
+  ) {
     errors["defaultBotId"] = "The saved bot was deleted. Choose another.";
+  }
 
   if (
     config.enabled &&
     config.aliases.some((alias) => alias.botId && !botExists(alias.botId))
-  )
+  ) {
     errors["aliases"] = "Choose an existing bot for every alias.";
+  }
 
   return errors;
 }
@@ -161,7 +173,7 @@ function gatewayErrors(
 type FieldsProps = {
   prefix: string;
   draft: Draft;
-  bots: Bot[];
+  bots: Array<Bot>;
   errors: GatewayErrors;
   patch: (next: Partial<Draft>) => void;
 };
@@ -230,7 +242,7 @@ function AliasRow({
 }: {
   alias: Draft["aliases"][number];
   index: number;
-  bots: Bot[];
+  bots: Array<Bot>;
   invalid: boolean;
   onChange: (next: Partial<Draft["aliases"][number]>) => void;
   onRemove: () => void;
@@ -504,7 +516,7 @@ function AccessSection({
   );
 }
 
-function useGatewayEditor(gateway: MessageGateway, bots: Bot[]) {
+function useGatewayEditor(gateway: MessageGateway, bots: Array<Bot>) {
   const [draft, setDraft] = useState(() => draftOf(gateway.config));
   const [attempted, setAttempted] = useState(false);
   const config = configOf(draft);
@@ -513,7 +525,7 @@ function useGatewayEditor(gateway: MessageGateway, bots: Bot[]) {
 
   const save = useMutation({
     mutationFn: (next: GatewayConfig) =>
-      call<"updateMessageGateway">(messageGatewayPath(gateway.id), "PUT", next),
+      call("updateMessageGateway", messageGatewayPath(gateway.id), "PUT", next),
     onSuccess: async (next) => {
       setDraft(draftOf(next.config));
       setAttempted(false);
@@ -539,7 +551,9 @@ function useGatewayEditor(gateway: MessageGateway, bots: Bot[]) {
   const submit = () => {
     setAttempted(true);
 
-    if (!Object.keys(errors).length && parsed.success) save.mutate(parsed.data);
+    if (!Object.keys(errors).length && parsed.success) {
+      save.mutate(parsed.data);
+    }
   };
 
   const reset = () => {
@@ -556,7 +570,7 @@ function GatewayEditor({
   bots,
 }: {
   gateway: MessageGateway;
-  bots: Bot[];
+  bots: Array<Bot>;
 }) {
   const { fields, save, dirty, submit, reset } = useGatewayEditor(
     gateway,
@@ -633,12 +647,13 @@ export function MessageGatewaySettings({ gatewayId }: { gatewayId: string }) {
   const bots = useQuery(botsQuery);
   const gateway = gateways.data?.find((item) => item.id === gatewayId);
 
-  if (gateways.data && !gateway)
+  if (gateways.data && !gateway) {
     return (
       <Section title="Not found">
         <SectionEmpty>This server has no gateway {gatewayId}.</SectionEmpty>
       </Section>
     );
+  }
 
   return (
     <>

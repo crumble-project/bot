@@ -1,7 +1,7 @@
-type OAuthRegistration = {
-  client_id?: string;
-  [key: string]: string | undefined;
-};
+import { z } from "zod";
+
+/** A dynamic client registration request, which the fake server echoes back. */
+const registrationSchema = z.looseObject({ client_id: z.string().optional() });
 
 export function gate() {
   let entered!: () => void;
@@ -28,7 +28,7 @@ export function gate() {
 type Gate = ReturnType<typeof gate>;
 
 export function fakeAuthorizationServer({ issParameter = false } = {}) {
-  const tokenRequests: URLSearchParams[] = [];
+  const tokenRequests: Array<URLSearchParams> = [];
   let refreshRefused = false;
   let exchangeGate: Gate | undefined;
   let refreshGate: Gate | undefined;
@@ -64,8 +64,7 @@ export function fakeAuthorizationServer({ issParameter = false } = {}) {
       }
 
       if (url.pathname === "/register" && request.method === "POST") {
-        // SAFETY: OAuth registration requests contain a JSON object.
-        const registration = (await request.json()) as OAuthRegistration;
+        const registration = registrationSchema.parse(await request.json());
         await registrationGate?.wait();
 
         return Response.json(
@@ -81,8 +80,9 @@ export function fakeAuthorizationServer({ issParameter = false } = {}) {
         const refresh = params.get("grant_type") === "refresh_token";
         await (refresh ? refreshGate : exchangeGate)?.wait();
 
-        if (refreshRefused && refresh)
+        if (refreshRefused && refresh) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
+        }
 
         return Response.json({
           access_token: `access-${number}`,
@@ -92,13 +92,14 @@ export function fakeAuthorizationServer({ issParameter = false } = {}) {
         });
       }
 
-      if (url.pathname === "/mcp")
+      if (url.pathname === "/mcp") {
         return new Response("unauthorized", {
           status: 401,
           headers: {
             "WWW-Authenticate": `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource/mcp"`,
           },
         });
+      }
 
       return new Response("not found", { status: 404 });
     },

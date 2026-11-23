@@ -1,9 +1,13 @@
 import { Context, Effect, Layer } from "effect";
-import type { ChangeBy, Memory } from "../shared/domain";
-import type { LearnedChange, Skill } from "../contract/skills";
+import type { ChangeBy } from "../shared/domain";
+import type { LearnedChange } from "../contract/skills";
 import { ProductDatabase } from "../shared/product-database";
 import { MemoryRepository } from "../memory/memory-repository";
-import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
+import {
+  isMemorySnapshot,
+  isSkillSnapshot,
+  LearnedChangeRepository,
+} from "../learned-changes/learned-change-repository";
 import { SkillRepository } from "../skills/skill-repository";
 
 export class ChangeReverter extends Context.Service<
@@ -29,7 +33,9 @@ export class ChangeReverter extends Context.Service<
       ) {
         const change = yield* changes.get(changeId);
 
-        if (!change) return null;
+        if (!change) {
+          return null;
+        }
 
         return yield* db.transaction(() =>
           Effect.gen(function* () {
@@ -39,19 +45,29 @@ export class ChangeReverter extends Context.Service<
                 : yield* memories.get(change.targetId);
 
             if (change.target === "skill") {
-              // SAFETY: a change's before state has the shape of its target, written by the same repository.
-              const before = change.before as Skill | null;
+              const before = isSkillSnapshot(change.before)
+                ? change.before
+                : null;
 
-              if (current) yield* skills.discard(change.targetId);
+              if (current) {
+                yield* skills.discard(change.targetId);
+              }
 
-              if (before) yield* skills.restore(before);
+              if (before) {
+                yield* skills.restore(before);
+              }
             } else {
-              // SAFETY: a change's before state has the shape of its target, written by the same repository.
-              const before = change.before as Memory | null;
+              const before = isMemorySnapshot(change.before)
+                ? change.before
+                : null;
 
-              if (current) yield* memories.discard(change.targetId);
+              if (current) {
+                yield* memories.discard(change.targetId);
+              }
 
-              if (before) yield* memories.restore(before);
+              if (before) {
+                yield* memories.restore(before);
+              }
             }
 
             const revertId = yield* changes.record(

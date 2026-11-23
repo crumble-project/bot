@@ -12,6 +12,32 @@ import { waitFor, waitForIdle } from "@/test/wait-for";
 import { useBotFields } from "./bot-fields";
 import { matchingReasoningPreview } from "./reasoning";
 
+function SelectionHarness() {
+  const { selection } = useBotFields({
+    provider: "a",
+    model: "first",
+    name: "Bot",
+  });
+
+  return (
+    <>
+      <output>{`${selection.level}:${selection.options.map((o) => o.label).join(",")}:${selection.previewReady}`}</output>
+      <button
+        type="button"
+        onClick={() => {
+          selection.setProvider("b");
+          selection.setModel("second");
+        }}
+      >
+        Switch
+      </button>
+      <button type="button" onClick={() => selection.setThinkingLevel("high")}>
+        High
+      </button>
+    </>
+  );
+}
+
 const options = [
   { value: "off", label: "Off" },
   { value: "high", label: "High" },
@@ -35,8 +61,9 @@ test("draft switches ignore late previews and retain a pending choice", async ()
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (z.string().safeParse(input).data === "/v1/providers")
+        if (z.string().safeParse(input).data === "/v1/providers") {
           return Response.json([]);
+        }
 
         const body = z
           .object({
@@ -46,12 +73,12 @@ test("draft switches ignore late previews and retain a pending choice", async ()
           })
           .parse(JSON.parse(z.string().parse(init?.body)));
 
-        return new Promise<Response>((resolve) =>
+        return new Promise<Response>((resolve) => {
           pending.set(
             `${body.provider}/${body.model}/${body.thinkingLevel}`,
             resolve,
-          ),
-        );
+          );
+        });
       },
       { preconnect: globalThis.fetch.preconnect },
     ),
@@ -65,29 +92,6 @@ test("draft switches ignore late previews and retain a pending choice", async ()
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-
-  function Harness() {
-    const { selection } = useBotFields({
-      provider: "a",
-      model: "first",
-      name: "Bot",
-    });
-
-    return (
-      <>
-        <output>{`${selection.level}:${selection.options.map((o) => o.label).join(",")}:${selection.previewReady}`}</output>
-        <button
-          onClick={() => {
-            selection.setProvider("b");
-            selection.setModel("second");
-          }}
-        >
-          Switch
-        </button>
-        <button onClick={() => selection.setThinkingLevel("high")}>High</button>
-      </>
-    );
-  }
 
   const resolve = async (
     key: string,
@@ -103,7 +107,7 @@ test("draft switches ignore late previews and retain a pending choice", async ()
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <Harness />
+          <SelectionHarness />
         </QueryClientProvider>,
       );
     });
@@ -168,9 +172,13 @@ test("failed reasoning preview can be retried without losing the bot draft", asy
             : Response.json({ options, effectiveLevel: "off" });
         }
 
-        if (path.startsWith("/v1/models")) return Response.json([]);
+        if (path.startsWith("/v1/models")) {
+          return Response.json([]);
+        }
 
-        if (path === "/v1/capabilities") return Response.json({});
+        if (path === "/v1/capabilities") {
+          return Response.json({ coding: false, desktop: false, jobKinds: [] });
+        }
 
         return Response.json([]);
       },
@@ -206,7 +214,7 @@ test("failed reasoning preview can be retried without losing the bot draft", asy
             submitted = true;
           }}
         />
-        <button form="bot" disabled={fields.invalid}>
+        <button type="button" form="bot" disabled={fields.invalid}>
           Save
         </button>
       </>

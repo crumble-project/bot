@@ -5,24 +5,22 @@ import type { Register } from "../contract/route";
 import { pluginSettingKey } from "../shared/vendors";
 import { Secrets } from "../secrets/secrets";
 import { NotFound } from "../shared/errors";
-import {
-  pluginContributions,
-  type CrumblePlugin,
-  type PluginSetting,
-} from "./plugins";
+import { pluginContributions } from "./plugins";
+import type { CrumblePlugin, PluginSetting } from "./plugins";
 
 const findSetting = (
-  plugins: readonly CrumblePlugin[],
+  plugins: ReadonlyArray<CrumblePlugin>,
   pluginId: string,
   key: string,
 ) => {
   const plugin = plugins.find((candidate) => candidate.id === pluginId);
   const setting = plugin?.settings?.find((candidate) => candidate.key === key);
 
-  if (!plugin || !setting)
+  if (!plugin || !setting) {
     throw new NotFound({
       message: `${pluginId} has no setting ${key} on this server`,
     });
+  }
 
   return { plugin, setting, stored: pluginSettingKey(plugin.id, key) };
 };
@@ -41,7 +39,7 @@ const describe = Effect.fnUntraced(function* (
 
 export function registerPluginSettingRoutes(options: {
   register: Register<Env, Secrets>;
-  plugins: readonly CrumblePlugin[];
+  plugins: ReadonlyArray<CrumblePlugin>;
 }) {
   const { register } = options;
 

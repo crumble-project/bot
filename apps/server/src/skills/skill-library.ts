@@ -3,7 +3,8 @@ import { defineTool, LiveDoc } from "@earendil-works/pi-durable";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
 import { Schema } from "effect";
-import { skillNameKey, type SkillDocument } from "./skill-repository";
+import { skillNameKey } from "./skill-repository";
+import type { SkillDocument } from "./skill-repository";
 import {
   MAX_SKILL_DOCUMENT_PATH_CHARS,
   MAX_SKILL_NAME_CHARS,
@@ -17,7 +18,7 @@ export type AvailableSkill = {
   name: string;
   description: string;
   instructions: string;
-  documents: SkillDocument[];
+  documents: Array<SkillDocument>;
   scope: "default" | "shared" | "own";
 };
 
@@ -53,14 +54,23 @@ export class SkillReads {
   private readonly runs = new Map<string, Set<string>>();
 
   mark(runKey: string | null, skillId: string) {
-    if (!runKey) return;
+    if (!runKey) {
+      return;
+    }
     const reads = this.runs.get(runKey) ?? new Set<string>();
     reads.add(skillId);
     this.runs.delete(runKey);
     this.runs.set(runKey, reads);
 
-    while (this.runs.size > MAX_TRACKED_RUNS)
-      this.runs.delete(this.runs.keys().next().value!);
+    while (this.runs.size > MAX_TRACKED_RUNS) {
+      const oldest = this.runs.keys().next().value;
+
+      if (oldest === undefined) {
+        break;
+      }
+
+      this.runs.delete(oldest);
+    }
   }
 
   has(runKey: string | null, skillId: string) {
@@ -82,7 +92,7 @@ export const SKILLS_GUIDANCE =
 export const SKILL_WRITING_GUIDANCE =
   "Skills come first for what you learn while working: a procedure that worked, a pitfall and why, and the owner's preferences and corrections for that kind of work belong in the skill you used or built for the task, through skill_manage, where they load only when relevant. Patch the loaded skill before creating a new one, name new skills at the class of task, and write lessons as rules with their reason, not as a log of what happened. Memory is only for facts that hold in every conversation regardless of task.";
 
-export function resolveSkill(skills: AvailableSkill[], name: string) {
+export function resolveSkill(skills: Array<AvailableSkill>, name: string) {
   const wanted = skillNameKey(name.trim());
 
   return (
@@ -95,21 +105,25 @@ export function resolveSkill(skills: AvailableSkill[], name: string) {
 export function skillSummary(
   skill: Pick<AvailableSkill, "description" | "instructions">,
 ) {
-  if (skill.description.trim()) return skill.description.trim();
+  if (skill.description.trim()) {
+    return skill.description.trim();
+  }
 
   const firstLine =
     skill.instructions
       .split(/\r?\n/)
       .map((line) => line.replace(/^#+\s*/, "").trim())
-      .find((line) => line) ?? "";
+      .find(Boolean) ?? "";
 
   return firstLine.length > DESCRIPTION_PREVIEW
     ? `${firstLine.slice(0, DESCRIPTION_PREVIEW - 1)}…`
     : firstLine;
 }
 
-export function skillIndex(skills: AvailableSkill[]) {
-  if (!skills.length) return "";
+export function skillIndex(skills: Array<AvailableSkill>) {
+  if (!skills.length) {
+    return "";
+  }
 
   const seen = new Set<string>();
 
@@ -118,7 +132,9 @@ export function skillIndex(skills: AvailableSkill[]) {
     .flatMap((skill) => {
       const key = skillNameKey(skill.name);
 
-      if (seen.has(key)) return [];
+      if (seen.has(key)) {
+        return [];
+      }
       seen.add(key);
       const summary = skillSummary(skill);
 
@@ -129,7 +145,7 @@ export function skillIndex(skills: AvailableSkill[]) {
 }
 
 export type SkillToolCallbacks = {
-  skills: () => AvailableSkill[] | Promise<AvailableSkill[]>;
+  skills: () => Array<AvailableSkill> | Promise<Array<AvailableSkill>>;
   used?: (skill: AvailableSkill, runKey: string | null) => void | Promise<void>;
 };
 
@@ -149,10 +165,11 @@ const skillToolParameters = Type.Object({
 const skillDocument = (skill: AvailableSkill, path: string) => {
   const document = skill.documents.find((candidate) => candidate.path === path);
 
-  if (!document)
+  if (!document) {
     throw new Error(
       `Skill ${skill.name} has no document ${path}; it has: ${skill.documents.map((each) => each.path).join(", ") || "none"}`,
     );
+  }
 
   return document;
 };
@@ -169,7 +186,7 @@ export function skillTool(callbacks: SkillToolCallbacks) {
       const skills = await callbacks.skills();
       const { runKey } = await skillToolContext(api, callContext);
 
-      if (args.action === "list")
+      if (args.action === "list") {
         return text(
           skills.map((skill) => ({
             name: skill.name,
@@ -178,11 +195,16 @@ export function skillTool(callbacks: SkillToolCallbacks) {
             documents: skill.documents.map((document) => document.path),
           })),
         );
+      }
 
-      if (!args.name) throw new Error("A skill name is required to view it");
+      if (!args.name) {
+        throw new Error("A skill name is required to view it");
+      }
       const skill = resolveSkill(skills, args.name);
 
-      if (!skill) throw new Error(`Unknown skill: ${args.name}`);
+      if (!skill) {
+        throw new Error(`Unknown skill: ${args.name}`);
+      }
 
       if (args.path) {
         const document = skillDocument(skill, args.path);
@@ -214,14 +236,14 @@ type SkillToolResult =
       name: string;
       description: string;
       scope: AvailableSkill["scope"];
-      documents: string[];
+      documents: Array<string>;
     }>
   | {
       name: string;
       description: string;
       scope: AvailableSkill["scope"];
       instructions: string;
-      documents: string[];
+      documents: Array<string>;
     }
   | { name: string; path: string; content: string };
 

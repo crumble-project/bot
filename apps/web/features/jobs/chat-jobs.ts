@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { Message } from "@/features/chat/api";
 import { JOB_KIND_NAMES, isJobKind } from "@crumble/server/contract/tools";
-import { type JobRef, jobsQuery, invalidateJobs } from "./api";
+import { jobsQuery, invalidateJobs } from "./api";
+import type { JobRef } from "./api";
 import { jobOf } from "./job-card";
 
-export function useChatJobs(botId: string, messages: Message[]) {
+export function useChatJobs(botId: string, messages: Array<Message>) {
   const jobs = messages.flatMap((message) => jobOf(message) ?? []);
   const kinds = new Set(jobs.map((job) => job.kind));
 
@@ -23,10 +24,14 @@ export function useChatJobs(botId: string, messages: Message[]) {
   const counted = useRef(jobMessages);
 
   useEffect(() => {
-    if (counted.current === jobMessages) return;
+    if (counted.current === jobMessages) {
+      return;
+    }
     counted.current = jobMessages;
 
-    for (const kind of JOB_KIND_NAMES) void invalidateJobs(botId, kind);
+    for (const kind of JOB_KIND_NAMES) {
+      void invalidateJobs(botId, kind);
+    }
   }, [botId, jobMessages]);
 
   return ({ kind, name }: JobRef) =>

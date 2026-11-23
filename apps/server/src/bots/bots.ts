@@ -8,7 +8,8 @@ import type { LearnedChange } from "../contract/skills";
 import type { Conversation } from "../bot-store/conversation-repository";
 import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { botsContext } from "./bots-context";
 import { botsService } from "./bots-service";
 import type {
@@ -51,7 +52,7 @@ export type LearnedActivity = {
 /** The account's pinned conversations changed; the whole list, first pin first. */
 export type PinsActivity = {
   type: "pins";
-  pinnedConversations: string[];
+  pinnedConversations: Array<string>;
 };
 
 export type Activity =
@@ -61,11 +62,11 @@ export type Activity =
   | PinsActivity;
 
 type ReferencedMessage = TranscriptMessage & {
-  replyReferences: ReplyReference[];
+  replyReferences: Array<ReplyReference>;
 };
 
 export type ChatSnapshot = Omit<RuntimeSnapshot, "messages"> & {
-  messages: ReferencedMessage[];
+  messages: Array<ReferencedMessage>;
   working: Working;
   agentId: string;
   conversation: Conversation;
@@ -73,10 +74,10 @@ export type ChatSnapshot = Omit<RuntimeSnapshot, "messages"> & {
 };
 
 type Page<K extends keyof AgentRuntime> = AgentRuntime[K] extends (
-  ...args: never[]
+  ...args: Array<never>
 ) => Promise<infer A>
-  ? A extends { messages: TranscriptMessage[] }
-    ? Omit<A, "messages"> & { messages: ReferencedMessage[] }
+  ? A extends { messages: Array<TranscriptMessage> }
+    ? Omit<A, "messages"> & { messages: Array<ReferencedMessage> }
     : A
   : never;
 
@@ -99,7 +100,7 @@ export class Bots extends Context.Service<
     ) => () => void;
     /** Reads existing durable history for sidebar summaries without creating a chat. */
     readonly agentPreviews: Effect.Effect<
-      { agent: Agent; lastMessage: string }[]
+      Array<{ agent: Agent; lastMessage: string }>
     >;
     /** Tokens and cost of every model and tool across all of the account's bots, since each bot's first conversation. */
     readonly usage: Effect.Effect<ReturnType<typeof usageSummary>, AppError>;
@@ -170,7 +171,7 @@ export class Bots extends Context.Service<
       content: string,
       requestId: string,
       replyTo?: string,
-      files?: string[],
+      files?: Array<string>,
       timezone?: string,
     ) => Effect.Effect<Execution, AppError>;
     readonly notice: (
@@ -218,4 +219,8 @@ const SYNC_BOTS = ["agent", "conversation", "announce"] as const;
 export type BotsAccess = Access<Bots["Service"], (typeof SYNC_BOTS)[number]>;
 
 export const botsAccess = (runner: Runner<Bots>): BotsAccess =>
-  accessOf(runner.runSync(Bots.use(Effect.succeed)), runner, SYNC_BOTS);
+  accessOf(
+    runner.runSync(Effect.flatMap(Bots, Effect.succeed)),
+    runner,
+    SYNC_BOTS,
+  );

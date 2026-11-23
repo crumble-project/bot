@@ -1,9 +1,8 @@
 import type { Context } from "@earendil-works/chord/context";
-import {
-  defineDoc,
-  defineExtension,
-  type ConversationId,
-  type DocumentReader,
+import { defineDoc, defineExtension } from "@earendil-works/pi-durable";
+import type {
+  ConversationId,
+  DocumentReader,
 } from "@earendil-works/pi-durable";
 import type { ConversationKind } from "../bot-ports/conversation-kind";
 import type { AgentRuntime } from "../bots/runtime";
@@ -79,7 +78,9 @@ export function callConversations(): ConversationKind {
     recognize: async (reader, conversationId, context) => {
       const call = await outsideCallOf(reader, conversationId, context);
 
-      if (!call) return;
+      if (!call) {
+        return;
+      }
 
       return {
         tools: (parts) =>

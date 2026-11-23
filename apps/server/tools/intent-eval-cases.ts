@@ -18,7 +18,11 @@ const click = (role: string, name: string): IntentStep => ({
   target: { role, name },
 });
 
-const enterIn = (role: string, name: string, text: string): IntentStep[] => [
+const enterIn = (
+  role: string,
+  name: string,
+  text: string,
+): Array<IntentStep> => [
   { action: "type", text, target: { role, name } },
   { action: "key", keys: "Return" },
 ];
@@ -28,7 +32,7 @@ function make(
   name: string,
   said: string,
   task: string,
-  steps: IntentStep[],
+  steps: Array<IntentStep>,
   host: string,
   expected: { irreversible: boolean; inIntent: boolean },
   from: OwnerMessage["from"] = "owner",
@@ -49,13 +53,13 @@ const ASKED_COMMIT = { irreversible: true, inIntent: true };
 const ASKED_UNDOABLE = { irreversible: false, inIntent: true };
 const UNASKED_COMMIT = { irreversible: true, inIntent: false };
 
-const addressBar = (text: string): IntentStep[] => [
+const addressBar = (text: string): Array<IntentStep> => [
   { action: "key", keys: "ctrl+l" },
   { action: "type", text },
   { action: "key", keys: "Return" },
 ];
 
-export const INTENT_CASES: IntentCase[] = [
+export const INTENT_CASES: Array<IntentCase> = [
   // The owner asked for the commit itself: these should run.
   make(
     "asked commit",

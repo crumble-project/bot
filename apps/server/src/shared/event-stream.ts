@@ -1,5 +1,6 @@
 import type { Context } from "hono";
-import { streamSSE, type SSEStreamingApi } from "hono/streaming";
+import { streamSSE } from "hono/streaming";
+import type { SSEStreamingApi } from "hono/streaming";
 
 export type StreamCleanup = () => void | Promise<void>;
 
@@ -16,11 +17,12 @@ const sendHeartbeat = (stream: SSEStreamingApi) =>
 export const snapshotSender =
   <T>(stream: SSEStreamingApi, snapshot: () => Promise<T>) =>
   async () => {
-    if (!stream.aborted)
+    if (!stream.aborted) {
       await stream.writeSSE({
         event: "snapshot",
         data: JSON.stringify(await snapshot()),
       });
+    }
   };
 
 export const streamEvents = (
@@ -49,16 +51,20 @@ export const streamEvents = (
       return writeSSE(message);
     };
 
-    const cleanups: StreamCleanup[] = [];
+    const cleanups: Array<StreamCleanup> = [];
 
     const clean = async () => {
-      for (const cleanup of cleanups.splice(0)) await cleanup();
+      for (const cleanup of cleanups.splice(0)) {
+        await cleanup();
+      }
     };
 
     try {
       await setup({ stream, close: finish, onClose: (c) => cleanups.push(c) });
 
-      if (!wrote && !closed && !stream.aborted) await sendHeartbeat(stream);
+      if (!wrote && !closed && !stream.aborted) {
+        await sendHeartbeat(stream);
+      }
     } catch (error) {
       await clean();
       throw error;
@@ -66,7 +72,7 @@ export const streamEvents = (
 
     const heartbeat = setInterval(() => {
       sendHeartbeat(stream).catch(finish);
-    }, 15000);
+    }, 15_000);
 
     try {
       await finished;

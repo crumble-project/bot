@@ -2,15 +2,17 @@ import { errorText } from "../shared/errors";
 import { readFile } from "node:fs/promises";
 import { Effect } from "effect";
 import {
-  type MountBuilder,
-  type NetworkBuilder,
   Rule,
   Sandbox,
   SandboxNotFoundError,
   Volume,
   VolumeNotFoundError,
-  type NetworkPolicy,
-  type SandboxHandle,
+} from "microsandbox";
+import type {
+  MountBuilder,
+  NetworkBuilder,
+  NetworkPolicy,
+  SandboxHandle,
 } from "microsandbox";
 import { z } from "zod";
 import {
@@ -26,15 +28,17 @@ import {
   machineName,
   prepareGuest,
   untilBooted,
-  type GuestFile,
-  type GuestOps,
-  type GuestSetup,
-  type MachineStream,
-  type MachineWorkspacesOptions,
-  type WorkspaceBackendOptions,
-  type WorkspaceMachine,
-  type WorkspaceSize,
-  type WorkspaceMachines,
+} from "./machine-workspaces";
+import type {
+  GuestFile,
+  GuestOps,
+  GuestSetup,
+  MachineStream,
+  MachineWorkspacesOptions,
+  WorkspaceBackendOptions,
+  WorkspaceMachine,
+  WorkspaceSize,
+  WorkspaceMachines,
 } from "./machine-workspaces";
 import {
   DesktopStartFailed,
@@ -43,11 +47,8 @@ import {
   WorkspaceStreamFailed,
   WorkspaceSyncFailed,
 } from "./workspace-errors";
-import {
-  startWorkspaceProxy,
-  type WorkspaceInterceptor,
-  type WorkspaceProxy,
-} from "./workspace-proxy";
+import { startWorkspaceProxy } from "./workspace-proxy";
+import type { WorkspaceInterceptor, WorkspaceProxy } from "./workspace-proxy";
 
 const DISK_MIB = 8192;
 
@@ -192,8 +193,9 @@ class MicrosandboxMachines implements WorkspaceMachines {
         ? yield* this.resumedProxy(resumed, image, intercept)
         : undefined;
 
-      if (resumed && resumedProxy)
+      if (resumed && resumedProxy) {
         return { sandbox: resumed, proxy: resumedProxy };
+      }
 
       return yield* this.create(name, image, resumed, intercept);
     },
@@ -216,8 +218,9 @@ class MicrosandboxMachines implements WorkspaceMachines {
       record.network !== TCP_THROUGH_PROXY_VERSION ||
       record.cpus !== size.cpus ||
       record.memoryMib !== size.memoryMib
-    )
+    ) {
       return;
+    }
 
     // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
     return yield* untilBooted(
@@ -237,7 +240,9 @@ class MicrosandboxMachines implements WorkspaceMachines {
     resumed: Sandbox | undefined,
     intercept: WorkspaceInterceptor | undefined,
   ) {
-    if (resumed) yield* Effect.promise(() => stopSandbox(resumed));
+    if (resumed) {
+      yield* Effect.promise(() => stopSandbox(resumed));
+    }
     const size = this.size();
 
     const proxy = yield* untilBooted(
@@ -299,7 +304,7 @@ class MicrosandboxMachine implements WorkspaceMachine {
     return Effect.promise(() => this.alive());
   }
 
-  stream(command: string, args: readonly string[]) {
+  stream(command: string, args: ReadonlyArray<string>) {
     return Effect.tryPromise({
       try: () => this.open(command, args),
       catch: (cause) =>
@@ -326,7 +331,9 @@ class MicrosandboxMachine implements WorkspaceMachine {
     return Effect.tryPromise({
       try: async () => {
         try {
-          if (await this.alive()) await flush(this.sandbox);
+          if (await this.alive()) {
+            await flush(this.sandbox);
+          }
         } finally {
           await this.sandbox.stop().catch(() => undefined);
           await this.proxy.close();
@@ -349,7 +356,7 @@ class MicrosandboxMachine implements WorkspaceMachine {
 
   private async open(
     command: string,
-    args: readonly string[],
+    args: ReadonlyArray<string>,
   ): Promise<MachineStream> {
     const exec = await this.sandbox.execStreamWith(command, (options) =>
       options.args([...args]).stdinPipe(),
@@ -357,11 +364,16 @@ class MicrosandboxMachine implements WorkspaceMachine {
 
     const stdin = await exec.takeStdin();
 
-    if (!stdin) throw new Error(`${command} has no stdin`);
+    if (!stdin) {
+      throw new Error(`${command} has no stdin`);
+    }
 
     async function* output() {
-      for await (const event of exec)
-        if (event.kind === "stdout") yield new Uint8Array(event.data);
+      for await (const event of exec) {
+        if (event.kind === "stdout") {
+          yield new Uint8Array(event.data);
+        }
+      }
     }
 
     return {
@@ -380,7 +392,7 @@ const closeProxy = async (proxy: WorkspaceProxy | undefined) => {
   await proxy?.close();
 };
 
-const startDesktop = (sandbox: Sandbox, args: readonly string[]) =>
+const startDesktop = (sandbox: Sandbox, args: ReadonlyArray<string>) =>
   Effect.tryPromise({
     try: () => run(sandbox, [DESKTOP_START, ...args].join(" ")),
     catch: (cause) =>
@@ -395,7 +407,9 @@ async function ensureVolume(name: string) {
   try {
     await Volume.get(name);
   } catch (error) {
-    if (!(error instanceof VolumeNotFoundError)) throw error;
+    if (!(error instanceof VolumeNotFoundError)) {
+      throw error;
+    }
 
     await Volume.builder(name).disk().size(DISK_MIB).create();
   }
@@ -415,8 +429,9 @@ const machineRecord = z.object({
 type MachineRecord = z.infer<typeof machineRecord>;
 
 const stopHandle = async (handle: SandboxHandle) => {
-  if (handle.status !== "stopped" && handle.status !== "created")
+  if (handle.status !== "stopped" && handle.status !== "created") {
     await handle.stopWithTimeout(STOP_TIMEOUT_MS).catch(() => handle.kill());
+  }
 };
 
 async function removeSandbox(name: string) {
@@ -424,7 +439,9 @@ async function removeSandbox(name: string) {
     await stopHandle(await Sandbox.get(name));
     await Sandbox.remove(name);
   } catch (error) {
-    if (!(error instanceof SandboxNotFoundError)) throw error;
+    if (!(error instanceof SandboxNotFoundError)) {
+      throw error;
+    }
   }
 }
 
@@ -432,7 +449,9 @@ async function removeVolume(name: string) {
   try {
     await Volume.remove(name);
   } catch (error) {
-    if (!(error instanceof VolumeNotFoundError)) throw error;
+    if (!(error instanceof VolumeNotFoundError)) {
+      throw error;
+    }
   }
 }
 
@@ -464,20 +483,22 @@ async function readMachineRecord(
   }
 }
 
-async function writeFiles(sandbox: Sandbox, files: readonly GuestFile[]) {
+async function writeFiles(sandbox: Sandbox, files: ReadonlyArray<GuestFile>) {
   for (const { path, content, mode } of files) {
     await sandbox.fs().write(path, content);
 
-    if (mode !== undefined)
+    if (mode !== undefined) {
       await run(sandbox, `chmod ${mode.toString(8)} ${path}`);
+    }
   }
 }
 
 async function run(sandbox: Sandbox, command: string) {
   const result = await sandbox.exec("/bin/sh", ["-c", command]);
 
-  if (!result.success)
+  if (!result.success) {
     throw new Error(`${command} failed: ${result.stderr() || result.stdout()}`);
+  }
 }
 
 const flush = (sandbox: Sandbox) => run(sandbox, "sync");

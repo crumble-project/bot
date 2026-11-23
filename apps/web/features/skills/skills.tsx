@@ -1,9 +1,7 @@
-import { type ReactNode, useState } from "react";
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   IconBrandGithub,
   IconChevronRight,
@@ -31,16 +29,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import type { Bot } from "@/features/bots/api";
 import {
-  type ListedSkill,
-  type SkillPackage,
   skillsQuery,
-  type SharedSkill,
   checkSkillUpdates,
   botSkillPath,
   botSkillsPath,
   botSkillsQuery,
   skillPath,
 } from "./api";
+import type { ListedSkill, SkillPackage, SharedSkill } from "./api";
 import { call, send } from "@/lib/api";
 import {
   ALL,
@@ -87,7 +83,7 @@ type BundledSkill = Extract<ListedSkill, { source: "bundled" }>;
 
 type BotSkill = SkillPackage;
 
-type SkillBot = Omit<Bot, "skills"> & { skills: BotSkill[] };
+type SkillBot = Omit<Bot, "skills"> & { skills: Array<BotSkill> };
 
 function removePersonalSkill(botId: string, skillId: string) {
   return send<"deleteAgentSkill">(botSkillPath(botId, skillId), "DELETE");
@@ -139,8 +135,8 @@ function SkillPills({
   onScope,
   unavailable,
 }: {
-  bots: SkillBot[];
-  skills: ListedSkill[];
+  bots: Array<SkillBot>;
+  skills: Array<ListedSkill>;
   scope: string;
   onScope: (scope: string) => void;
   unavailable: Set<string>;
@@ -308,7 +304,9 @@ function EditableSkillRow({
 }
 
 const botSkillsEmpty = (bot: SkillBot, needle: string) => {
-  if (bot.skills.some((skill) => matches(skill, needle))) return null;
+  if (bot.skills.some((skill) => matches(skill, needle))) {
+    return null;
+  }
 
   return bot.skills.length
     ? "No skills match your search."
@@ -356,7 +354,7 @@ function BotSkillSections({
   remove,
   onEdit,
 }: {
-  bots: SkillBot[];
+  bots: Array<SkillBot>;
   filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
@@ -368,7 +366,9 @@ function BotSkillSections({
       ? bots.filter((bot) => bot.skills.some((skill) => matches(skill, needle)))
       : bots.filter((bot) => bot.id === scope);
 
-  if (!owners.length) return null;
+  if (!owners.length) {
+    return null;
+  }
 
   return owners.map((bot) => (
     <Section
@@ -411,8 +411,8 @@ function SharedSkillsSection({
   onEdit,
   onInstalled,
 }: {
-  shared: SharedSkill[];
-  bots: SkillBot[];
+  shared: Array<SharedSkill>;
+  bots: Array<SkillBot>;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
   onInstalled: (sheet: InstalledSheet) => void;
@@ -457,7 +457,7 @@ function SharedSkillsSection({
   );
 }
 
-function DefaultSkillsSection({ bundled }: { bundled: BundledSkill[] }) {
+function DefaultSkillsSection({ bundled }: { bundled: Array<BundledSkill> }) {
   return (
     <Section
       title="Default"
@@ -480,8 +480,8 @@ function SkillSections({
   onInstalled,
   unavailable,
 }: {
-  bots: SkillBot[];
-  skills: ListedSkill[];
+  bots: Array<SkillBot>;
+  skills: Array<ListedSkill>;
   filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
@@ -536,29 +536,34 @@ function SkillsBody({
   onEdit,
   onInstalled,
 }: {
-  bots: UseQueryResult<Bot[]>;
-  skillBots: SkillBot[];
+  bots: UseQueryResult<Array<Bot>>;
+  skillBots: Array<SkillBot>;
   botSkillsPending: boolean;
-  botSkillErrors: { bot: Bot; error: Error }[];
-  skills: UseQueryResult<ListedSkill[]>;
+  botSkillErrors: Array<{ bot: Bot; error: Error }>;
+  skills: UseQueryResult<Array<ListedSkill>>;
   filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
   onInstalled: (sheet: InstalledSheet) => void;
 }) {
-  if (skills.isPending || bots.isPending || botSkillsPending)
+  if (skills.isPending || bots.isPending || botSkillsPending) {
     return <Skeleton className="h-40" />;
+  }
 
-  if (bots.isError) return <ErrorAlert>{bots.error.message}</ErrorAlert>;
+  if (bots.isError) {
+    return <ErrorAlert>{bots.error.message}</ErrorAlert>;
+  }
 
-  if (skills.isError) return <ErrorAlert>{skills.error.message}</ErrorAlert>;
+  if (skills.isError) {
+    return <ErrorAlert>{skills.error.message}</ErrorAlert>;
+  }
 
   return (
     <>
       {botSkillErrors.map(({ bot, error }) => (
         <Alert key={bot.id} variant="destructive">
           <AlertDescription>
-            Could not load {bot.name}'s skills: {error.message}
+            Could not load {bot.name}&apos;s skills: {error.message}
           </AlertDescription>
         </Alert>
       ))}
@@ -605,7 +610,7 @@ function UpdateCheckButton({
   skills,
   check,
 }: {
-  skills: ListedSkill[];
+  skills: Array<ListedSkill>;
   check: ReturnType<typeof useUpdateCheck>;
 }) {
   const installed = skills.some(
@@ -646,7 +651,7 @@ function InstalledSheets({
   onSheet,
 }: {
   sheet: InstalledSheet;
-  bots: SkillBot[];
+  bots: Array<SkillBot>;
   onSheet: (sheet: InstalledSheet | null) => void;
 }) {
   const close = () => onSheet(null);
@@ -675,9 +680,9 @@ const firstError = (remove: ReturnType<typeof useRemoveSkills>) =>
   remove.copy.error;
 
 function selectionCatalog(
-  skills: ListedSkill[],
-  bots: SkillBot[],
-): SelectableSkill[] {
+  skills: Array<ListedSkill>,
+  bots: Array<SkillBot>,
+): Array<SelectableSkill> {
   return [
     ...skills.flatMap((skill) =>
       skill.source === "shared"
@@ -884,7 +889,7 @@ function BundledRow({ skill }: { skill: BundledSkill }) {
   );
 }
 
-function SkillUsage({ bots, skillId }: { bots: Bot[]; skillId: string }) {
+function SkillUsage({ bots, skillId }: { bots: Array<Bot>; skillId: string }) {
   const count = botsUsing(bots, skillId).size;
 
   return count ? <UsedBy count={count} className="shrink-0 text-xs" /> : null;
@@ -892,7 +897,7 @@ function SkillUsage({ bots, skillId }: { bots: Bot[]; skillId: string }) {
 
 type InstalledRowProps = {
   skill: SharedSkill;
-  bots: Bot[];
+  bots: Array<Bot>;
   onView: () => void;
   onUpdate: () => void;
   onCopy: () => void;
@@ -997,7 +1002,7 @@ function SharedRow({
   onDelete,
 }: {
   skill: SharedSkill;
-  bots: Bot[];
+  bots: Array<Bot>;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -1020,8 +1025,9 @@ function SharedRow({
 }
 
 function skillDraft(editing: Editing) {
-  if (editing.kind === "new")
+  if (editing.kind === "new") {
     return { owner: SHARED, name: "", instructions: "" };
+  }
 
   const skill = editing.skill;
 
@@ -1034,7 +1040,7 @@ function skillDraft(editing: Editing) {
 
 async function saveSkill(
   editing: Editing,
-  bots: SkillBot[],
+  bots: Array<SkillBot>,
   owner: string,
   skill: { name: string; instructions: string },
 ) {
@@ -1054,19 +1060,22 @@ async function saveSkill(
     return null;
   }
 
-  if (owner === SHARED)
-    return (await call<"createSkill">("/v1/skills", "POST", skill)).id;
+  if (owner === SHARED) {
+    return (await call("createSkill", "/v1/skills", "POST", skill)).id;
+  }
 
   const bot = bots.find((each) => each.id === owner);
 
-  if (!bot) throw new Error("Choose a bot.");
+  if (!bot) {
+    throw new Error("Choose a bot.");
+  }
   await send<"createAgentSkill">(botSkillsPath(bot.id), "POST", skill);
 
   return null;
 }
 
 function useSkillEditor(
-  bots: SkillBot[],
+  bots: Array<SkillBot>,
   editing: Editing,
   onClose: () => void,
 ) {
@@ -1090,7 +1099,9 @@ function useSkillEditor(
         instructions,
       });
 
-      if (sharedId) await assignSharedSkill(sharedId, bots, usedBy);
+      if (sharedId) {
+        await assignSharedSkill(sharedId, bots, usedBy);
+      }
     },
     onSuccess: async () => {
       await invalidateSkills();
@@ -1117,7 +1128,7 @@ function SkillDialog({
   editing,
   onClose,
 }: {
-  bots: SkillBot[];
+  bots: Array<SkillBot>;
   editing: Editing;
   onClose: () => void;
 }) {

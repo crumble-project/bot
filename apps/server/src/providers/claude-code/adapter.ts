@@ -4,28 +4,32 @@ import {
   createAssistantMessageEventStream,
   getCurrentSystemPrompt,
   getCurrentTools,
-  type Api,
-  type AssistantMessage,
-  type AssistantMessageEventStream,
-  type JsonObject,
-  type Message,
-  type Model,
-  type ProviderStreams,
-  type SimpleStreamOptions,
-  type StopReason,
-  type TextContent,
-  type ThinkingContent,
-  type ToolCall,
-  type TranscriptContext,
-  type Usage,
+} from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessage,
+  AssistantMessageEventStream,
+  JsonObject,
+  Message,
+  Model,
+  ProviderStreams,
+  SimpleStreamOptions,
+  StopReason,
+  TextContent,
+  ThinkingContent,
+  ToolCall,
+  TranscriptContext,
+  Usage,
 } from "@earendil-works/pi-ai";
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
 import {
   acceptsThinkingDisable,
@@ -42,14 +46,8 @@ import { Admission } from "./relay";
 import type { CapturedMessage } from "./relay-capture";
 import { PROCESS_GZIP } from "./relay-gzip";
 import type { Block } from "./relay-request";
-import {
-  childEnv,
-  installHint,
-  resolveClaude,
-  signInCommand,
-  type ClaudeCodeOptions,
-  type ClaudeCodeStatus,
-} from "./setup";
+import { childEnv, installHint, resolveClaude, signInCommand } from "./setup";
+import type { ClaudeCodeOptions, ClaudeCodeStatus } from "./setup";
 import { Match } from "effect";
 
 export const CLAUDE_CODE_API = "claude-code";
@@ -83,7 +81,7 @@ type NativeFrame = {
   type: "user" | "assistant";
   message: {
     role: "user" | "assistant";
-    content: Block[];
+    content: Array<Block>;
     id?: string;
     type?: string;
     model?: string;
@@ -94,7 +92,7 @@ type NativeFrame = {
 
 type AssistantFields = Omit<NativeFrame["message"], "role" | "content">;
 
-function conversationSessionId(system: string, frames: NativeFrame[]) {
+function conversationSessionId(system: string, frames: Array<NativeFrame>) {
   const digest = createHash("sha256")
     .update(JSON.stringify([system, frames[0]?.message ?? null]))
     .digest();
@@ -110,15 +108,16 @@ function conversationSessionId(system: string, frames: NativeFrame[]) {
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Crumble tool names and the names Claude Code sees; names over 50 characters get a stable hashed alias. */
-function toolNames(tools: { name: string }[]) {
+function toolNames(tools: Array<{ name: string }>) {
   const names = new Map<string, string>();
   const native = new Map<string, string>();
 
   for (const { name } of tools) {
-    if (!NAME.test(name) || names.has(name))
+    if (!NAME.test(name) || names.has(name)) {
       throw new Error(
         "Tool names must be unique ASCII identifiers of at most 64 characters",
       );
+    }
 
     const alias =
       name.length <= 50
@@ -127,10 +126,11 @@ function toolNames(tools: { name: string }[]) {
 
     const other = native.get(alias);
 
-    if (other)
+    if (other) {
       throw new Error(
         `Tool name collision: ${name} and ${other} map to ${alias}`,
       );
+    }
     names.set(name, alias);
     native.set(alias, name);
   }
@@ -143,6 +143,30 @@ const COMBINATORS = ["oneOf", "allOf", "anyOf"];
 const jsonSchema = z.record(z.string(), z.json());
 
 /**
+ * A parameter schema as JSON carries it. TypeBox tags its schemas with a symbol key, so a strict JSON copy rejects them,
+ * and an optional field can leave a key undefined, which JSON omits. Both go the way an encode drops them.
+ */
+function schemaJson(value: unknown): JsonValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => schemaJson(item));
+  }
+
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, item]) =>
+        item === undefined ? [] : [[key, schemaJson(item)]],
+      ),
+    );
+  }
+
+  return typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+    ? value
+    : null;
+}
+
+/**
  * Anthropic's validator rejects top-level oneOf/allOf/anyOf and the null branch of nullable unions. The combinators
  * are advisory (Crumble re-validates arguments); nested unions other than nullable ones stay untouched.
  */
@@ -150,15 +174,18 @@ function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
   const normalized = stripNullable(schema);
 
   if (COMBINATORS.some((key) => key in normalized)) {
-    for (const key of COMBINATORS) delete normalized[key];
+    for (const key of COMBINATORS) {
+      delete normalized[key];
+    }
     normalized["type"] ??= "object";
   }
 
   if (
     normalized["type"] === "object" &&
     !jsonSchema.safeParse(normalized["properties"]).success
-  )
+  ) {
     normalized["properties"] = {};
+  }
 
   return normalized;
 }
@@ -171,14 +198,17 @@ function stripNullable(schema: z.infer<typeof jsonSchema>) {
   for (const [key, value] of Object.entries(schema)) {
     const nested = jsonSchema.safeParse(value);
 
-    if (nested.success) copy[key] = stripNullable(nested.data);
-    else if (Array.isArray(value))
+    if (nested.success) {
+      copy[key] = stripNullable(nested.data);
+    } else if (Array.isArray(value)) {
       copy[key] = value.map((item) => {
         const entry = jsonSchema.safeParse(item);
 
         return entry.success ? stripNullable(entry.data) : item;
       });
-    else copy[key] = value;
+    } else {
+      copy[key] = value;
+    }
   }
 
   const union = z.array(jsonSchema).safeParse(copy["anyOf"] ?? copy["oneOf"]);
@@ -213,10 +243,14 @@ const imageBlock = (item: {
 });
 
 const contentBlocks = (
-  content: (TextContent | { type: "image"; data: string; mimeType: string })[],
-): Block[] =>
-  content.flatMap((item): Block[] => {
-    if (item.type !== "text") return [imageBlock(item)];
+  content: Array<
+    TextContent | { type: "image"; data: string; mimeType: string }
+  >,
+): Array<Block> =>
+  content.flatMap((item): Array<Block> => {
+    if (item.type !== "text") {
+      return [imageBlock(item)];
+    }
 
     return item.text.trim() ? [{ type: "text", text: item.text }] : [];
   });
@@ -231,17 +265,19 @@ const nativeStop = (reason: StopReason) =>
 function assistantHistoryBlock(
   item: AssistantMessage["content"][number],
   names: Map<string, string>,
-): Block[] {
-  if (item.type === "text")
+): Array<Block> {
+  if (item.type === "text") {
     return item.text.trim() ? [{ type: "text", text: item.text }] : [];
+  }
 
   if (item.type === "thinking") {
-    if (item.redacted)
+    if (item.redacted) {
       return [
         { type: "redacted_thinking", data: item.thinkingSignature ?? "" },
       ];
+    }
 
-    if (item.thinkingSignature?.trim())
+    if (item.thinkingSignature?.trim()) {
       return [
         {
           type: "thinking",
@@ -249,6 +285,7 @@ function assistantHistoryBlock(
           signature: item.thinkingSignature,
         },
       ];
+    }
 
     return item.thinking.trim() ? [{ type: "text", text: item.thinking }] : [];
   }
@@ -280,7 +317,9 @@ function toolResultHistoryBlock(
       : contentBlocks(message.content),
   };
 
-  if (message.isError) result.is_error = true;
+  if (message.isError) {
+    result.is_error = true;
+  }
 
   return result;
 }
@@ -288,19 +327,22 @@ function toolResultHistoryBlock(
 function historyContent(
   message: Exclude<Message, { role: "system" }>,
   names: Map<string, string>,
-): Block[] {
+): Array<Block> {
   if (message.role === "user") {
-    if (Array.isArray(message.content)) return contentBlocks(message.content);
+    if (Array.isArray(message.content)) {
+      return contentBlocks(message.content);
+    }
 
     return message.content.trim()
       ? [{ type: "text", text: message.content }]
       : [];
   }
 
-  if (message.role === "assistant")
+  if (message.role === "assistant") {
     return message.content.flatMap((item) =>
       assistantHistoryBlock(item, names),
     );
+  }
 
   return [toolResultHistoryBlock(message)];
 }
@@ -324,45 +366,54 @@ function prepareHistory(
   names: Map<string, string>,
 ) {
   const system = getCurrentSystemPrompt(context.messages);
-  const frames: NativeFrame[] = [];
+  const frames: Array<NativeFrame> = [];
 
   const append = (
     role: "user" | "assistant",
-    content: Block[],
+    content: Array<Block>,
     extra: AssistantFields = {},
   ) => {
     const last = frames.at(-1);
 
-    if (role === "user" && last?.type === "user")
+    if (role === "user" && last?.type === "user") {
       last.message.content.push(...content);
-    else frames.push({ type: role, message: { ...extra, role, content } });
+    } else {
+      frames.push({ type: role, message: { ...extra, role, content } });
+    }
   };
 
   for (const message of transformMessages(
     context.messages,
     model,
-  ) satisfies Message[]) {
-    if (message.role === "system") continue;
+  ) satisfies Array<Message>) {
+    if (message.role === "system") {
+      continue;
+    }
 
     const content = historyContent(message, names);
 
-    if (content.length === 0) continue;
+    if (content.length === 0) {
+      continue;
+    }
 
-    if (message.role === "assistant")
+    if (message.role === "assistant") {
       append(
         "assistant",
         content,
         assistantFields(message, model, frames.length),
       );
-    else append("user", content);
+    } else {
+      append("user", content);
+    }
   }
 
   const last = frames.at(-1);
 
-  if (!last || last.type !== "user" || last.message.content.length === 0)
+  if (!last || last.type !== "user" || last.message.content.length === 0) {
     throw new Error(
       "History must end in a nonempty user or tool-result message; assistant prefill is unsupported",
     );
+  }
 
   return { system, frames };
 }
@@ -383,9 +434,13 @@ function requestBody(
 
   const effort = configureThinking(body, model.id, reasoning);
 
-  if (effort) body["output_config"] = { effort };
+  if (effort) {
+    body["output_config"] = { effort };
+  }
 
-  if (options?.maxTokens !== undefined) body["max_tokens"] = options.maxTokens;
+  if (options?.maxTokens !== undefined) {
+    body["max_tokens"] = options.maxTokens;
+  }
 
   return { body, effort };
 }
@@ -396,7 +451,9 @@ function configureThinking(
   reasoning: Exclude<ReturnType<typeof clampThinkingLevel>, "off"> | undefined,
 ): Effort | undefined {
   if (reasoning === undefined) {
-    if (!acceptsThinkingDisable(modelId)) return "low";
+    if (!acceptsThinkingDisable(modelId)) {
+      return "low";
+    }
     body["thinking"] = { type: "disabled" };
     // Clear-thinking context edits are invalid when thinking is disabled.
     body["context_management"] = { edits: [] };
@@ -405,8 +462,9 @@ function configureThinking(
   }
 
   // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
-  if (supportsAdaptiveThinking(modelId))
+  if (supportsAdaptiveThinking(modelId)) {
     body["thinking"] = { type: "adaptive", display: "summarized" };
+  }
 
   return reasoning === "minimal" ? "low" : reasoning;
 }
@@ -448,14 +506,16 @@ const streamJson = z.looseObject({
 });
 
 class Lines {
-  private readonly queue: (StreamJson | Error | null)[] = [];
+  private readonly queue: Array<StreamJson | Error | null> = [];
   private waiting: (() => void) | undefined;
 
   constructor(child: ChildProcessWithoutNullStreams) {
     const lines = createInterface({ input: child.stdout });
 
     lines.on("line", (line) => {
-      if (!line.trim()) return;
+      if (!line.trim()) {
+        return;
+      }
 
       try {
         this.push(streamJson.parse(JSON.parse(line)));
@@ -478,7 +538,9 @@ class Lines {
 
   async next(timeoutMs: number, signal: AbortSignal) {
     while (this.queue.length === 0) {
-      if (signal.aborted) throw new Error("Claude request cancelled");
+      if (signal.aborted) {
+        throw new Error("Claude request cancelled");
+      }
       let timer: ReturnType<typeof setTimeout> | undefined;
       let stop: (() => void) | undefined;
 
@@ -491,15 +553,21 @@ class Lines {
 
       clearTimeout(timer);
 
-      if (stop) signal.removeEventListener("abort", stop);
+      if (stop) {
+        signal.removeEventListener("abort", stop);
+      }
       this.waiting = undefined;
 
-      if (timedOut) throw new Error("Claude request timed out");
+      if (timedOut) {
+        throw new Error("Claude request timed out");
+      }
     }
 
     const item = this.queue.shift() ?? null;
 
-    if (item instanceof Error) throw item;
+    if (item instanceof Error) {
+      throw item;
+    }
 
     return item;
   }
@@ -511,8 +579,9 @@ function killTree(child: ChildProcessWithoutNullStreams) {
     child.exitCode !== null ||
     child.signalCode !== null ||
     child.pid === undefined
-  )
+  ) {
     return;
+  }
 
   try {
     process.kill(-child.pid, "SIGKILL");
@@ -524,9 +593,11 @@ function killTree(child: ChildProcessWithoutNullStreams) {
 const exited = (child: ChildProcessWithoutNullStreams) =>
   child.exitCode !== null || child.signalCode !== null
     ? Promise.resolve(child.exitCode)
-    : new Promise<number | null>((resolve) =>
-        child.once("exit", (code) => resolve(code)),
-      );
+    : new Promise<number | null>((resolve) => {
+        child.once("exit", (code) => {
+          resolve(code);
+        });
+      });
 
 function piUsage(usage?: CapturedMessage["usage"]): Usage {
   const source = usage ?? {};
@@ -546,7 +617,9 @@ function piUsage(usage?: CapturedMessage["usage"]): Usage {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 
-  if (oneHour !== undefined) result.cacheWrite1h = oneHour;
+  if (oneHour !== undefined) {
+    result.cacheWrite1h = oneHour;
+  }
 
   return result;
 }
@@ -573,8 +646,9 @@ export function streamClaudeCode(
   };
 
   void run(adapter, model, context, options, stream, partial).catch(
-    (error: Error) => {
+    (error: unknown) => {
       const aborted = options?.signal?.aborted === true;
+      const message = error instanceof Error ? error.message : String(error);
 
       stream.push({
         type: "error",
@@ -582,7 +656,7 @@ export function streamClaudeCode(
         error: {
           ...partial,
           stopReason: aborted ? "aborted" : "error",
-          errorMessage: aborted ? "Claude request cancelled" : error.message,
+          errorMessage: aborted ? "Claude request cancelled" : message,
         },
       });
     },
@@ -594,18 +668,22 @@ export function streamClaudeCode(
 async function requireClaudeCommand(adapter: AdapterOptions) {
   const status = await adapter.status();
 
-  if (status.status === "signed_out")
+  if (status.status === "signed_out") {
     throw new Error(
       `${status.message} Run on the server: ${signInCommand(resolveClaude(adapter) ?? "claude", adapter.configDir)}`,
     );
+  }
 
-  if (status.status !== "signed_in")
+  if (status.status !== "signed_in") {
     throw new Error(
       status.status === "cli_missing" ? installHint(adapter) : status.message,
     );
+  }
   const command = resolveClaude(adapter);
 
-  if (!command) throw new Error(installHint(adapter));
+  if (!command) {
+    throw new Error(installHint(adapter));
+  }
 
   return command;
 }
@@ -623,7 +701,7 @@ function prepareRequest(
   const manifest = tools.map((tool) => {
     // The manifest (inert MCP server) and the request body must advertise the same schema.
     const schema = normalizeInputSchema(
-      jsonSchema.parse(JSON.parse(JSON.stringify(tool.parameters))),
+      jsonSchema.parse(schemaJson(tool.parameters)),
     );
 
     return {
@@ -712,8 +790,9 @@ function prepareCli(
     ANTHROPIC_BASE_URL: admission.url,
   });
 
-  if (options?.maxTokens !== undefined)
+  if (options?.maxTokens !== undefined) {
     env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
+  }
 
   return { env, args: cliArgs(model, request, scratch) };
 }
@@ -730,25 +809,30 @@ async function awaitReplayAck(
     const ack = await receive();
 
     if (ack === null) {
-      if (signal.aborted) throw new Error("Claude request cancelled");
+      if (signal.aborted) {
+        throw new Error("Claude request cancelled");
+      }
       throw new Error(
         `Native exited before replay acknowledgment (exit=${cli.exitCode})${stderrTail()}`,
       );
     }
 
-    if (ack.type !== "result") continue;
+    if (ack.type !== "result") {
+      continue;
+    }
 
-    if (ack.num_turns !== 0 || ack.is_error)
+    if (ack.num_turns !== 0 || ack.is_error) {
       throw new Error(
         `Native history replay not supported: expected zero-turn acknowledgment${stderrTail()}`,
       );
+    }
 
     return;
   }
 }
 
 async function replayHistory(
-  frames: NativeFrame[],
+  frames: Array<NativeFrame>,
   send: (data: string) => Promise<void>,
   receive: Receive,
   cli: ChildProcessWithoutNullStreams,
@@ -762,7 +846,9 @@ async function replayHistory(
       `${JSON.stringify(replayed ? { ...frame, shouldQuery: false } : frame)}\n`,
     );
 
-    if (replayed) await awaitReplayAck(receive, cli, signal, stderrTail);
+    if (replayed) {
+      await awaitReplayAck(receive, cli, signal, stderrTail);
+    }
   }
 }
 
@@ -819,13 +905,16 @@ class IncrementalResponse {
   ) {
     const contentIndex = this.blocks.get(index);
 
-    if (contentIndex === undefined) return;
+    if (contentIndex === undefined) {
+      return;
+    }
     const target = this.partial.content[contentIndex];
 
-    if (delta?.type === "text_delta")
+    if (delta?.type === "text_delta") {
       this.textDelta(contentIndex, target, delta.text);
-    else if (delta?.type === "thinking_delta")
+    } else if (delta?.type === "thinking_delta") {
       this.thinkingDelta(contentIndex, target, delta.thinking);
+    }
   }
 
   private textDelta(
@@ -833,7 +922,9 @@ class IncrementalResponse {
     target: AssistantMessage["content"][number] | undefined,
     delta: string | undefined,
   ) {
-    if (target?.type !== "text") return;
+    if (target?.type !== "text") {
+      return;
+    }
     const text = delta ?? "";
 
     target.text += text;
@@ -851,7 +942,9 @@ class IncrementalResponse {
     target: AssistantMessage["content"][number] | undefined,
     delta: string | undefined,
   ) {
-    if (target?.type !== "thinking") return;
+    if (target?.type !== "thinking") {
+      return;
+    }
     const thinking = delta ?? "";
 
     target.thinking += thinking;
@@ -871,20 +964,21 @@ class IncrementalResponse {
         ? undefined
         : this.partial.content[contentIndex];
 
-    if (contentIndex !== undefined && target?.type === "text")
+    if (contentIndex !== undefined && target?.type === "text") {
       this.stream.push({
         type: "text_end",
         contentIndex,
         content: target.text,
         partial: this.partial,
       });
-    else if (contentIndex !== undefined && target?.type === "thinking")
+    } else if (contentIndex !== undefined && target?.type === "thinking") {
       this.stream.push({
         type: "thinking_end",
         contentIndex,
         content: target.thinking,
         partial: this.partial,
       });
+    }
   }
 }
 
@@ -901,7 +995,7 @@ async function receiveResponse(
   admission: Admission,
   incremental: IncrementalResponse,
 ) {
-  const results: StreamJson[] = [];
+  const results: Array<StreamJson> = [];
   let nativeError: string | undefined;
   let nativeErrorCode: string | undefined;
   let fast = false;
@@ -909,7 +1003,9 @@ async function receiveResponse(
   for (;;) {
     const event = await receive();
 
-    if (event === null) break;
+    if (event === null) {
+      break;
+    }
 
     if (carriesNativeError(event)) {
       nativeError = nativeErrorText(event);
@@ -948,7 +1044,9 @@ function failUnused(
     );
   }
 
-  if (nativeError) throw nativeFailure(nativeErrorCode, nativeError);
+  if (nativeError) {
+    throw nativeFailure(nativeErrorCode, nativeError);
+  }
   throw new Error(`Claude Code made no model request${stderrTail()}`);
 }
 
@@ -975,20 +1073,25 @@ function validateResponse(
   const { nativeError } = response;
   const captured = admission.capture.message;
 
-  if (!admission.used) failUnused(adapter, response, stderrTail);
+  if (!admission.used) {
+    failUnused(adapter, response, stderrTail);
+  }
 
   if (admission.status !== 200 || !admission.capture.complete || !captured) {
-    if (admission.status === 401) adapter.invalidateStatus();
+    if (admission.status === 401) {
+      adapter.invalidateStatus();
+    }
     throw new Error(
       `Incomplete upstream response (${firstAttemptSummary(admission)})${nativeError ? `: ${nativeError}` : ""}`,
     );
   }
 
   // Stricter than Hermes, which drops only the cut-off call: no tool from a response with a broken call runs.
-  if (admission.capture.dropped > 0)
+  if (admission.capture.dropped > 0) {
     throw new Error(
       `Incomplete tool call: ${admission.capture.dropped} tool call(s) ended before their arguments were complete (stop reason ${captured.stop_reason ?? "none"})`,
     );
+  }
 
   validateNativeResult(
     captured,
@@ -1001,9 +1104,10 @@ function validateResponse(
   return captured;
 }
 
-function singleResult(results: StreamJson[]) {
-  if (results.length !== 1)
+function singleResult(results: Array<StreamJson>) {
+  if (results.length !== 1) {
     throw new Error("Incomplete native response: one result required");
+  }
 
   return results[0];
 }
@@ -1013,14 +1117,17 @@ function classify(
   captured: CapturedMessage,
 ): "clean" | "tool_boundary" | "refused" | "failed" {
   // The CLI reports a refusal as an error of its own; the captured answer stands.
-  if (captured.stop_reason === "refusal") return "refused";
+  if (captured.stop_reason === "refusal") {
+    return "refused";
+  }
 
   // One turn is all a request gets, so an answer that calls tools ends at the turn limit.
   if (
     result?.subtype === "error_max_turns" &&
     captured.content.some((item) => item.type === "tool_use")
-  )
+  ) {
     return "tool_boundary";
+  }
 
   return result?.subtype === "success" && !result.is_error ? "clean" : "failed";
 }
@@ -1046,15 +1153,17 @@ function validateNativeResult(
   // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
   const handled = denied > 0 || outcome === "refused";
 
-  if (nativeError !== undefined && !handled)
+  if (nativeError !== undefined && !handled) {
     throw nativeFailure(nativeErrorCode, nativeError);
+  }
 
   const final = singleResult(results);
 
-  if (!handled && !endedWell(outcome, fast, exitCode))
+  if (!handled && !endedWell(outcome, fast, exitCode)) {
     throw new Error(
       `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
     );
+  }
 }
 
 type NativeBlock = CapturedMessage["content"][number];
@@ -1065,7 +1174,9 @@ function thinkingBlock(item: NativeBlock): ThinkingContent {
     thinking: item.thinking ?? "",
   };
 
-  if (item.signature) block.thinkingSignature = item.signature;
+  if (item.signature) {
+    block.thinkingSignature = item.signature;
+  }
 
   return block;
 }
@@ -1086,8 +1197,9 @@ function toolCallBlock(item: NativeBlock, crumble: Map<string, string>) {
     arguments: input.success ? input.data : {},
   };
 
-  if (!input.success)
+  if (!input.success) {
     call.argumentsError = `Tool arguments were not a JSON object: ${JSON.stringify(item.input)}`;
+  }
 
   return call;
 }
@@ -1119,7 +1231,9 @@ function responseContentBlock(
 }
 
 function refusalMessage(details: CapturedMessage["stop_details"]) {
-  if (details?.explanation?.trim()) return details.explanation.trim();
+  if (details?.explanation?.trim()) {
+    return details.explanation.trim();
+  }
 
   return details?.category
     ? `provider refusal category: ${details.category}`
@@ -1130,7 +1244,9 @@ function doneReason(
   hasCalls: boolean,
   stopReason: string | null | undefined,
 ): "stop" | "length" | "toolUse" {
-  if (hasCalls) return "toolUse";
+  if (hasCalls) {
+    return "toolUse";
+  }
 
   return stopReason === "max_tokens" ||
     stopReason === "model_context_window_exceeded"
@@ -1150,11 +1266,17 @@ function finishedMessage(
     stopReason: "stop",
   };
 
-  if (captured.id) message.responseId = captured.id;
+  if (captured.id) {
+    message.responseId = captured.id;
+  }
 
-  if (captured.model) message.responseModel = captured.model;
+  if (captured.model) {
+    message.responseModel = captured.model;
+  }
 
-  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
+  if (captured.stop_reason) {
+    message.rawStopReason = captured.stop_reason;
+  }
 
   return message;
 }
@@ -1162,7 +1284,7 @@ function finishedMessage(
 function pushToolCalls(
   stream: AssistantMessageEventStream,
   message: AssistantMessage,
-  calls: ToolCall[],
+  calls: Array<ToolCall>,
 ) {
   for (const call of calls) {
     const contentIndex = message.content.indexOf(call);
@@ -1194,8 +1316,9 @@ function finishResponse(
     .flatMap((item) => (item.type === "text" ? [item.text] : []))
     .join("");
 
-  if (!text.startsWith(streamed))
+  if (!text.startsWith(streamed)) {
     throw new Error("Native final text differs from incremental stream");
+  }
 
   const calls = content.filter((item) => item.type === "toolCall");
 
@@ -1229,8 +1352,8 @@ function finishResponse(
 
 function openAdmission(
   adapter: AdapterOptions,
-  frames: NativeFrame[],
-  manifest: unknown[],
+  frames: Array<NativeFrame>,
+  manifest: Array<unknown>,
   timeoutMs: number,
 ) {
   return new Admission(adapter.upstream ?? ANTHROPIC_ORIGIN, timeoutMs, {
@@ -1242,10 +1365,12 @@ function openAdmission(
 }
 
 function stderrCollector() {
-  const chunks: string[] = [];
+  const chunks: Array<string> = [];
 
   const stderr = (chunk: string) => {
-    if (chunks.length < 40) chunks.push(chunk);
+    if (chunks.length < 40) {
+      chunks.push(chunk);
+    }
   };
 
   const stderrTail = () => {
@@ -1260,11 +1385,17 @@ function stderrCollector() {
 const stdinWriter =
   (cli: ChildProcessWithoutNullStreams, signal: AbortSignal) =>
   (data: string) =>
-    new Promise<void>((resolve, reject) =>
-      cli.stdin.write(data, (error) =>
-        error && !signal.aborted ? reject(error) : resolve(),
-      ),
-    );
+    new Promise<void>((resolve, reject) => {
+      cli.stdin.write(data, (error) => {
+        if (error && !signal.aborted) {
+          reject(error);
+
+          return;
+        }
+
+        resolve();
+      });
+    });
 
 async function release(
   child: ChildProcessWithoutNullStreams | undefined,
@@ -1286,9 +1417,9 @@ function cliReceiver(
 ): Receive {
   cli.stderr.setEncoding("utf8").on("data", stderr);
 
-  const spawnError = new Promise<never>((_, reject) =>
-    cli.once("error", reject),
-  );
+  const spawnError = new Promise<never>((_, reject) => {
+    cli.once("error", reject);
+  });
 
   const lines = new Lines(cli);
 
@@ -1354,7 +1485,9 @@ async function driveCli(command: string, native: NativeRequest, hold: CliHold) {
     admission,
   );
 
-  if (signal.aborted) throw new Error("Claude request cancelled");
+  if (signal.aborted) {
+    throw new Error("Claude request cancelled");
+  }
 
   const cli = spawn(command, args, {
     env,
@@ -1377,7 +1510,9 @@ async function driveCli(command: string, native: NativeRequest, hold: CliHold) {
     exitCode = await exited(cli);
   }
 
-  if (signal.aborted) throw new Error("Claude request cancelled");
+  if (signal.aborted) {
+    throw new Error("Claude request cancelled");
+  }
 
   const captured = validateResponse(
     adapter,
@@ -1418,7 +1553,9 @@ async function run(
   const cancel = () => {
     admission.abort();
 
-    if (hold.child) killTree(hold.child);
+    if (hold.child) {
+      killTree(hold.child);
+    }
   };
 
   signal.addEventListener("abort", cancel, { once: true });
@@ -1444,7 +1581,9 @@ async function run(
   } finally {
     signal.removeEventListener("abort", cancel);
 
-    if (!hold.handedOff) await release(hold.child, admission);
+    if (!hold.handedOff) {
+      await release(hold.child, admission);
+    }
 
     rmSync(scratch, { recursive: true, force: true });
   }

@@ -1,21 +1,16 @@
 import { errorText } from "../shared/errors";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
-import {
-  Type,
-  type ImageContent,
-  type TextContent,
-} from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
-import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
+import { BotWorkspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
 import type { DesktopShell } from "./computer-use";
-import {
-  passwordMayShow,
-  restoreFilled,
-  type DesktopFills,
-} from "./computer-use-login";
+import { passwordMayShow, restoreFilled } from "./computer-use-login";
+import type { DesktopFills } from "./computer-use-login";
 import { computerUseState } from "./computer-use-state";
 import { sh } from "./computer-use-driver";
 import type { DesktopFillRepository } from "./desktop-fill-repository";
@@ -77,14 +72,19 @@ async function grab(shell: DesktopShell, context: Context) {
       context,
     );
 
-    if (!output.trim().endsWith("ok")) return failed(output);
+    if (!output.trim().endsWith("ok")) {
+      return failed(output);
+    }
 
     const read = await shell.readBinaryFile(jpg, context);
 
-    if (!read.ok) return failed(read.error.message);
+    if (!read.ok) {
+      return failed(read.error.message);
+    }
 
-    if (read.value.byteLength > MAX_BYTES)
+    if (read.value.byteLength > MAX_BYTES) {
       return failed("the image is larger than 5 MB");
+    }
 
     return {
       image: Buffer.from(read.value).toString("base64"),
@@ -101,19 +101,23 @@ export async function captureDesktop(
   fills: DesktopFills,
   context: Context,
 ): Promise<ScreenshotResult> {
-  if (!workspaces?.desktop) return { error: NO_DESKTOP_IMAGE };
+  if (!workspaces?.desktop) {
+    return { error: NO_DESKTOP_IMAGE };
+  }
 
   // Held before the check, so the idle stop can't come between it and the capture.
   const release = workspaces.keepAwake(agentId);
 
   try {
-    if (!workspaces.desktopRunning(agentId))
+    if (!workspaces.desktopRunning(agentId)) {
       return { error: DESKTOP_NOT_RUNNING };
+    }
 
     const shell = workspaces.env(agentId);
 
-    if (await passwordCheck(shell, fills, context))
+    if (await passwordCheck(shell, fills, context)) {
       return { error: PASSWORD_MAY_SHOW };
+    }
 
     return await grab(shell, context);
   } catch (error) {
@@ -140,13 +144,14 @@ export function desktopScreenshotExtension(
     execute: async (_args, _api, context) => {
       const result = await captureDesktop(workspaces, agentId, fills, context);
 
-      if ("error" in result)
+      if ("error" in result) {
         return {
           output: [{ type: "text" as const, text: result.error }],
           isError: true,
         };
+      }
 
-      const output: (TextContent | ImageContent)[] = [
+      const output: Array<TextContent | ImageContent> = [
         { type: "text", text: "Shown to the owner." },
         { type: "image", data: result.image, mimeType: MIME_TYPE },
       ];

@@ -12,7 +12,8 @@ import { BotDeletion } from "../bot-ports/bot-deletion";
 import { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
 import { pi } from "../shared/app-errors";
-import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import { InvalidInput, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { MAX_BOT_MCP_SERVERS } from "../shared/limits";
 import { runnerOf } from "../shared/runner";
 import { McpIntegrations } from "./integrations";
@@ -25,7 +26,8 @@ import {
   signOut,
   startAuthorization,
 } from "./mcp-oauth";
-import { McpServerRepository, type MCPServer } from "./mcp-server-repository";
+import { McpServerRepository } from "./mcp-server-repository";
+import type { MCPServer } from "./mcp-server-repository";
 
 type McpServerSecrets = z.infer<typeof mcpServerResponse>;
 
@@ -35,7 +37,9 @@ const authOf = (
   hasTokens: boolean,
   hasTokenSecret: boolean,
 ): McpServerStatus["auth"] => {
-  if (hasTokens) return "oauth";
+  if (hasTokens) {
+    return "oauth";
+  }
 
   return hasTokenSecret ? "token" : "none";
 };
@@ -43,7 +47,7 @@ const authOf = (
 export class McpServers extends Context.Service<
   McpServers,
   {
-    readonly list: Effect.Effect<McpServerStatus[]>;
+    readonly list: Effect.Effect<Array<McpServerStatus>>;
     readonly get: (id: string) => Effect.Effect<MCPServer, NotFound>;
     readonly create: (
       input: z.output<typeof mcpCreateInput>,
@@ -72,7 +76,7 @@ export class McpServers extends Context.Service<
     readonly signOut: (id: string) => Effect.Effect<McpServerStatus, NotFound>;
     readonly check: (
       agentId: string | null,
-      serverIds: readonly string[],
+      serverIds: ReadonlyArray<string>,
       requireExisting?: boolean,
     ) => Effect.Effect<void, InvalidInput>;
   }
@@ -122,8 +126,9 @@ export class McpServers extends Context.Service<
       const get = Effect.fn("McpServers.get")(function* (id: string) {
         const server = yield* servers.get(id);
 
-        if (!server)
+        if (!server) {
           return yield* new NotFound({ message: "MCP server not found" });
+        }
 
         return server;
       });
@@ -132,10 +137,15 @@ export class McpServers extends Context.Service<
         key: string,
         input: SecretInput | null | undefined,
       ) {
-        if (input === undefined) return false;
+        if (input === undefined) {
+          return false;
+        }
 
-        if (input === null) yield* secrets.delete(key);
-        else yield* secrets.save(key, input);
+        if (input === null) {
+          yield* secrets.delete(key);
+        } else {
+          yield* secrets.save(key, input);
+        }
 
         return true;
       });
@@ -162,10 +172,11 @@ export class McpServers extends Context.Service<
         input: z.output<typeof mcpCreateInput>,
         owner: Agent | null,
       ) {
-        if (owner && owner.mcpServers.length >= MAX_BOT_MCP_SERVERS)
+        if (owner && owner.mcpServers.length >= MAX_BOT_MCP_SERVERS) {
           return yield* new InvalidInput({
             message: `${owner.name} already uses ${MAX_BOT_MCP_SERVERS} MCP servers`,
           });
+        }
 
         const server = yield* servers.create(input);
 
@@ -180,10 +191,11 @@ export class McpServers extends Context.Service<
           ),
         );
 
-        if (owner)
+        if (owner) {
           yield* agents.update(owner.id, {
             mcpServers: [...owner.mcpServers, server.id],
           });
+        }
 
         return yield* withSecrets(server);
       });
@@ -196,7 +208,9 @@ export class McpServers extends Context.Service<
           input.oauthClientSecret !== undefined ||
           (input.oauthClientId ?? null) !== old.oauthClientId;
 
-        if (appChanged) signOut(storage, old.id);
+        if (appChanged) {
+          signOut(storage, old.id);
+        }
 
         const tokenChanged = yield* storeSecret(
           mcpTokenKey(old.id),
@@ -205,23 +219,30 @@ export class McpServers extends Context.Service<
 
         yield* storeSecret(clientSecretKey(old.id), input.oauthClientSecret);
 
-        if (tokenChanged && !appChanged) yield* integrations.disconnect(old.id);
+        if (tokenChanged && !appChanged) {
+          yield* integrations.disconnect(old.id);
+        }
 
         const updated = yield* servers.update(old.id, {
           ...input,
           oauthClientId: input.oauthClientId ?? null,
         });
 
-        if (appChanged) signOut(storage, old.id);
+        if (appChanged) {
+          signOut(storage, old.id);
+        }
 
-        if (appChanged) yield* integrations.disconnect(old.id);
+        if (appChanged) {
+          yield* integrations.disconnect(old.id);
+        }
 
         return updated && (yield* withSecrets(updated));
       });
 
       const remove = Effect.fn("McpServers.delete")(function* (id: string) {
-        if (!(yield* servers.delete(id)))
+        if (!(yield* servers.delete(id))) {
           return yield* new NotFound({ message: "MCP server not found" });
+        }
 
         yield* forget(id);
       });
@@ -271,21 +292,23 @@ export class McpServers extends Context.Service<
 
       const check = Effect.fn("McpServers.check")(function* (
         agentId: string | null,
-        serverIds: readonly string[],
+        serverIds: ReadonlyArray<string>,
         requireExisting = false,
       ) {
         for (const serverId of serverIds) {
           const server = yield* servers.get(serverId);
 
-          if (!server && requireExisting)
+          if (!server && requireExisting) {
             return yield* new InvalidInput({
               message: "That MCP server does not exist",
             });
+          }
 
-          if (server?.agentId && server.agentId !== agentId)
+          if (server?.agentId && server.agentId !== agentId) {
             return yield* new InvalidInput({
               message: "That MCP server belongs to another bot",
             });
+          }
         }
       });
 

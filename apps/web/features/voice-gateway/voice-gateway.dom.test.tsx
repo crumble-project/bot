@@ -1,3 +1,4 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
@@ -6,8 +7,19 @@ import { z } from "zod";
 import type { VoiceGateway } from "./api";
 import { queryClient } from "@/lib/api";
 import { settle, waitFor, waitForIdle } from "@/test/wait-for";
+import { requestPath } from "@/test/request-path";
 
 const BOT_ID = "00000000-0000-4000-8000-000000000001";
+
+const button = (label: string) =>
+  [...document.querySelectorAll("button")].find(
+    (each) => each.textContent?.trim() === label,
+  );
+
+const tokenInput = () =>
+  document.querySelector<HTMLInputElement>(
+    'input[aria-label="Voice gateway token"]',
+  );
 
 const describeGateway = (
   overrides: Partial<VoiceGateway> = {},
@@ -46,19 +58,25 @@ async function renderPage(
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
         const response = await respond(path, init);
 
-        if (response) return response;
+        if (response) {
+          return response;
+        }
 
-        if (path === "/v1/agents")
-          return Response.json([{ id: BOT_ID, name: "Ada", enabled: true }]);
+        if (path === "/v1/agents") {
+          return Response.json([
+            agentFixture({ id: BOT_ID, name: "Ada", enabled: true }),
+          ]);
+        }
 
         throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${path}`);
       },
@@ -74,11 +92,6 @@ async function renderPage(
   document.body.append(container);
 
   const root = createRoot(container);
-
-  const button = (label: string) =>
-    [...document.querySelectorAll("button")].find(
-      (each) => each.textContent?.trim() === label,
-    );
 
   const type = (input: HTMLInputElement, value: string) =>
     act(async () => {
@@ -107,8 +120,11 @@ async function renderPage(
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -116,7 +132,7 @@ async function renderPage(
 }
 
 test("invalid numbers and usernames show errors without saving, and a valid draft saves", async () => {
-  const bodies: unknown[] = [];
+  const bodies: Array<unknown> = [];
 
   const stored = describeGateway({
     config: {
@@ -135,9 +151,13 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
 
   await renderPage(
     async (path, init) => {
-      if (path !== "/v1/voice-gateway") return null;
+      if (path !== "/v1/voice-gateway") {
+        return null;
+      }
 
-      if (init?.method !== "PUT") return Response.json(stored);
+      if (init?.method !== "PUT") {
+        return Response.json(stored);
+      }
 
       const body = z
         .json()
@@ -222,7 +242,7 @@ test("invalid numbers and usernames show errors without saving, and a valid draf
 });
 
 test("a line's Calls others checkbox is described and saved as callsOthers", async () => {
-  const bodies: unknown[] = [];
+  const bodies: Array<unknown> = [];
 
   const line = {
     username: "ada",
@@ -237,9 +257,13 @@ test("a line's Calls others checkbox is described and saved as callsOthers", asy
 
   await renderPage(
     async (path, init) => {
-      if (path !== "/v1/voice-gateway") return null;
+      if (path !== "/v1/voice-gateway") {
+        return null;
+      }
 
-      if (init?.method !== "PUT") return Response.json(stored);
+      if (init?.method !== "PUT") {
+        return Response.json(stored);
+      }
 
       const body = z
         .json()
@@ -294,10 +318,11 @@ test("issuing over an existing token asks first, and the new token is shown once
 
   await renderPage(
     async (path, init) => {
-      if (path === "/v1/voice-gateway")
+      if (path === "/v1/voice-gateway") {
         return Response.json(
           describeGateway({ token: { issuedAt: "2026-11-01T10:00:00.000Z" } }),
         );
+      }
 
       if (path === "/v1/voice-gateway/token" && init?.method === "POST") {
         issued++;
@@ -311,11 +336,6 @@ test("issuing over an existing token asks first, and the new token is shown once
       return null;
     },
     async ({ button }) => {
-      const tokenInput = () =>
-        document.querySelector<HTMLInputElement>(
-          'input[aria-label="Voice gateway token"]',
-        );
-
       await waitFor(() => button("Issue new token") !== undefined, "the row");
       await act(async () => button("Issue new token")!.click());
       await waitFor(

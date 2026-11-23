@@ -10,16 +10,16 @@ import {
   refusalOf,
   replyTree,
   windowLine,
-  type DriverReply,
-  type Window,
 } from "./computer-use-driver";
+import type { DriverReply, Window } from "./computer-use-driver";
 import type { IntentTarget } from "./intent-check";
 import { passwordMayShow } from "./computer-use-login";
-import { scrubText, type ComputerUseState } from "./computer-use-state";
+import { scrubText } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 export const MAX_TREE_CHARS = 12_000;
 
-const otherWindows = (target: Window, list: Window[]) =>
+const otherWindows = (target: Window, list: Array<Window>) =>
   list.flatMap((each) =>
     each.window_id === target.window_id ? [] : [windowLine(each)],
   );
@@ -29,7 +29,7 @@ function headerOf(
   reply: DriverReply,
   since: string | undefined,
   query: string | undefined,
-  others: string[],
+  others: Array<string>,
 ) {
   return [
     `window ${windowLine(target)} (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""}${query ? `, elements matching "${query}"` : ""})`,
@@ -46,7 +46,7 @@ function headerOf(
 const screenshotOf = (
   reply: DriverReply,
   image: string,
-): (TextContent | ImageContent)[] => [
+): Array<TextContent | ImageContent> => [
   {
     type: "text",
     text: `screenshot ${reply.screenshot_width ?? "?"}x${reply.screenshot_height ?? "?"}, coordinates are pixels of this image`,
@@ -75,8 +75,9 @@ export const elementToken = (
 ) => {
   const snapshot = state.snapshots.get(target.window_id);
 
-  if (!snapshot)
+  if (!snapshot) {
     throw new Error("no capture of this window yet; capture first");
+  }
 
   return `${snapshot}:${element}`;
 };
@@ -106,14 +107,20 @@ function elementLine(
 ): ElementLine | undefined {
   const match = ELEMENT_LINE.exec(line);
 
-  if (!match) return undefined;
+  if (!match) {
+    return undefined;
+  }
 
   const [, mark, index, role = "", name] = match;
   const target: IntentTarget = {};
 
-  if (role.trim()) target.role = scrubText(state, role.trim());
+  if (role.trim()) {
+    target.role = scrubText(state, role.trim());
+  }
 
-  if (name !== undefined) target.name = scrubText(state, unquote(name));
+  if (name !== undefined) {
+    target.name = scrubText(state, unquote(name));
+  }
 
   // Only a diff marks removals; a full tree's `-` is a list bullet.
   return { index: Number(index), removed: diff && mark === "-", target };
@@ -132,11 +139,16 @@ function recordElements(
   for (const line of replyTree(reply).split("\n")) {
     const element = elementLine(state, line, diff);
 
-    if (element?.removed) known.delete(element.index);
-    else if (element) known.set(element.index, element.target);
+    if (element?.removed) {
+      known.delete(element.index);
+    } else if (element) {
+      known.set(element.index, element.target);
+    }
   }
 
-  if (previous) state.elements.delete(previous);
+  if (previous) {
+    state.elements.delete(previous);
+  }
   state.elements.set(snapshot, known);
 }
 
@@ -146,14 +158,17 @@ export function windowText(
   reply: DriverReply,
   since: string | undefined,
   query: string | undefined,
-  others: string[],
+  others: Array<string>,
 ) {
   if (reply.snapshot_id) {
     recordElements(state, target.window_id, reply.snapshot_id, reply);
     state.snapshots.set(target.window_id, reply.snapshot_id);
 
-    if (query) state.queried.add(target.window_id);
-    else state.queried.delete(target.window_id);
+    if (query) {
+      state.queried.add(target.window_id);
+    } else {
+      state.queried.delete(target.window_id);
+    }
   }
 
   return `${headerOf(target, reply, since, query, others)}\n${treeOf(state, reply)}`;
@@ -176,7 +191,9 @@ const screenshotMode = async (
   mode: string,
   context: Context,
 ) => {
-  if (mode !== "vision") return "none";
+  if (mode !== "vision") {
+    return "none";
+  }
 
   return (await passwordMayShow(state, context)) ? "withheld" : "taken";
 };
@@ -188,7 +205,7 @@ export async function captureWindow(
   full: boolean,
   query: string | undefined,
   context: Context,
-): Promise<(TextContent | ImageContent)[]> {
+): Promise<Array<TextContent | ImageContent>> {
   const since = diffBase(state, target, mode, full, query);
   const screenshot = await screenshotMode(state, mode, context);
   const vision = screenshot === "taken";
@@ -207,25 +224,29 @@ export async function captureWindow(
     vision,
   );
 
-  if (refusalOf(reply))
+  if (refusalOf(reply)) {
     return [
       {
         type: "text",
         text: `capture failed: ${messageOf(reply) ?? codeOf(reply) ?? "unknown error"}`,
       },
     ];
+  }
 
   const others = otherWindows(target, await listWindows(state, context));
 
-  const content: (TextContent | ImageContent)[] = [
+  const content: Array<TextContent | ImageContent> = [
     {
       type: "text",
       text: windowText(state, target, reply, since, query, others),
     },
   ];
 
-  if (image) content.push(...screenshotOf(reply, image));
-  else if (screenshot === "withheld") content.push(NO_SCREENSHOT);
+  if (image) {
+    content.push(...screenshotOf(reply, image));
+  } else if (screenshot === "withheld") {
+    content.push(NO_SCREENSHOT);
+  }
 
   return content;
 }

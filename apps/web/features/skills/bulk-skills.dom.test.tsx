@@ -1,19 +1,64 @@
+import { skillFixture } from "@/test/skill-fixture";
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
-import { act, type ReactNode } from "react";
+import { act } from "react";
+import type { ReactNode } from "react";
 import { z } from "zod";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
 import type { Bot } from "@/features/bots/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { requestPath } from "@/test/request-path";
+
+const enabledButton = (label: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent?.trim() === label && !node.disabled,
+  );
+
+const enabledCheckbox = (label: string) =>
+  [
+    ...document.querySelectorAll<HTMLInputElement>(
+      `input[aria-label="${label}"]`,
+    ),
+  ].find((node) => !node.disabled);
+
+const click = async (label: string) => {
+  await waitFor(() => enabledButton(label) !== undefined, `button: ${label}`);
+  await act(async () => enabledButton(label)?.click());
+};
+
+const select = async (label: string) => {
+  await waitFor(
+    () => enabledCheckbox(label) !== undefined,
+    `checkbox: ${label}`,
+  );
+  await act(async () => enabledCheckbox(label)?.click());
+};
+
+const confirmation = () =>
+  [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      '[role="alertdialog"] button',
+    ),
+  ].find((button) => button.textContent === "Delete");
 
 type Package = {
   id: string;
   name: string;
   instructions: string;
   source?: string;
-  origin?: { repository: string; branch: string };
+  origin?: {
+    repository: string;
+    branch: string;
+    path: string;
+    commit: string;
+    digest: string;
+  };
+  path?: string;
+  createdAt?: string;
+  updatedAt?: string;
   update?: { commit: string; removed: boolean } | null;
 };
 
@@ -24,7 +69,7 @@ async function fixture(
     click: (label: string) => Promise<void>;
     select: (label: string) => Promise<void>;
     search: (value: string) => Promise<void>;
-    requests: string[];
+    requests: Array<string>;
     fail: Set<string>;
     render: (children: ReactNode) => Promise<void>;
     holdBotRefetch: () => { started: Promise<void>; release: () => void };
@@ -57,18 +102,19 @@ async function fixture(
     },
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
-  const requests: string[] = [];
+  const requests: Array<string> = [];
   const fail = new Set<string>();
 
-  const bots: {
+  const bots: Array<{
     id: string;
     name: string;
     avatar: Bot["avatar"];
-    sharedSkills: string[];
-  }[] = [
+    sharedSkills: Array<string>;
+  }> = [
     {
       id: "a",
       name: "Alpha",
@@ -83,7 +129,7 @@ async function fixture(
     },
   ];
 
-  let shared: Package[] = [
+  let shared: Array<Package> = [
     {
       id: "shared",
       name: "Shared",
@@ -95,7 +141,13 @@ async function fixture(
       name: "GitHub",
       instructions: "Installed instructions",
       source: "shared",
-      origin: { repository: "acme/skills", branch: "main" },
+      origin: {
+        repository: "acme/skills",
+        branch: "main",
+        path: "",
+        commit: "before",
+        digest: "digest",
+      },
       update: { commit: "abc", removed: false },
     },
     {
@@ -103,10 +155,11 @@ async function fixture(
       name: "Default",
       instructions: "Default instructions",
       source: "bundled",
+      path: "/default",
     },
   ];
 
-  let own: Package[] = [
+  let own: Array<Package> = [
     { id: "own", name: "Own", instructions: "Own instructions" },
   ];
 
@@ -116,8 +169,9 @@ async function fixture(
   ) => {
     const bot = bots.find((each) => each.id === body.botId)!;
 
-    if (path === "/v1/skills/shared/assignment")
+    if (path === "/v1/skills/shared/assignment") {
       bot.sharedSkills = body.assigned ? ["shared"] : [];
+    }
 
     return Response.json({ skipped: false });
   };
@@ -146,10 +200,13 @@ async function fixture(
     path: string,
     init: RequestInit | undefined,
   ) => {
-    if (init?.method === "DELETE") return deletionResponse(path);
+    if (init?.method === "DELETE") {
+      return deletionResponse(path);
+    }
 
-    if (path === "/v1/skills/updates/check")
+    if (path === "/v1/skills/updates/check") {
       return Response.json({ failed: [] });
+    }
 
     if (path === "/v1/skills/github/update") {
       shared = shared.map((skill) =>
@@ -180,13 +237,25 @@ async function fixture(
     }
 
     const listings = new Map<string, unknown>([
-      ["/v1/agents", bots],
-      ["/v1/skills", shared],
-      ["/v1/agents/a/skills", own],
+      ["/v1/agents", bots.map(agentFixture)],
+      [
+        "/v1/skills",
+        shared.map((skill) => ({
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          ...skill,
+        })),
+      ],
+      [
+        "/v1/agents/a/skills",
+        own.map((skill) => skillFixture({ ...skill, agentId: "a" })),
+      ],
       ["/v1/agents/b/skills", []],
     ]);
 
-    if (listings.has(path)) return Response.json(listings.get(path));
+    if (listings.has(path)) {
+      return Response.json(listings.get(path));
+    }
 
     return Response.json({ error: `Unexpected ${path}` }, { status: 500 });
   };
@@ -194,15 +263,20 @@ async function fixture(
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
         const method = init?.method ?? "GET";
 
-        if (method !== "GET") requests.push(`${method} ${path}`);
+        if (method !== "GET") {
+          requests.push(`${method} ${path}`);
+        }
 
-        if (fail.has(path) && method !== "GET")
+        if (fail.has(path) && method !== "GET") {
           return Response.json({ error: "Denied by test" }, { status: 500 });
+        }
 
-        if (method !== "GET") return mutationResponse(path, init);
+        if (method !== "GET") {
+          return mutationResponse(path, init);
+        }
 
         return listingResponse(path);
       },
@@ -222,31 +296,6 @@ async function fixture(
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-
-  const enabledButton = (label: string) =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (node) => node.textContent?.trim() === label && !node.disabled,
-    );
-
-  const click = async (label: string) => {
-    await waitFor(() => enabledButton(label) !== undefined, `button: ${label}`);
-    await act(async () => enabledButton(label)?.click());
-  };
-
-  const enabledCheckbox = (label: string) =>
-    [
-      ...document.querySelectorAll<HTMLInputElement>(
-        `input[aria-label="${label}"]`,
-      ),
-    ].find((node) => !node.disabled);
-
-  const select = async (label: string) => {
-    await waitFor(
-      () => enabledCheckbox(label) !== undefined,
-      `checkbox: ${label}`,
-    );
-    await act(async () => enabledCheckbox(label)?.click());
-  };
 
   const search = async (value: string) => {
     const input = container.querySelector<HTMLInputElement>(
@@ -304,20 +353,16 @@ async function fixture(
     for (const key of Object.keys(values)) {
       const descriptor = globals[key];
 
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else Reflect.deleteProperty(globalThis, key);
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
   }
 }
 
 const confirmDelete = async () => {
-  const confirmation = () =>
-    [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        '[role="alertdialog"] button',
-      ),
-    ].find((button) => button.textContent === "Delete");
-
   await waitFor(() => confirmation() !== undefined, "the confirmation");
   await act(async () => confirmation()?.click());
 };
@@ -478,7 +523,7 @@ test("selection consumers do not render for unrelated provider changes, but stil
 
     const child = <SelectSkills ids={["isolated"]} label="Select isolated" />;
 
-    const view = (visibleIds: string[]) => (
+    const view = (visibleIds: Array<string>) => (
       <BulkSkills bots={[]} skills={skills} visibleIds={visibleIds}>
         {child}
       </BulkSkills>

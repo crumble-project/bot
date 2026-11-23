@@ -15,12 +15,8 @@ import {
 } from "@/features/bot-secrets/bot-secrets";
 import type { Bot } from "@/features/bots/api";
 import { call } from "@/lib/api";
-import {
-  type Credential,
-  type CredentialRequest,
-  credentialPath,
-  invalidateCredentials,
-} from "./api";
+import { credentialPath, invalidateCredentials } from "./api";
+import type { Credential, CredentialRequest } from "./api";
 
 const validName = (name: string) => credentialName.safeParse(name).success;
 
@@ -33,7 +29,7 @@ function useSaveCredential(
 ) {
   return useMutation({
     mutationFn: () =>
-      call<"saveAgentCredential">(credentialPath(botId, draft.name), "PUT", {
+      call("saveAgentCredential", credentialPath(botId, draft.name), "PUT", {
         hosts: hostList(draft.hosts),
         ...(draft.secret.changed &&
           draft.secret.input && { secret: draft.secret.input }),
@@ -67,7 +63,7 @@ export function CredentialSheet({
   request,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   botId: string | null;
   existing: Credential | null;
   request: CredentialRequest | undefined;

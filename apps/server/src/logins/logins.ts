@@ -13,7 +13,8 @@ import {
   useFailure,
 } from "../bot-secrets/bot-secret-lifecycle";
 import type { LoginFill, LoginRead } from "./login-fill";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
@@ -21,20 +22,23 @@ import type { loginSaveInput } from "../contract/secrets";
 import {
   loginFieldInput,
   loginName,
-  type LoginField,
-  type SecretInput,
-  type SecretReference,
   credentialHosts,
+} from "../contract/secrets";
+import type {
+  LoginField,
+  SecretInput,
+  SecretReference,
 } from "../contract/secrets";
 import type { BotSecretRequest } from "../bot-secrets/bot-secret-requests";
 import type { Login } from "./login-repository";
-import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import { InvalidInput, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import {
   LoginRepository,
   loginFieldKey,
   loginFieldsPrefix,
-  type LoginRecord,
 } from "./login-repository";
+import type { LoginRecord } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 import { REQUEST_LOGIN_TOOL_NAME } from "../contract/tools";
 
@@ -58,15 +62,34 @@ const ONE_TIME_SECRET =
 
 type FieldWrite = { field: LoginField; input: SecretInput | null };
 
+const checkComplete = (
+  existing: Login | undefined,
+  writes: ReadonlyArray<FieldWrite>,
+) => {
+  const has = (field: "username" | "password") =>
+    writes.some((write) => write.field === field) ||
+    Boolean(existing?.fields[field]);
+
+  return has("username") && has("password")
+    ? Effect.void
+    : Effect.fail(
+        new InvalidInput({
+          message: "A login needs a username and a password",
+        }),
+      );
+};
+
 export class Logins extends Context.Service<
   Logins,
   {
-    readonly list: (agentId: string) => Effect.Effect<Login[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<Login>>;
     readonly get: (
       agentId: string,
       name: string,
     ) => Effect.Effect<Login | undefined>;
-    readonly requests: (agentId: string) => Effect.Effect<BotSecretRequest[]>;
+    readonly requests: (
+      agentId: string,
+    ) => Effect.Effect<Array<BotSecretRequest>>;
     readonly request: (
       agentId: string,
       request: LoginRequestInput,
@@ -89,7 +112,7 @@ export class Logins extends Context.Service<
       agentId: string,
       name: string,
       options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<LoginUse[], AppError>;
+    ) => Effect.Effect<Array<LoginUse>, AppError>;
     /** The value to fill; for a one-time code, the code valid now. */
     readonly value: (
       agentId: string,
@@ -124,7 +147,9 @@ export class Logins extends Context.Service<
             loginFieldKey(agentId, record.name, field),
           );
 
-          if (status.configured) fields[field] = status;
+          if (status.configured) {
+            fields[field] = status;
+          }
         }
 
         return { ...record, fields } satisfies Login;
@@ -181,36 +206,19 @@ export class Logins extends Context.Service<
             field: "one_time_code",
             input: hasCode ? reference("one_time_code") : null,
           },
-        ] satisfies FieldWrite[];
+        ] satisfies Array<FieldWrite>;
       });
 
       const fieldWrites = (input: LoginSaveInput) =>
         input.item
           ? itemWrites(input.item)
           : Effect.succeed(
-              loginFieldInput.options.flatMap((field): FieldWrite[] => {
+              loginFieldInput.options.flatMap((field): Array<FieldWrite> => {
                 const source = input.fields?.[field];
 
                 return source === undefined ? [] : [{ field, input: source }];
               }),
             );
-
-      const checkComplete = (
-        existing: Login | undefined,
-        writes: readonly FieldWrite[],
-      ) => {
-        const has = (field: "username" | "password") =>
-          writes.some((write) => write.field === field) ||
-          Boolean(existing?.fields[field]);
-
-        return has("username") && has("password")
-          ? Effect.void
-          : Effect.fail(
-              new InvalidInput({
-                message: "A login needs a username and a password",
-              }),
-            );
-      };
 
       const save = Effect.fn("Logins.save")(function* (
         agentId: string,
@@ -238,8 +246,9 @@ export class Logins extends Context.Service<
               ),
             );
 
-            for (const { field } of writes.filter((write) => !write.input))
+            for (const { field } of writes.filter((write) => !write.input)) {
               yield* secrets.delete(loginFieldKey(agentId, checked, field));
+            }
           }),
           write: (hosts) =>
             Effect.flatMap(repository.save(agentId, checked, hosts), (record) =>
@@ -275,17 +284,21 @@ export class Logins extends Context.Service<
         const computed = secrets.isVolatile(yield* secrets.status(key));
         const read = yield* secrets.read(key);
 
-        if (!read)
+        if (!read) {
           return yield* new NotFound({
             message: `Login ${name} has no ${field.replaceAll("_", " ")}`,
           });
+        }
 
-        if (field !== "one_time_code" || computed) return read;
+        if (field !== "one_time_code" || computed) {
+          return read;
+        }
 
         const secret = parseOneTimeSecret(Redacted.value(read));
 
-        if (!secret)
+        if (!secret) {
           return yield* new InvalidInput({ message: ONE_TIME_SECRET });
+        }
 
         return Redacted.make(
           oneTimeCode(secret, yield* Clock.currentTimeMillis),
@@ -328,7 +341,7 @@ export type LoginsAccess = Omit<
 };
 
 export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
-  const logins = runtime.runSync(Logins.use(Effect.succeed));
+  const logins = runtime.runSync(Effect.flatMap(Logins, Effect.succeed));
 
   return {
     ...accessOf(logins, runtime, SYNC_LOGINS),
@@ -363,8 +376,10 @@ export const loginFill = (
   recordUse: async (name, use) => logins.recordUse(agentId, name, use),
 });
 
-export function jobLoginSection(logins: readonly Login[]) {
-  if (!logins.length) return;
+export function jobLoginSection(logins: ReadonlyArray<Login>) {
+  if (!logins.length) {
+    return;
+  }
 
   return [
     "Logins the owner gave this bot, with the hosts each works for:",
@@ -395,7 +410,9 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
           const granted = logins.list(agentId);
           const requests = logins.requests(agentId);
 
-          if (!granted.length && !requests.length) return;
+          if (!granted.length && !requests.length) {
+            return;
+          }
 
           return [
             ...(granted.length

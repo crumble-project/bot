@@ -2,17 +2,16 @@ import { replyText } from "../shared/reply-text";
 import { errorText } from "../shared/errors";
 import { createHash } from "node:crypto";
 import type { Context, JsonValue } from "@earendil-works/chord";
-import {
-  calculateCost,
-  Type,
-  type Api,
-  type AssistantMessage,
-  type ImageContent,
-  type Message,
-  type Model,
-  type Models,
-  type TextContent,
-  type Usage,
+import { calculateCost, Type } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessage,
+  ImageContent,
+  Message,
+  Model,
+  Models,
+  TextContent,
+  Usage,
 } from "@earendil-works/pi-ai";
 import {
   AgentDoc,
@@ -22,30 +21,34 @@ import {
   GenerationTask,
   hook,
   UsageDoc,
-  type ConversationId,
-  type Harness,
-  type HookApi,
-  type Tx,
+} from "@earendil-works/pi-durable";
+import type {
+  ConversationId,
+  Harness,
+  HookApi,
+  Tx,
 } from "@earendil-works/pi-durable";
 import { Effect } from "effect";
 import { z } from "zod";
 import { SettingsRepository } from "../shared/settings-repository";
+import { fallingBackTo } from "../shared/fallback-schema";
+import { required } from "../shared/required";
 import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
 
 export type VisionModelRef = { provider: string; model: string };
 
 export const VISION_MODEL = "vision-model";
 
-const stored = z
-  .object({ provider: z.string(), model: z.string() })
-  .optional()
-  .catch(undefined);
+const stored = fallingBackTo(
+  z.object({ provider: z.string(), model: z.string() }).optional(),
+  undefined,
+);
 
 export const parseVisionModel = (
   value: JsonValue | undefined,
 ): VisionModelRef | undefined => stored.parse(value);
 
-export const chosenVisionModel = SettingsRepository.use((r) =>
+export const chosenVisionModel = Effect.flatMap(SettingsRepository, (r) =>
   r.get(VISION_MODEL),
 ).pipe(Effect.map(parseVisionModel));
 
@@ -77,18 +80,19 @@ export const VisionDescriptions = defineDoc<{
 });
 
 /** Whether a model reads images itself; catalogs that list no modalities are trusted, as for chat uploads. */
-export const readsImages = (model: { input?: readonly string[] } | undefined) =>
-  !model?.input || model.input.includes("image");
+export const readsImages = (
+  model: { input?: ReadonlyArray<string> } | undefined,
+) => !model?.input || model.input.includes("image");
 
 export const describesImages = (
   vision: VisionModelRef | undefined,
-  model: { input?: readonly string[] } | undefined,
+  model: { input?: ReadonlyArray<string> } | undefined,
 ) => vision !== undefined && !readsImages(model);
 
 export const imageHash = (data: string) =>
   createHash("sha256").update(data).digest("hex");
 
-const listsImages = (model: { input?: readonly string[] }) =>
+const listsImages = (model: { input?: ReadonlyArray<string> }) =>
   model.input?.includes("image") ?? false;
 
 export const visionChoices = async (models: Models) =>
@@ -99,15 +103,18 @@ export async function visionModelOf(
   ref: VisionModelRef,
 ): Promise<Model<Api> | undefined> {
   // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
-  if (!models.getModel(ref.provider, ref.model))
+  if (!models.getModel(ref.provider, ref.model)) {
     await models.refresh({ providers: [ref.provider] });
+  }
   const model = models.getModel(ref.provider, ref.model);
 
   return model && listsImages(model) ? model : undefined;
 }
 
 function pricedUsage(model: Model<Api>, usage: Usage): Usage {
-  if (usage.cost.total > 0 || model.cost.input <= 0) return usage;
+  if (usage.cost.total > 0 || model.cost.input <= 0) {
+    return usage;
+  }
 
   return {
     ...usage,
@@ -120,11 +127,12 @@ type Look = { text: string; usage: Usage } | { error: string; usage?: Usage };
 function lookOf(model: Model<Api>, reply: AssistantMessage): Look {
   const usage = pricedUsage(model, reply.usage);
 
-  if (reply.stopReason === "error" || reply.stopReason === "aborted")
+  if (reply.stopReason === "error" || reply.stopReason === "aborted") {
     return {
       error: reply.errorMessage ?? "the vision model gave no answer",
       usage,
     };
+  }
 
   const text = replyText(reply).trim();
 
@@ -159,7 +167,9 @@ async function look(
       await models.completeSimple(model, request, signal ? { signal } : {}),
     );
   } catch (error) {
-    if (signal?.aborted) throw error;
+    if (signal?.aborted) {
+      throw error;
+    }
 
     return { error: errorText(error) };
   }
@@ -209,11 +219,13 @@ async function recordModelUsage(
   total.cacheWrite += usage.cacheWrite;
   total.totalTokens += usage.totalTokens;
 
-  if (usage.cacheWrite1h !== undefined)
+  if (usage.cacheWrite1h !== undefined) {
     total.cacheWrite1h = (total.cacheWrite1h ?? 0) + usage.cacheWrite1h;
+  }
 
-  if (usage.reasoning !== undefined)
+  if (usage.reasoning !== undefined) {
     total.reasoning = (total.reasoning ?? 0) + usage.reasoning;
+  }
   total.cost.input += usage.cost.input;
   total.cost.output += usage.cost.output;
   total.cost.cacheRead += usage.cost.cacheRead;
@@ -221,7 +233,7 @@ async function recordModelUsage(
   total.cost.total += usage.cost.total;
 }
 
-const imagesOf = (message: Message): ImageContent[] =>
+const imagesOf = (message: Message): Array<ImageContent> =>
   (message.role === "user" || message.role === "toolResult") &&
   Array.isArray(message.content)
     ? message.content.flatMap((block) =>
@@ -267,16 +279,20 @@ async function remember(
   const { api, context } = describer;
   const harness = describer.options.harness();
 
-  if (!harness || (!("text" in result) && !spent(result.usage))) return;
+  if (!harness || (!("text" in result) && !spent(result.usage))) {
+    return;
+  }
 
   await harness.commit(async (tx) => {
-    if ("text" in result)
+    if ("text" in result) {
       (await tx.doc(VisionDescriptions, api.conversationId)).descriptions[
         hash
       ] = result.text;
+    }
 
-    if (spent(result.usage))
+    if (spent(result.usage)) {
       await recordModelUsage(tx, api.conversationId, model, result.usage);
+    }
   }, context);
 }
 
@@ -288,9 +304,11 @@ async function describeOne(
   const { api, context, model, chosen } = describer;
   const failed = await api.memo<string>(failureMemo(hash), context);
 
-  if (failed !== undefined) return failedText(failed);
+  if (failed !== undefined) {
+    return failedText(failed);
+  }
 
-  if (!model)
+  if (!model) {
     return failedText(
       await api.memo(
         failureMemo(hash),
@@ -298,6 +316,7 @@ async function describeOne(
         context,
       ),
     );
+  }
 
   const result = await look(
     api.models,
@@ -309,7 +328,9 @@ async function describeOne(
 
   await remember(describer, model, hash, result);
 
-  if ("text" in result) return describedText(hash, result.text);
+  if ("text" in result) {
+    return describedText(hash, result.text);
+  }
 
   return failedText(await api.memo(failureMemo(hash), result.error, context));
 }
@@ -353,18 +374,32 @@ function replaced(
   hashes: Map<ImageContent, string>,
   standins: Map<string, string>,
 ): Message {
-  const swap = (block: TextContent | ImageContent): TextContent =>
-    block.type === "image"
-      ? { type: "text", text: standins.get(hashes.get(block)!)! }
-      : block;
+  const swap = (block: TextContent | ImageContent): TextContent => {
+    if (block.type !== "image") {
+      return block;
+    }
 
-  if (!imagesOf(message).length) return message;
+    const hash = hashes.get(block);
+    const text = hash === undefined ? undefined : standins.get(hash);
 
-  if (message.role === "toolResult")
+    // Erasing the image quietly would drop content the model was meant to see.
+    return {
+      type: "text",
+      text: required(text, "Every image in a replaced message has a standin"),
+    };
+  };
+
+  if (!imagesOf(message).length) {
+    return message;
+  }
+
+  if (message.role === "toolResult") {
     return { ...message, content: message.content.map(swap) };
+  }
 
-  if (message.role === "user" && Array.isArray(message.content))
+  if (message.role === "user" && Array.isArray(message.content)) {
     return { ...message, content: message.content.map(swap) };
+  }
 
   return message;
 }
@@ -374,10 +409,13 @@ function describeHook(options: VisionOptions) {
     beforeRequest: async ({ messages }, api, context) => {
       const chosen = options.visionModel();
 
-      if (!chosen || !messages.some((message) => imagesOf(message).length))
+      if (!chosen || !messages.some((message) => imagesOf(message).length)) {
         return;
+      }
 
-      if (!describesImages(chosen, await requestModel(api, context))) return;
+      if (!describesImages(chosen, await requestModel(api, context))) {
+        return;
+      }
 
       const hashes = new Map(
         messages
@@ -409,7 +447,9 @@ async function findImage(
   const conversation = await harness.conversation(conversationId, context);
   let cursor: Parameters<NonNullable<typeof conversation>["entries"]>[2];
 
-  if (!conversation) return;
+  if (!conversation) {
+    return;
+  }
 
   do {
     const page = await conversation.entries(
@@ -423,7 +463,9 @@ async function findImage(
       .flatMap((entry) => (entry.model ?? []).flatMap(imagesOf))
       .find((block) => imageHash(block.data).startsWith(id));
 
-    if (image) return image;
+    if (image) {
+      return image;
+    }
     cursor = page.next;
   } while (cursor !== undefined);
 
@@ -440,22 +482,25 @@ async function askTarget(
   const chosen = options.visionModel();
   const harness = options.harness();
 
-  if (!chosen || !harness)
+  if (!chosen || !harness) {
     throw new Error(
       "The account has no vision model; the owner turned it off in Settings.",
     );
+  }
 
   const model = await visionModelOf(models, chosen);
 
-  if (!model)
+  if (!model) {
     throw new Error(
       `The vision model ${chosen.provider}/${chosen.model} isn't available.`,
     );
+  }
 
   const image = await findImage(harness, conversationId, id, context);
 
-  if (!image)
+  if (!image) {
     throw new Error(`No image with id ${id} is in this conversation.`);
+  }
 
   return { model, image };
 }
@@ -494,12 +539,13 @@ function askTool(options: VisionOptions) {
 
       const usage = spent(result.usage) ? { usage: result.usage } : {};
 
-      if ("error" in result)
+      if ("error" in result) {
         return {
           output: [{ type: "text" as const, text: failedText(result.error) }],
           isError: true,
           ...usage,
         };
+      }
 
       return {
         output: [{ type: "text" as const, text: result.text }],

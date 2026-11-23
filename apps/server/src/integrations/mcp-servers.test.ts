@@ -3,8 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Context, Effect } from "effect";
+import type { Redacted } from "effect";
 import { BotDeletion } from "../bot-ports/bot-deletion";
 import { Secrets } from "../secrets/secrets";
+import type { SecretInput } from "../contract/secrets";
+import { InvalidInput } from "../shared/errors";
 import { Store } from "../../test/support/store";
 import { mcpServersOver } from "./integrations-test-support";
 import { McpServerRepository } from "./mcp-server-repository";
@@ -51,16 +54,35 @@ test("client-secret updates fence old exchanges and deletion rejects old snapsho
   const secretMutation = gate();
   const realSecrets = Context.get(context, Secrets);
 
+  // Wraps `save` with the same two call shapes: fenced writes stay fenced whether they verify or not.
+  function gatedSave(
+    key: string,
+    input: SecretInput,
+  ): Effect.Effect<void, InvalidInput>;
+  function gatedSave<A, E = never, R = never>(
+    key: string,
+    input: SecretInput,
+    verify: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | InvalidInput, R>;
+  function gatedSave<A, E, R>(
+    key: string,
+    input: SecretInput,
+    verify?: (value: Redacted.Redacted) => Effect.Effect<A, E, R>,
+  ) {
+    return Effect.andThen(
+      Effect.promise(() => secretMutation.wait()),
+      verify === undefined
+        ? realSecrets.save(key, input)
+        : realSecrets.save(key, input, verify),
+    );
+  }
+
   const gatedContext = Context.add(
     context,
     Secrets,
     Secrets.of({
       ...realSecrets,
-      save: (key, input, verify) =>
-        Effect.andThen(
-          Effect.promise(() => secretMutation.wait()),
-          realSecrets.save(key, input, verify),
-        ),
+      save: gatedSave,
     }),
   );
 

@@ -1,3 +1,4 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import {
@@ -10,15 +11,16 @@ import {
 } from "@tanstack/react-router";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
-import {
-  type Schedule,
-  executionsQuery,
-  schedulePath,
-  scriptRunsQuery,
-} from "./api";
+import { executionsQuery, schedulePath, scriptRunsQuery } from "./api";
+import type { Schedule } from "./api";
+import { requestPath } from "@/test/request-path";
+
+const runNow = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.includes("Run now"),
+  );
 
 const schedule: Schedule = {
   id: "schedule/1",
@@ -63,8 +65,9 @@ test("running an automation refreshes its histories and opens its bot", async ()
     scrollTo: () => {},
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   const runs = scriptRunsQuery(schedule.id);
   const otherRuns = scriptRunsQuery("other");
@@ -73,20 +76,25 @@ test("running an automation refreshes its histories and opens its bot", async ()
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
 
-        if (init?.method === "POST") return Response.json({ admitted: true });
+        if (init?.method === "POST") {
+          return Response.json({ admitted: true }, { status: 202 });
+        }
 
         refreshed.add(path);
 
-        if (path === "/v1/agents")
-          return Response.json([
-            { id: "bot", name: "Bot", avatar: defaultAvatarDefinition("bot") },
-          ]);
+        if (path === "/v1/agents") {
+          return Response.json([agentFixture({ id: "bot", name: "Bot" })]);
+        }
 
-        if (path === "/v1/schedules") return Response.json([schedule]);
+        if (path === "/v1/schedules") {
+          return Response.json([schedule]);
+        }
 
-        if (path === "/v1/event-sources") return Response.json({ sources: [] });
+        if (path === "/v1/event-sources") {
+          return Response.json({ sources: [] });
+        }
 
         return Response.json([]);
       },
@@ -99,8 +107,9 @@ test("running an automation refreshes its histories and opens its bot", async ()
     executionsQuery.queryKey,
     runs.queryKey,
     otherRuns.queryKey,
-  ])
+  ]) {
     queryClient.setQueryData(queryKey, []);
+  }
 
   const stopObserving = [
     new QueryObserver(queryClient, executionsQuery).subscribe(() => {}),
@@ -134,11 +143,6 @@ test("running an automation refreshes its histories and opens its bot", async ()
   const root = createRoot(container);
   const more = () => container.querySelector('[title="More"]');
 
-  const runNow = () =>
-    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.includes("Run now"),
-    );
-
   try {
     await act(async () =>
       root.render(
@@ -169,14 +173,19 @@ test("running an automation refreshes its histories and opens its bot", async ()
     expect(refreshed).not.toContain(`${schedulePath("other")}/runs?limit=20`);
     await waitForIdle(queryClient);
   } finally {
-    for (const stop of stopObserving) stop();
+    for (const stop of stopObserving) {
+      stop();
+    }
     await act(async () => root.unmount());
     queryClient.clear();
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

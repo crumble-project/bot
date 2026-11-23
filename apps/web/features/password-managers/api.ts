@@ -1,7 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { z } from "@hono/zod-openapi";
 import type { secretStatusResponse } from "@crumble/server/contract/api-responses";
-import { api, queryClient, type ResponseBody } from "@/lib/api";
+import { api, queryClient } from "@/lib/api";
+import type { ResponseBody } from "@/lib/api";
 
 export type PasswordManager =
   ResponseBody<"passwordManagers">["passwordManagers"][number];
@@ -13,7 +14,7 @@ export type SecretStatus = z.infer<typeof secretStatusResponse>;
 export const passwordManagersQuery = queryOptions({
   queryKey: ["password-managers"],
   queryFn: async ({ signal }) =>
-    (await api<"passwordManagers">("/v1/password-managers", { signal }))
+    (await api("passwordManagers", "/v1/password-managers", { signal }))
       .passwordManagers,
 });
 

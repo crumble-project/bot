@@ -8,10 +8,8 @@ import {
 } from "react";
 import { onSessionReset } from "@/lib/session";
 import type { ReplyReference } from "@crumble/server/contract/push";
-import {
-  getChatAttention,
-  type ChatAttentionController,
-} from "@/lib/chat-attention";
+import { getChatAttention } from "@/lib/chat-attention";
+import type { ChatAttentionController } from "@/lib/chat-attention";
 
 export const AttentionChatContext = createContext<string | null>(null);
 let activeChat: string | null = null;
@@ -29,7 +27,9 @@ export function selectAttentionChat(key: string | null) {
   selection = owner;
 
   return () => {
-    if (selection !== owner) return false;
+    if (selection !== owner) {
+      return false;
+    }
 
     activeChat = null;
     selection = null;
@@ -40,14 +40,14 @@ export function selectAttentionChat(key: string | null) {
 
 type ReplyAttentionProps = {
   controller?: ChatAttentionController;
-  references: readonly ReplyReference[];
+  references: ReadonlyArray<ReplyReference>;
   ready: boolean;
   element: Element | null;
 };
 
 type AttentionState = {
   controller: ChatAttentionController | undefined;
-  references: readonly ReplyReference[];
+  references: ReadonlyArray<ReplyReference>;
   ready: boolean;
   chat: string | null;
 };
@@ -65,10 +65,13 @@ function reportDisplayed(
   visible: boolean,
   fallback: ChatAttentionController,
 ) {
-  if (!canReport(state, visible)) return;
+  if (!canReport(state, visible)) {
+    return;
+  }
 
-  for (const reference of state.references)
+  for (const reference of state.references) {
     (state.controller ?? fallback).displayed(reference);
+  }
 }
 
 export function ReplyAttention(props: ReplyAttentionProps) {
@@ -113,11 +116,15 @@ function ObservedReplyAttention({
   useEffect(() => {
     visible.current = false;
 
-    if (!element) return;
+    if (!element) {
+      return;
+    }
     let observing = true;
 
     const observer = new IntersectionObserver((entries) => {
-      if (!observing) return;
+      if (!observing) {
+        return;
+      }
       visible.current = entries.some(
         (entry) =>
           entry.target === element &&

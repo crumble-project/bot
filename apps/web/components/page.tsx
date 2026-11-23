@@ -134,7 +134,7 @@ export function FilterPills({
   onChange,
 }: {
   label: string;
-  pills: FilterPill[];
+  pills: Array<FilterPill>;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -142,7 +142,9 @@ export function FilterPills({
     (pill) => pill.count !== 0 || pill.value === value,
   );
 
-  if (shown.length < 2) return null;
+  if (shown.length < 2) {
+    return null;
+  }
 
   return (
     <div

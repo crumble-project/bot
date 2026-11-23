@@ -89,7 +89,9 @@ export const githubFile = (repository: string, commit: string, path: string) =>
       const url = `https://raw.githubusercontent.com/${repository}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
       const response = await fetch(url, { signal });
 
-      if (!response.ok) throw new Error(String(response.status));
+      if (!response.ok) {
+        throw new Error(String(response.status));
+      }
 
       return response.text();
     },

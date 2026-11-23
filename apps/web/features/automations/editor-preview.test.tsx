@@ -20,8 +20,9 @@ test("schedule preview ignores stale responses and retries failures", async () =
     IS_REACT_ACT_ENVIRONMENT: true,
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
   let failureRequests = 0;
   let resolveOld: ((value: Response) => void) | undefined;
@@ -33,13 +34,15 @@ test("schedule preview ignores stale responses and retries failures", async () =
           .object({ cron: z.string().optional() })
           .parse(JSON.parse(z.string().parse(init?.body)));
 
-        if (body.cron === "old")
+        if (body.cron === "old") {
           return new Promise<Response>((resolve) => {
             resolveOld = resolve;
           });
+        }
 
-        if (body.cron === "failure" && failureRequests++ === 0)
+        if (body.cron === "failure" && failureRequests++ === 0) {
           return new Response("Unavailable", { status: 503 });
+        }
 
         return Response.json({
           description: "new",
@@ -129,8 +132,11 @@ test("schedule preview ignores stale responses and retries failures", async () =
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

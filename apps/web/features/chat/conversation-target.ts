@@ -10,7 +10,7 @@ export type ConversationTarget<S extends HistoryPage> = {
   key: string;
   path: `/v1/agents/${string}`;
   history: RoutePath<HistoryRoute>;
-  query: UseQueryOptions<S, Error, S, string[]>;
+  query: UseQueryOptions<S, Error, S, Array<string>>;
   shown: (message: Message) => boolean;
   reactionTarget: ReactionTarget;
   sendContext: () => { timezone?: string };

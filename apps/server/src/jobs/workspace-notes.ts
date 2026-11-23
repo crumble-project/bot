@@ -40,7 +40,9 @@ export async function readWorkspaceNotes(
   );
 
   if (!opened.ok) {
-    if (opened.error.code === "not_found") return undefined;
+    if (opened.error.code === "not_found") {
+      return undefined;
+    }
     throw opened.error;
   }
 
@@ -51,7 +53,9 @@ export async function readWorkspaceNotes(
       context,
     );
 
-    if (!bytes.ok) throw bytes.error;
+    if (!bytes.ok) {
+      throw bytes.error;
+    }
 
     if (bytes.value.length <= WORKSPACE_NOTES_MAX_BYTES) {
       const text = new TextDecoder().decode(bytes.value).trim();
@@ -85,15 +89,20 @@ export const workspaceNotesSection = (
 ): PromptSection => ({
   key: WORKSPACE_NOTES_SECTION,
   render: async (input, context) => {
-    if (!input.env || !(await isJob(input.read, input.conversationId, context)))
+    if (
+      !input.env ||
+      !(await isJob(input.read, input.conversationId, context))
+    ) {
       return;
+    }
 
     const notes = await readWorkspaceNotes(input.env, context);
 
-    if (!writable)
+    if (!writable) {
       return notes
         ? `Facts earlier jobs of this bot learned about this workspace:\n${notes}`
         : undefined;
+    }
 
     return notes
       ? `Facts earlier jobs of this bot learned about this workspace, kept in ${NOTES_PATH}. ${USE_NOTES}\n${notes}\n${UPDATE}`
@@ -114,8 +123,9 @@ export const chatWorkspaceSection = (
   render: async (input, context) => {
     const intro = `You work in your workspace, ${WORKSPACE_PATH}, with read, write, edit, and bash. It persists and your coding jobs share it. ${SERVERS}`;
 
-    if (!input.env || !running())
+    if (!input.env || !running()) {
       return `${intro}\nIts notes are in ${NOTES_PATH}: read them before you work there.`;
+    }
 
     const notes = await readWorkspaceNotes(input.env, context);
 

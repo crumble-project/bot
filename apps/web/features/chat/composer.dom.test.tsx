@@ -4,6 +4,10 @@ import { act } from "react";
 import { waitFor } from "@/test/wait-for";
 import { Composer } from "./composer";
 
+/** `fetch` bodies also allow strings, buffers, forms and streams; these tests upload files. */
+const isFile = (body: BodyInit | null | undefined): body is File =>
+  typeof body === "object" && body !== null && "lastModified" in body;
+
 async function withComposer(
   onSend: () => Promise<boolean>,
   run: (
@@ -35,7 +39,7 @@ async function withComposer(
         return Response.json(
           {
             file: {
-              id: name,
+              id: crypto.randomUUID(),
               name,
               mimeType: "text/plain",
               size: 1,
@@ -90,8 +94,11 @@ async function withComposer(
       "localStorage",
       "IS_REACT_ACT_ENVIRONMENT",
     ]) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -114,7 +121,7 @@ function typeMessage(container: HTMLElement, window: Window, value: string) {
   field.dispatchEvent(event("input"));
 }
 
-function attach(container: HTMLElement, names: string[]) {
+function attach(container: HTMLElement, names: Array<string>) {
   const picker = container.querySelector('input[type="file"]')!;
   Object.defineProperty(picker, "files", {
     configurable: true,
@@ -156,8 +163,9 @@ test("failed send preserves pending and new text and attachments, and blocks ove
       await waitFor(shows(container, "old7.txt"));
       expect(container.querySelector("textarea")!.value).toBe("first\nsecond");
 
-      for (let i = 0; i < 8; i++)
+      for (let i = 0; i < 8; i++) {
         expect(container.textContent).toContain(`old${i}.txt`);
+      }
       expect(container.textContent).toContain("new.txt");
       expect(container.textContent).toContain("Attach at most 8 files.");
       expect(
@@ -224,16 +232,19 @@ test("attachment processing finishing after recovery preserves the new file", as
       await act(async () => finishSend(false));
       await act(async () =>
         finishFile(
-          Response.json({
-            file: {
-              id: "new",
-              name: "new.txt",
-              mimeType: "text/plain",
-              size: 3,
-              createdAt: "2026-01-01",
+          Response.json(
+            {
+              file: {
+                id: "00000000-0000-4000-8000-000000000001",
+                name: "new.txt",
+                mimeType: "text/plain",
+                size: 3,
+                createdAt: "2026-01-01",
+              },
+              existed: false,
             },
-            existed: false,
-          }),
+            { status: 201 },
+          ),
         ),
       );
       pendingFetch.mockRestore();
@@ -368,7 +379,7 @@ test("typing keeps working when the draft can't be saved", async () => {
 
 test("pending uploads block sending, removal never deletes, and duplicates are reported", async () => {
   let finish!: (response: Response) => void;
-  const calls: RequestInit[] = [];
+  const calls: Array<RequestInit> = [];
   let sent = 0;
 
   await withComposer(
@@ -421,16 +432,19 @@ test("pending uploads block sending, removal never deletes, and duplicates are r
       expect(sent).toBe(0);
       await act(async () =>
         finish(
-          Response.json({
-            file: {
-              id: "file-id",
-              name: file.name,
-              mimeType: file.type,
-              size: file.size,
-              createdAt: "2026-01-01",
+          Response.json(
+            {
+              file: {
+                id: "00000000-0000-4000-8000-000000000002",
+                name: file.name,
+                mimeType: file.type,
+                size: file.size,
+                createdAt: "2026-01-01",
+              },
+              existed: true,
             },
-            existed: true,
-          }),
+            { status: 201 },
+          ),
         ),
       );
       await waitFor(shows(container, "Already in the library"));
@@ -446,7 +460,7 @@ test("pending uploads block sending, removal never deletes, and duplicates are r
 });
 
 test("pdf and zip uploads keep their raw bytes and enable sending after completion", async () => {
-  const uploaded: File[] = [];
+  const uploaded: Array<File> = [];
 
   await withComposer(
     async () => true,
@@ -454,22 +468,29 @@ test("pdf and zip uploads keep their raw bytes and enable sending after completi
       const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
           async (_input: RequestInfo | URL, init?: RequestInit) => {
-            if (!(init?.body instanceof File))
+            const body = init?.body;
+
+            if (!isFile(body)) {
               throw new Error("expected a file");
-            const file = init.body;
+            }
+
+            const file = body;
 
             uploaded.push(file);
 
-            return Response.json({
-              file: {
-                id: file.name,
-                name: file.name,
-                mimeType: file.type,
-                size: file.size,
-                createdAt: "2026-01-01",
+            return Response.json(
+              {
+                file: {
+                  id: crypto.randomUUID(),
+                  name: file.name,
+                  mimeType: file.type,
+                  size: file.size,
+                  createdAt: "2026-01-01",
+                },
+                existed: false,
               },
-              existed: false,
-            });
+              { status: 201 },
+            );
           },
           { preconnect: globalThis.fetch.preconnect },
         ),
@@ -560,7 +581,7 @@ test("failed uploads prevent sending until removed", async () => {
 
 test("removing a pending upload does not delete its completed library entry", async () => {
   let finish!: (response: Response) => void;
-  const methods: string[] = [];
+  const methods: Array<string> = [];
 
   await withComposer(
     async () => true,
@@ -586,16 +607,19 @@ test("removing a pending upload does not delete its completed library entry", as
       );
       await act(async () =>
         finish(
-          Response.json({
-            file: {
-              id: "id",
-              name: "pending.pdf",
-              mimeType: "application/pdf",
-              size: 1,
-              createdAt: "2026-01-01",
+          Response.json(
+            {
+              file: {
+                id: "00000000-0000-4000-8000-000000000003",
+                name: "pending.pdf",
+                mimeType: "application/pdf",
+                size: 1,
+                createdAt: "2026-01-01",
+              },
+              existed: false,
             },
-            existed: false,
-          }),
+            { status: 201 },
+          ),
         ),
       );
       expect(container.textContent).not.toContain("pending.pdf");

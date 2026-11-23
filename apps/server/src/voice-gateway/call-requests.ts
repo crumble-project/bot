@@ -8,12 +8,8 @@ import { BotRuntime } from "../bots/runtime";
 import type { CallRequest } from "../contract/voice-gateway";
 import { pi } from "../shared/app-errors";
 import { localConversationId } from "../shared/entry-ids";
-import {
-  Conflict,
-  InvalidInput,
-  NotFound,
-  type AppError,
-} from "../shared/errors";
+import { Conflict, InvalidInput, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { callRequestRequest } from "../shared/request-ids";
 import { nowIso } from "../shared/time";
@@ -46,7 +42,7 @@ export class CallRequests extends Context.Service<
       agentId: string,
       input: CallRequestInput,
     ) => Effect.Effect<CallRequest, AppError>;
-    readonly list: (agentId: string) => Effect.Effect<CallRequest[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<CallRequest>>;
     /**
      * Opens the call conversation and dials at once, so no bot turn runs between approval and dialing. Conflict, with
      * the request pending again, when the number or the line refuses the call.
@@ -74,7 +70,7 @@ export class CallRequests extends Context.Service<
       requestId: string,
       end: CallRequestEnd,
     ) => Effect.Effect<boolean>;
-    readonly calling: Effect.Effect<CallRequest[]>;
+    readonly calling: Effect.Effect<Array<CallRequest>>;
     /** Whether the callee objected, so the call's transcript is withheld. */
     readonly objected: (request: CallRequest) => Effect.Effect<boolean>;
   }
@@ -148,7 +144,9 @@ export class CallRequests extends Context.Service<
           .returning()
           .pipe(Effect.orDie);
 
-        if (row) return requestOf(row);
+        if (row) {
+          return requestOf(row);
+        }
         yield* found(agentId, requestId);
 
         return yield* new Conflict({
@@ -200,8 +198,9 @@ export class CallRequests extends Context.Service<
           yield* ownerNumbers,
         );
 
-        if (number === null)
+        if (number === null) {
           return yield* new InvalidInput({ message: refusal });
+        }
         const id = crypto.randomUUID();
         const requestedAt = yield* nowIso;
 
@@ -209,7 +208,9 @@ export class CallRequests extends Context.Service<
         const stored = yield* db
           .transaction(() =>
             Effect.gen(function* () {
-              if ((yield* pendingOf(agentId)).length) return false;
+              if ((yield* pendingOf(agentId)).length) {
+                return false;
+              }
 
               yield* db.insert(callRequests).values({
                 id,
@@ -225,11 +226,12 @@ export class CallRequests extends Context.Service<
           )
           .pipe(Effect.orDie);
 
-        if (!stored)
+        if (!stored) {
           return yield* new Conflict({
             message:
               "A call request is already pending; wait for the owner's answer.",
           });
+        }
 
         return yield* found(agentId, id);
       });
@@ -252,10 +254,14 @@ export class CallRequests extends Context.Service<
           yield* ownerNumbers,
         );
 
-        if (number === null) return refusal;
+        if (number === null) {
+          return refusal;
+        }
         const lineRefusal = yield* gateway.othersRefusal(claimed.agentId);
 
-        if (lineRefusal) return lineRefusal;
+        if (lineRefusal) {
+          return lineRefusal;
+        }
         const agent = yield* agentOf(claimed.agentId);
 
         const conversationId = yield* pi(() =>
@@ -323,7 +329,9 @@ export class CallRequests extends Context.Service<
         const { conversationId } = request;
         const agent = yield* agents.get(request.agentId);
 
-        if (!conversationId || !agent) return false;
+        if (!conversationId || !agent) {
+          return false;
+        }
 
         const call = yield* Effect.promise(async () =>
           outsideCallOf(
@@ -344,7 +352,9 @@ export class CallRequests extends Context.Service<
         const call = yield* found(agentId, requestId);
         const { conversationId } = call;
 
-        if (!conversationId || (yield* objected(call))) return NO_TRANSCRIPT;
+        if (!conversationId || (yield* objected(call))) {
+          return NO_TRANSCRIPT;
+        }
         const agent = yield* agentOf(agentId);
 
         return yield* pi(() =>

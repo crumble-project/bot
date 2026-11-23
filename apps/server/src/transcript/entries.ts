@@ -2,6 +2,7 @@ import type { EntryRecord } from "@earendil-works/pi-durable";
 import { z } from "zod";
 import { botCommunication } from "../contract/api-responses";
 import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
+import { fallingBackTo } from "../shared/fallback-schema";
 
 export const MESSAGE_ENTRY = "crumble.message";
 
@@ -28,21 +29,29 @@ export type MessageOrigin = {
 export const messageOrigin = z
   .object({
     kind: z.string(),
-    name: z.string().optional().catch(undefined),
-    agentId: z.string().optional().catch(undefined),
-    via: z.string().optional().catch(undefined),
-    source: z.string().optional().catch(undefined),
+    name: fallingBackTo(z.string().optional(), undefined),
+    agentId: fallingBackTo(z.string().optional(), undefined),
+    via: fallingBackTo(z.string().optional(), undefined),
+    source: fallingBackTo(z.string().optional(), undefined),
   })
   .transform(({ kind, name, agentId, via, source }) => {
     const origin: MessageOrigin = { kind };
 
-    if (name !== undefined) origin.name = name;
+    if (name !== undefined) {
+      origin.name = name;
+    }
 
-    if (agentId !== undefined) origin.agentId = agentId;
+    if (agentId !== undefined) {
+      origin.agentId = agentId;
+    }
 
-    if (via !== undefined) origin.via = via;
+    if (via !== undefined) {
+      origin.via = via;
+    }
 
-    if (source !== undefined) origin.source = source;
+    if (source !== undefined) {
+      origin.source = source;
+    }
 
     return origin;
   });
@@ -68,7 +77,7 @@ export const heldActionData = z.object({
   id: z.string(),
   job: z.string(),
   action: z.string(),
-  timestamp: z.number().optional().catch(undefined),
+  timestamp: fallingBackTo(z.number().optional(), undefined),
 });
 
 export const CALL_DIRECTIONS = ["inbound", "outbound"] as const;
@@ -88,7 +97,7 @@ export type CallEventData = Omit<z.infer<typeof callEventData>, "timestamp">;
 
 export const botMessage = z.object({
   content: z.string(),
-  timestamp: z.number().optional().catch(undefined),
+  timestamp: fallingBackTo(z.number().optional(), undefined),
   communication: botCommunication,
 });
 
@@ -103,14 +112,16 @@ export const messageFile = z.union([
 ]);
 
 export const inputMetadata = z.object({
-  text: z.string().optional().catch(undefined),
-  replyTo: z.string().optional().catch(undefined),
-  requestId: z.string().optional().catch(undefined),
-  replyPreview: z.string().optional().catch(undefined),
+  text: fallingBackTo(z.string().optional(), undefined),
+  replyTo: fallingBackTo(z.string().optional(), undefined),
+  requestId: fallingBackTo(z.string().optional(), undefined),
+  replyPreview: fallingBackTo(z.string().optional(), undefined),
 });
 
 export function contentText(content: ModelContent | undefined): string {
-  if (!Array.isArray(content)) return content ?? "";
+  if (!Array.isArray(content)) {
+    return content ?? "";
+  }
 
   return content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))

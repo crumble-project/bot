@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import type { Env } from "hono";
 import { routes, mcpInput } from "../contract/api-contract";
-import { mergedBody, type Register } from "../contract/route";
+import { mergedBody } from "../contract/route";
+import type { Register } from "../contract/route";
 import type { BotLookup } from "../bot-ports/bot-lookup";
 import { McpServers } from "./mcp-servers";
 

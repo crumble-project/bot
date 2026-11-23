@@ -14,9 +14,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
 import {
   SecretSourceField,
-  type SecretInput,
   useSecretDraft,
 } from "@/features/password-managers/secret-source-field";
+import type { SecretInput } from "@/features/password-managers/secret-source-field";
 import { RedirectReturn } from "@/components/redirect-return";
 import {
   ConfirmDelete,
@@ -30,15 +30,13 @@ import {
 } from "@/components/page";
 import { botsQuery } from "@/features/bots/api";
 import {
-  type GitHubAccount,
-  type GitHubApp,
-  type GitHubAppManifest,
   githubAccountPath,
   githubAccountsQuery,
   githubAppPath,
   githubAppsQuery,
   invalidateGithub,
 } from "./api";
+import type { GitHubAccount, GitHubApp, GitHubAppManifest } from "./api";
 import { call, send } from "@/lib/api";
 import {
   GITHUB_APP_WEB_PATHS,
@@ -139,7 +137,8 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
   const create = useMutation({
     mutationFn: async () =>
       postManifest(
-        await call<"createGithubAppManifest">(
+        await call(
+          "createGithubAppManifest",
           "/v1/github-apps/manifest",
           "POST",
           {
@@ -183,8 +182,8 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
           onChange={(event) => setOrganization(event.target.value)}
         />
         <FieldDescription>
-          The App can only work in its owner's repositories. Create one App per
-          account.
+          The App can only work in its owner&apos;s repositories. Create one App
+          per account.
         </FieldDescription>
       </Field>
     </EditorSheet>
@@ -196,8 +195,8 @@ function BotsField({
   onChange,
   description,
 }: {
-  botIds: string[];
-  onChange: (botIds: string[]) => void;
+  botIds: Array<string>;
+  onChange: (botIds: Array<string>) => void;
   description: string;
 }) {
   const bots = useQuery(botsQuery);
@@ -281,7 +280,8 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
 
   const save = useMutation({
     mutationFn: (body: SecretInput) =>
-      call<"setGithubAppClientSecret">(
+      call(
+        "setGithubAppClientSecret",
         `${githubAppPath(app.id)}/client-secret`,
         "PUT",
         body,
@@ -314,7 +314,8 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
 function SignInButton({ app }: { app: GitHubApp }) {
   const signIn = useMutation({
     mutationFn: async () => {
-      const { url } = await call<"signInGithubApp">(
+      const { url } = await call(
+        "signInGithubApp",
         `${githubAppPath(app.id)}/sign-in`,
         "POST",
         { origin: location.origin },
@@ -365,7 +366,7 @@ function SignOutButton({ app }: { app: GitHubApp }) {
 }
 
 function ActAsField({ app }: { app: GitHubApp }) {
-  if (app.user)
+  if (app.user) {
     return (
       <Field>
         <FieldLabel>Bots act as</FieldLabel>
@@ -376,11 +377,12 @@ function ActAsField({ app }: { app: GitHubApp }) {
           <SignOutButton app={app} />
         </div>
         <FieldDescription>
-          GitHub shows their pull requests and comments with the App's badge,
-          and their commits list {app.login} as co-author.
+          GitHub shows their pull requests and comments with the App&apos;s
+          badge, and their commits list {app.login} as co-author.
         </FieldDescription>
       </Field>
     );
+  }
 
   return (
     <Field>
@@ -400,7 +402,7 @@ function AppSheet({ app, onClose }: { app: GitHubApp; onClose: () => void }) {
 
   const save = useMutation({
     mutationFn: () =>
-      call<"setGithubAppBots">(`${githubAppPath(app.id)}/bots`, "PUT", {
+      call("setGithubAppBots", `${githubAppPath(app.id)}/bots`, "PUT", {
         botIds,
       }),
     onSuccess: async () => {
@@ -552,7 +554,7 @@ function AddAccountSheet({ onClose }: { onClose: () => void }) {
 
   const add = useMutation({
     mutationFn: (body: SecretInput) =>
-      call<"addGithubAccount">("/v1/github-accounts", "POST", body),
+      call("addGithubAccount", "/v1/github-accounts", "POST", body),
     onSuccess: async () => {
       await invalidateGithub();
       onClose();
@@ -615,14 +617,17 @@ function AccountSheet({
 
   const save = useMutation({
     mutationFn: async () => {
-      if (token.input && token.changed)
-        await call<"setGithubAccountToken">(
+      if (token.input && token.changed) {
+        await call(
+          "setGithubAccountToken",
           `${githubAccountPath(account.id)}/token`,
           "PUT",
           token.input,
         );
+      }
 
-      await call<"setGithubAccountBots">(
+      await call(
+        "setGithubAccountBots",
         `${githubAccountPath(account.id)}/bots`,
         "PUT",
         { botIds },
@@ -720,10 +725,11 @@ function finishGitHubApp(
           { code, state },
         );
 
-  if (!finish)
+  if (!finish) {
     return Promise.reject(
       new Error("This GitHub link is incomplete or was already used."),
     );
+  }
 
   return finish.then(async () => {
     sessionStorage.removeItem(INSTALLING_KEY);

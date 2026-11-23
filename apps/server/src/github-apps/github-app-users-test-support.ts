@@ -28,14 +28,18 @@ const privateKey = generateKeyPairSync("rsa", {
 export function githubOwnerFixture() {
   const folder = mkdtempSync(join(tmpdir(), "github-owner-"));
   const store = new Store(folder);
-  const db = store.runtime.runSync(ProductDatabase.use(Effect.succeed));
-  const box = store.runtime.runSync(SecretBox.use(Effect.succeed));
-  const users = store.runtime.runSync(GitHubAppUsers.use(Effect.succeed));
-  const scopes: Scope.Closeable[] = [];
-  const gates: Gate[] = [];
-  const unexpected: string[] = [];
-  const requests: Request[] = [];
-  const refreshTokens: string[] = [];
+  const db = store.runtime.runSync(
+    Effect.flatMap(ProductDatabase, Effect.succeed),
+  );
+  const box = store.runtime.runSync(Effect.flatMap(SecretBox, Effect.succeed));
+  const users = store.runtime.runSync(
+    Effect.flatMap(GitHubAppUsers, Effect.succeed),
+  );
+  const scopes: Array<Scope.Closeable> = [];
+  const gates: Array<Gate> = [];
+  const unexpected: Array<string> = [];
+  const requests: Array<Request> = [];
+  const refreshTokens: Array<string> = [];
   let owner = { login: "owner", id: 3 };
   let exchangeGate: Gate | undefined;
   let refreshGate: Gate | undefined;
@@ -71,19 +75,24 @@ export function githubOwnerFixture() {
       ? `refresh-${refreshTokens.length + 1}`
       : params.get("code");
 
-    if (refresh) refreshTokens.push(params.get("refresh_token") ?? "");
+    if (refresh) {
+      refreshTokens.push(params.get("refresh_token") ?? "");
+    }
 
     const blocked = refresh ? refreshGate : exchangeGate;
 
-    if (refresh) refreshGate = undefined;
-    else exchangeGate = undefined;
+    if (refresh) {
+      refreshGate = undefined;
+    } else {
+      exchangeGate = undefined;
+    }
     await blocked?.wait();
 
     return Response.json({
       access_token: `access-${suffix}`,
       expires_in: 3600,
       refresh_token: `renewal-${suffix}`,
-      refresh_token_expires_in: 36000,
+      refresh_token_expires_in: 36_000,
     });
   };
 
@@ -98,8 +107,9 @@ export function githubOwnerFixture() {
     if (
       request.method === "POST" &&
       request.url === "https://github.com/login/oauth/access_token"
-    )
+    ) {
       return answerToken(request);
+    }
 
     if (
       request.method === "GET" &&
@@ -176,7 +186,9 @@ export function githubOwnerFixture() {
     const url = await run(service.authorize(app.id));
     const state = new URL(url).searchParams.get("state");
 
-    if (!state) throw new Error("missing sign-in state");
+    if (!state) {
+      throw new Error("missing sign-in state");
+    }
 
     return state;
   };
@@ -216,13 +228,21 @@ export function githubOwnerFixture() {
       const blocked = gate();
       gates.push(blocked);
 
-      if (kind === "exchange") exchangeGate = blocked;
+      if (kind === "exchange") {
+        exchangeGate = blocked;
+      }
 
-      if (kind === "refresh") refreshGate = blocked;
+      if (kind === "refresh") {
+        refreshGate = blocked;
+      }
 
-      if (kind === "user") userGate = blocked;
+      if (kind === "user") {
+        userGate = blocked;
+      }
 
-      if (kind === "revoke") revokeGate = blocked;
+      if (kind === "revoke") {
+        revokeGate = blocked;
+      }
 
       return blocked;
     },
@@ -271,11 +291,15 @@ export function githubOwnerFixture() {
       return bot;
     },
     close: async () => {
-      for (const blocked of gates) blocked.release();
+      for (const blocked of gates) {
+        blocked.release();
+      }
       await Promise.allSettled(tasks);
       fetchSpy.mockRestore();
 
-      for (const scope of scopes) Effect.runSync(Scope.close(scope, Exit.void));
+      for (const scope of scopes) {
+        Effect.runSync(Scope.close(scope, Exit.void));
+      }
       store.close();
       rmSync(folder, { recursive: true, force: true });
       expect(unexpected).toEqual([]);

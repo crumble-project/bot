@@ -1,4 +1,5 @@
-import { type ComponentType, type ReactNode, type Ref, useState } from "react";
+import { useState } from "react";
+import type { ComponentType, ReactNode, Ref } from "react";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import { ReplyAttention } from "@/features/chat/reply-attention";
 import type { UseQueryOptions } from "@tanstack/react-query";
@@ -9,11 +10,8 @@ import type { Bot } from "@/features/bots/api";
 import { messageCard } from "@/features/chat/message-card";
 import { toolDetailsOf } from "@/features/chat/tool-details";
 import { ownerRequestDetails } from "@crumble/server/contract/tool-details";
-import {
-  type Named,
-  type SecretRequest,
-  useSecretActions,
-} from "./bot-secrets";
+import { useSecretActions } from "./bot-secrets";
+import type { Named, SecretRequest } from "./bot-secrets";
 
 type AskedRequest = SecretRequest & { requestedAt?: string | undefined };
 
@@ -28,10 +26,10 @@ function SecretRequestCard<D, R extends AskedRequest>({
 }: {
   icon: TablerIcon;
   asked: { name: string; requestedAt?: string | undefined };
-  query: UseQueryOptions<D, Error, D, string[]>;
-  requestsOf: (data: D) => R[];
-  savedOf: (data: D) => Named[];
-  references: readonly ReplyReference[];
+  query: UseQueryOptions<D, Error, D, Array<string>>;
+  requestsOf: (data: D) => Array<R>;
+  savedOf: (data: D) => Array<Named>;
+  references: ReadonlyArray<ReplyReference>;
   children: (request: R, ref: Ref<HTMLDivElement>) => ReactNode;
 }) {
   const waitingIn = (data: D) =>
@@ -57,13 +55,14 @@ function SecretRequestCard<D, R extends AskedRequest>({
     />
   );
 
-  if (waiting)
+  if (waiting) {
     return (
       <>
         {attention}
         {children(waiting, setElement)}
       </>
     );
+  }
 
   const saved = data && savedOf(data).some((item) => item.name === asked.name);
 
@@ -178,14 +177,14 @@ export const secretRequestResult = <D, R extends AskedRequest>({
 }: {
   tool: string;
   icon: TablerIcon;
-  query: (botId: string) => UseQueryOptions<D, Error, D, string[]>;
-  requestsOf: (data: D) => R[];
-  savedOf: (data: D) => Named[];
+  query: (botId: string) => UseQueryOptions<D, Error, D, Array<string>>;
+  requestsOf: (data: D) => Array<R>;
+  savedOf: (data: D) => Array<Named>;
   pathOf: Parameters<typeof useSecretActions>[0];
   refresh: (botId: string) => Promise<void>;
   addLabel: string;
   Sheet: ComponentType<{
-    bots: Bot[];
+    bots: Array<Bot>;
     botId: string;
     existing: null;
     request: R;

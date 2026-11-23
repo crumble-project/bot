@@ -1,7 +1,8 @@
 import { claudeCodePlugin } from "../providers/claude-code/plugin";
 import { codingPlugin } from "../jobs/coding";
 import type { CredentialsAccess } from "../credentials/credentials";
-import { desktopPlugin, type DesktopLogins } from "../bot-desktop/desktop-jobs";
+import { desktopPlugin } from "../bot-desktop/desktop-jobs";
+import type { DesktopLogins } from "../bot-desktop/desktop-jobs";
 import type { DesktopIntent } from "../bot-desktop/desktop-intent";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin, PluginVendors } from "../plugins/plugins";
@@ -18,7 +19,7 @@ import { doorstepPlugin } from "../event-sources/plugin";
 import type { Effect } from "effect";
 import type { SecretUnavailable } from "../secrets/secret-values";
 
-export const builtinVendors: PluginVendors[] = [
+export const builtinVendors: Array<PluginVendors> = [
   { id: "1password", passwordManagers: [onePassword] },
   { id: "bitwarden", passwordManagers: [bitwarden] },
   // Railway first: it runs only when CRUMBLE_WORKSPACE_BACKEND asks for it, while dev servers always set an image.
@@ -38,7 +39,7 @@ export type PluginHost = {
   questionGraceMs: () => number;
 };
 
-export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
+export const builtinPlugins = (host: PluginHost): Array<CrumblePlugin> => [
   meliousPlugin(),
   claudeCodePlugin(host.dataDir, host.env),
   codingPlugin(host.workspaces, host.questionGraceMs, host.credentials),

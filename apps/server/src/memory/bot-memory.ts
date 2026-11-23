@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import { type ChangeBy, type Memory } from "../shared/domain";
+import type { ChangeBy, Memory } from "../shared/domain";
 import type { MemoryContext } from "./memory-tool";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
@@ -7,7 +7,8 @@ import type { ScheduleRepository } from "../automations/schedule-repository";
 import { changeByOf } from "../learned-changes/change-source";
 import { MemoryRepository } from "./memory-repository";
 import { memorySourceOf } from "./memory-sources";
-import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import { InvalidInput, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
 
 const validContent = (content: string): Effect.Effect<void, AppError> =>
@@ -24,7 +25,7 @@ export class BotMemory extends Context.Service<
   {
     readonly list: (
       agentId: string,
-    ) => Effect.Effect<(Memory & { shared?: true })[]>;
+    ) => Effect.Effect<Array<Memory & { shared?: true }>>;
     readonly create: (
       agentId: string,
       content: string,
@@ -68,8 +69,9 @@ export class BotMemory extends Context.Service<
         if (
           memory?.agentId === agentId ||
           (memory?.agentId === null && (yield* usesSharedMemory(agentId)))
-        )
+        ) {
           return memory;
+        }
 
         return yield* Effect.fail(
           new NotFound({ message: "Memory not found" }),
@@ -86,7 +88,9 @@ export class BotMemory extends Context.Service<
         list: Effect.fn("BotMemory.list")(function* (agentId) {
           const own = yield* memories.list(agentId);
 
-          if (!(yield* usesSharedMemory(agentId))) return own;
+          if (!(yield* usesSharedMemory(agentId))) {
+            return own;
+          }
           const shared = yield* memories.list(null);
 
           return [
@@ -120,10 +124,11 @@ export class BotMemory extends Context.Service<
               yield* changeBy(agentId, context),
             );
 
-            if (!updated)
+            if (!updated) {
               return yield* Effect.fail(
                 new NotFound({ message: "Memory not found" }),
               );
+            }
 
             return updated;
           },

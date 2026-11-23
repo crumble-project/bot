@@ -85,7 +85,7 @@ test("a page keeps a byte order mark at its start", () => {
     EVENT_BODY_LIMIT,
   );
 
-  expect(page).toMatchObject({ bytes: 4, encoding: "utf-8", data: "\uFEFFB" });
+  expect(page).toMatchObject({ bytes: 4, encoding: "utf8", data: "\uFEFFB" });
   expect(new TextEncoder().encode(page.data)).toEqual(
     new Uint8Array([0xef, 0xbb, 0xbf, 0x42]),
   );

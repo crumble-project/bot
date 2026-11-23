@@ -4,7 +4,7 @@ import type { JobRef } from "@/features/jobs/api";
 import type { Message } from "./api";
 
 export type CardChat = {
-  replyReferences?: readonly ReplyReference[];
+  replyReferences?: ReadonlyArray<ReplyReference>;
   botId: string;
   botName: string;
   attachmentPath: (entryId: string, index: number) => string;

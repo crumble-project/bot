@@ -11,7 +11,9 @@ const PELE = path.join(
 function peleFile(requested: string) {
   const relative = path.posix.normalize(decodeURIComponent(requested));
 
-  if (!relative.endsWith(".js")) return;
+  if (!relative.endsWith(".js")) {
+    return;
+  }
 
   const file = path.resolve(PELE, relative);
 
@@ -57,8 +59,9 @@ export const webUIRoutes = {
       new URL(request.url).pathname.slice(PELE_PREFIX.length + 1),
     );
 
-    if (!file || !(await Bun.file(file).exists()))
+    if (!file || !(await Bun.file(file).exists())) {
       return new Response("Not found", { status: 404 });
+    }
 
     return new Response(Bun.file(file), {
       headers: {

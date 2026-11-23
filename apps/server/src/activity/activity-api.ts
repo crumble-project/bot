@@ -27,10 +27,11 @@ export function registerActivityRoutes(options: {
     const input = c.req.valid("query");
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
-    if (input.cursor && !cursor)
+    if (input.cursor && !cursor) {
       return yield* Effect.fail(
         new InvalidInput({ message: "Invalid cursor" }),
       );
+    }
 
     const agentRepo = yield* AgentRepository;
     const conversations = yield* ConversationRepository;

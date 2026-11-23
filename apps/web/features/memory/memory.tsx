@@ -1,9 +1,8 @@
-import { type ReactNode, useState } from "react";
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNow } from "@/lib/use-now";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   IconCalendarRepeat,
   IconMessage,
@@ -11,8 +10,8 @@ import {
   IconTrash,
   IconUser,
   IconUsersGroup,
-  type TablerIcon,
 } from "@tabler/icons-react";
+import type { TablerIcon } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
@@ -23,13 +22,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { type Bot, agentPath } from "@/features/bots/api";
+import { agentPath } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import {
-  type Memory,
   botMemoriesQuery,
   sharedMemoriesQuery,
   invalidateMemories,
 } from "./api";
+import type { Memory } from "./api";
 import { send } from "@/lib/api";
 import {
   ALL,
@@ -83,10 +83,12 @@ const SOURCE_ICONS = {
 } satisfies Record<NonNullable<Memory["source"]>["kind"], TablerIcon>;
 
 function Highlighted({ text, needle }: { text: string; needle: string }) {
-  if (!needle) return text;
+  if (!needle) {
+    return text;
+  }
 
   const lower = text.toLowerCase();
-  const parts: ReactNode[] = [];
+  const parts: Array<ReactNode> = [];
   let from = 0;
 
   for (
@@ -94,8 +96,8 @@ function Highlighted({ text, needle }: { text: string; needle: string }) {
     at !== -1;
     at = lower.indexOf(needle, from)
   ) {
-    parts.push(text.slice(from, at));
     parts.push(
+      text.slice(from, at),
       <mark
         key={at}
         className="rounded-sm bg-amber-200/70 text-inherit dark:bg-amber-400/30"
@@ -115,7 +117,7 @@ type Owner = {
   id: string;
   name: string;
   bot?: Bot;
-  memories: UseQueryResult<Memory[]>;
+  memories: UseQueryResult<Array<Memory>>;
 };
 
 function OwnerPills({
@@ -123,7 +125,7 @@ function OwnerPills({
   scope,
   onScope,
 }: {
-  owners: Owner[];
+  owners: Array<Owner>;
   scope: string;
   onScope: (scope: string) => void;
 }) {
@@ -149,15 +151,16 @@ function OwnerPills({
   );
 }
 
-function SharedUsers({ bots }: { bots: Bot[] }) {
+function SharedUsers({ bots }: { bots: Array<Bot> }) {
   const users = bots.filter((bot) => bot.sharedMemory);
 
-  if (!users.length)
+  if (!users.length) {
     return (
       <span className="text-xs text-muted-foreground">
         No bot uses shared memory yet
       </span>
     );
+  }
 
   return (
     <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -237,13 +240,13 @@ function OwnerGroup({
   onDelete,
 }: {
   owner: Owner;
-  bots: Bot[];
+  bots: Array<Bot>;
   needle: string;
   onEdit: (memory: Memory) => void;
   onDelete: (memory: Memory) => void;
 }) {
   const all = owner.memories.data ?? [];
-  const now = Date.now();
+  const now = useNow();
 
   const shown = needle
     ? all.filter((memory) => memory.content.toLowerCase().includes(needle))
@@ -290,13 +293,19 @@ function OwnerGroup({
 }
 
 function groupShown(owner: Owner, scope: string, needle: string) {
-  if (scope !== ALL) return scope === owner.id;
+  if (scope !== ALL) {
+    return scope === owner.id;
+  }
 
   const memories = owner.memories.data ?? [];
 
-  if (owner.memories.isError) return true;
+  if (owner.memories.isError) {
+    return true;
+  }
 
-  if (!needle) return !owner.bot || memories.length > 0;
+  if (!needle) {
+    return !owner.bot || memories.length > 0;
+  }
 
   return memories.some((memory) =>
     memory.content.toLowerCase().includes(needle),
@@ -311,8 +320,8 @@ function MemoryGroups({
   onEdit,
   onDelete,
 }: {
-  owners: Owner[];
-  bots: Bot[];
+  owners: Array<Owner>;
+  bots: Array<Bot>;
   scope: string;
   needle: string;
   onEdit: (memory: Memory, owner: string) => void;
@@ -345,7 +354,7 @@ function useMemoryData() {
   const { bots, entries, refreshing } = useBotQueries(botMemoriesQuery);
   const shared = useQuery(sharedMemoriesQuery);
 
-  const owners: Owner[] = [
+  const owners: Array<Owner> = [
     { id: SHARED, name: "Shared", memories: shared },
     ...entries.map(({ bot, query }) => ({
       id: bot.id,
@@ -434,7 +443,7 @@ function MemoryDialog({
   editing,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   editing: Editing;
   onClose: () => void;
 }) {

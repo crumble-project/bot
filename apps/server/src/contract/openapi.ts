@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { openAPIDocument } from "./api-contract";
 import { eventSchemas } from "./api-responses";
+import { logError, logInfo } from "../shared/process-log";
 
 type ContractArtifacts = Record<string, string>;
 
@@ -11,20 +12,24 @@ export function contractArtifacts() {
   artifacts["openapi.json"] = `${JSON.stringify(openAPIDocument(), null, 2)}\n`;
 
   for (const { artifact, schema } of eventSchemas) {
-    if (!artifact) continue;
+    if (!artifact) {
+      continue;
+    }
 
     const document = z.toJSONSchema(schema, {
       target: "draft-2020-12",
       io: "output",
       override: ({ jsonSchema }) => {
-        if (stringPropertyNames.safeParse(jsonSchema.propertyNames).success)
+        if (stringPropertyNames.safeParse(jsonSchema.propertyNames).success) {
           delete jsonSchema.propertyNames;
+        }
 
         if (
           jsonSchema.type === "object" &&
           jsonSchema.additionalProperties === false
-        )
+        ) {
           jsonSchema.additionalProperties = true;
+        }
       },
     });
 
@@ -47,7 +52,7 @@ async function checkArtifacts() {
       !(await Bun.file(target).exists()) ||
       (await Bun.file(target).text()) !== content
     ) {
-      console.error(
+      logError(
         `Stale contract artifact: openapi/${name}. Run bun run openapi:generate.`,
       );
       stale = true;
@@ -60,7 +65,7 @@ async function checkArtifacts() {
 async function writeArtifacts() {
   for (const [name, content] of Object.entries(contractArtifacts())) {
     await Bun.write(artifactTarget(name), content);
-    console.log(`Generated openapi/${name}`);
+    logInfo(`Generated openapi/${name}`);
   }
 }
 
@@ -69,10 +74,12 @@ if (import.meta.main) {
   const checking = args[0] === "--check";
 
   if (args.length > 1 || (args.length === 1 && !checking)) {
-    console.error("Usage: bun apps/server/src/contract/openapi.ts [--check]");
+    logError("Usage: bun apps/server/src/contract/openapi.ts [--check]");
     process.exitCode = 1;
   } else if (checking) {
-    if (await checkArtifacts()) process.exitCode = 1;
+    if (await checkArtifacts()) {
+      process.exitCode = 1;
+    }
   } else {
     await writeArtifacts();
   }

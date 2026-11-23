@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { parseHosts } from "../bot-secrets/schema";
 import { botSecretKey, botSecretsPrefix } from "../secrets/secret-key";
+import { required } from "../shared/required";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
 import type { LoginField } from "../contract/secrets";
 import { ProductDatabase } from "../shared/product-database";
@@ -36,11 +37,14 @@ const loginOf = (
   row: Omit<LoginRecord, "hosts"> & { hosts: string },
 ): LoginRecord => ({ ...row, hosts: parseHosts(row.hosts) });
 
+const login = (agentId: string, name: string) =>
+  and(eq(logins.agentId, agentId), eq(logins.name, name));
+
 export class LoginRepository extends Context.Service<
   LoginRepository,
   {
     /** Metadata only: listing never decrypts a value. */
-    readonly list: (agentId: string) => Effect.Effect<LoginRecord[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<LoginRecord>>;
     readonly get: (
       agentId: string,
       name: string,
@@ -48,7 +52,7 @@ export class LoginRepository extends Context.Service<
     readonly save: (
       agentId: string,
       name: string,
-      hosts: readonly string[],
+      hosts: ReadonlyArray<string>,
     ) => Effect.Effect<LoginRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
     readonly touch: (
@@ -62,9 +66,6 @@ export class LoginRepository extends Context.Service<
     LoginRepository,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-
-      const login = (agentId: string, name: string) =>
-        and(eq(logins.agentId, agentId), eq(logins.name, name));
 
       const list = Effect.fn("LoginRepository.list")(function* (
         agentId: string,
@@ -93,7 +94,7 @@ export class LoginRepository extends Context.Service<
       const save = Effect.fn("LoginRepository.save")(function* (
         agentId: string,
         name: string,
-        list: readonly string[],
+        list: ReadonlyArray<string>,
       ) {
         const at = yield* nowIso;
         const hosts = JSON.stringify(list);
@@ -106,7 +107,7 @@ export class LoginRepository extends Context.Service<
             set: { hosts, updatedAt: at },
           });
 
-        return (yield* get(agentId, name))!;
+        return required(yield* get(agentId, name), "The login was not stored");
       }, Effect.orDie);
 
       const remove = Effect.fn("LoginRepository.delete")(function* (

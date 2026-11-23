@@ -24,7 +24,8 @@ import {
   skillUpdateKey,
 } from "./skill-cache";
 import { MAX_SKILL_NAME_CHARS } from "@crumble/server/contract/limits";
-import { type SharedSkill, skillPath } from "./api";
+import { skillPath } from "./api";
+import type { SharedSkill } from "./api";
 
 type Candidate = SkillListing["skills"][number];
 
@@ -33,8 +34,10 @@ const STATUS_LABEL: Partial<Record<Candidate["status"], string>> = {
   update: "Update available",
 };
 
-function skippedNote(skipped: string[]) {
-  if (!skipped.length) return null;
+function skippedNote(skipped: Array<string>) {
+  if (!skipped.length) {
+    return null;
+  }
   const shown = skipped.slice(0, 3).join(", ");
 
   return skipped.length > 3
@@ -171,7 +174,8 @@ function CandidateList({
       )}
       {listing.omitted > 0 && (
         <FieldDescription>
-          {listing.omitted} more aren't listed. Link to a folder to see them.
+          {listing.omitted} more aren&apos;t listed. Link to a folder to see
+          them.
         </FieldDescription>
       )}
     </Field>
@@ -185,7 +189,7 @@ function useInstall(
 ) {
   return useMutation({
     mutationFn: (found: SkillListing) =>
-      call<"installSkills">("/v1/skills/github/install", "POST", {
+      call("installSkills", "/v1/skills/github/install", "POST", {
         repository: found.repository,
         branch: found.branch,
         commit: found.commit,
@@ -203,7 +207,7 @@ function useListing(location: string | null) {
   return useQuery({
     queryKey: ["skill-listing", location],
     queryFn: () =>
-      call<"browseSkillRepository">("/v1/skills/github/browse", "POST", {
+      call("browseSkillRepository", "/v1/skills/github/browse", "POST", {
         location: location ?? "",
       }),
     enabled: location !== null,
@@ -227,8 +231,11 @@ function useSkillSearch() {
     find: () => {
       setChecked(null);
 
-      if (submitted === location) void browse.refetch();
-      else setSubmitted(location);
+      if (submitted === location) {
+        void browse.refetch();
+      } else {
+        setSubmitted(location);
+      }
     },
     change: (next: string) => {
       setLocation(next);
@@ -264,7 +271,7 @@ export function InstallSkillsSheet({
   bots,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   onClose: () => void;
 }) {
   const search = useSkillSearch();
@@ -305,7 +312,7 @@ export function InstallSkillsSheet({
 }
 
 export async function copySkill(skill: SharedSkill) {
-  const full = await api<"getSkill">(skillPath(skill.id));
+  const full = await api("getSkill", skillPath(skill.id));
 
   await send<"createSkill">("/v1/skills", "POST", {
     name: `${full.name} copy`.slice(0, MAX_SKILL_NAME_CHARS),
@@ -387,12 +394,12 @@ function SkillContent({ skill }: { skill: SkillPackage }) {
 const fullSkillQuery = (skillId: string) => ({
   queryKey: skillKey(skillId),
   queryFn: ({ signal }: { signal: AbortSignal }) =>
-    api<"getSkill">(skillPath(skillId), { signal }),
+    api("getSkill", skillPath(skillId), { signal }),
 });
 
 function useInstalledSkill(
   skill: SharedSkill,
-  bots: Bot[],
+  bots: Array<Bot>,
   onClose: () => void,
 ) {
   const [usedBy, setUsedBy] = useState(() => botsUsing(bots, skill.id));
@@ -423,7 +430,7 @@ export function InstalledSkillSheet({
   onClose,
 }: {
   skill: SharedSkill;
-  bots: Bot[];
+  bots: Array<Bot>;
   onUpdate: () => void;
   onClose: () => void;
 }) {
@@ -497,7 +504,7 @@ export function SkillUpdateSheet({
   const pending = useQuery({
     queryKey: skillUpdateKey(skill.id),
     queryFn: ({ signal }) =>
-      api<"pendingSkillUpdate">(`${skillPath(skill.id)}/update`, { signal }),
+      api("pendingSkillUpdate", `${skillPath(skill.id)}/update`, { signal }),
   });
 
   const apply = useMutation({

@@ -1,59 +1,61 @@
-import {
-  MemoryRepository,
-  type NewMemory,
-} from "../../src/memory/memory-repository";
+import { Effect } from "effect";
+import { MemoryRepository } from "../../src/memory/memory-repository";
+import type { NewMemory } from "../../src/memory/memory-repository";
 import { ChangeReverter } from "../../src/learning/change-reverter";
 import { LearnedChangeRepository } from "../../src/learned-changes/learned-change-repository";
 import { ReviewRepository } from "../../src/learning/review-repository";
-import {
-  SkillRepository,
-  type NewSkill,
-  type SkillPatch,
-} from "../../src/skills/skill-repository";
+import { SkillRepository } from "../../src/skills/skill-repository";
+import type { NewSkill, SkillPatch } from "../../src/skills/skill-repository";
 import type { ChangeBy } from "../../src/shared/domain";
 import type { LearnedChange, Skill } from "../../src/contract/skills";
 import type { StoreRun } from "./store";
 
 const memoryStore = (run: StoreRun) => ({
   getMemory: (memoryId: string) => {
-    return run(MemoryRepository.use((r) => r.get(memoryId)));
+    return run(Effect.flatMap(MemoryRepository, (r) => r.get(memoryId)));
   },
   createMemory: (input: NewMemory, memoryId?: string, by?: ChangeBy | null) => {
-    return run(MemoryRepository.use((r) => r.create(input, memoryId, by)));
+    return run(
+      Effect.flatMap(MemoryRepository, (r) => r.create(input, memoryId, by)),
+    );
   },
 });
 
 const skillStore = (run: StoreRun) => ({
-  listSkills: (agentId: string | null = null): Skill[] => {
-    return run(SkillRepository.use((r) => r.list(agentId)));
+  listSkills: (agentId: string | null = null): Array<Skill> => {
+    return run(Effect.flatMap(SkillRepository, (r) => r.list(agentId)));
   },
   getSkill: (skillId: string) => {
-    return run(SkillRepository.use((r) => r.get(skillId)));
+    return run(Effect.flatMap(SkillRepository, (r) => r.get(skillId)));
   },
   createSkill: (
     input: NewSkill,
     skillId?: string,
     by?: ChangeBy | null,
   ): Skill => {
-    return run(SkillRepository.use((r) => r.create(input, skillId, by)));
+    return run(
+      Effect.flatMap(SkillRepository, (r) => r.create(input, skillId, by)),
+    );
   },
   updateSkill: (skillId: string, patch: SkillPatch, by?: ChangeBy | null) => {
-    return run(SkillRepository.use((r) => r.update(skillId, patch, by)));
+    return run(
+      Effect.flatMap(SkillRepository, (r) => r.update(skillId, patch, by)),
+    );
   },
   recordSkillUse: (skillId: string) => {
-    run(SkillRepository.use((r) => r.recordUse(skillId)));
+    run(Effect.flatMap(SkillRepository, (r) => r.recordUse(skillId)));
   },
   deleteSkill: (skillId: string, by?: ChangeBy | null) => {
-    return run(SkillRepository.use((r) => r.delete(skillId, by)));
+    return run(Effect.flatMap(SkillRepository, (r) => r.delete(skillId, by)));
   },
 });
 
 const reviewStore = (run: StoreRun) => ({
   reviewCounters: (agentId: string) => {
-    return run(ReviewRepository.use((r) => r.counters(agentId)));
+    return run(Effect.flatMap(ReviewRepository, (r) => r.counters(agentId)));
   },
   listPendingReviews: () => {
-    return run(ReviewRepository.use((r) => r.listPending));
+    return run(Effect.flatMap(ReviewRepository, (r) => r.listPending));
   },
   addPendingReview: (
     executionId: string,
@@ -61,7 +63,7 @@ const reviewStore = (run: StoreRun) => ({
     conversationId: string,
   ) => {
     run(
-      ReviewRepository.use((r) =>
+      Effect.flatMap(ReviewRepository, (r) =>
         r.addPending(executionId, agentId, conversationId),
       ),
     );
@@ -72,27 +74,33 @@ const learnedChangeStore = (run: StoreRun) => ({
   listChanges: (
     agentId: string | null | undefined,
     options: { limit?: number | undefined; before?: string | undefined } = {},
-  ): LearnedChange[] => {
-    return run(LearnedChangeRepository.use((r) => r.list(agentId, options)));
+  ): Array<LearnedChange> => {
+    return run(
+      Effect.flatMap(LearnedChangeRepository, (r) => r.list(agentId, options)),
+    );
   },
   getChange: (changeId: string) => {
-    return run(LearnedChangeRepository.use((r) => r.get(changeId)));
+    return run(Effect.flatMap(LearnedChangeRepository, (r) => r.get(changeId)));
   },
   listChangesOfExecution: (
     executionId: string,
     actor: LearnedChange["actor"],
   ) => {
     return run(
-      LearnedChangeRepository.use((r) => r.listOfExecution(executionId, actor)),
+      Effect.flatMap(LearnedChangeRepository, (r) =>
+        r.listOfExecution(executionId, actor),
+      ),
     );
   },
   listReviewResults: (agentId: string, limit?: number) => {
     return run(
-      LearnedChangeRepository.use((r) => r.listReviewResults(agentId, limit)),
+      Effect.flatMap(LearnedChangeRepository, (r) =>
+        r.listReviewResults(agentId, limit),
+      ),
     );
   },
   revertChange: (changeId: string, by: ChangeBy): LearnedChange | null => {
-    return run(ChangeReverter.use((r) => r.revert(changeId, by)));
+    return run(Effect.flatMap(ChangeReverter, (r) => r.revert(changeId, by)));
   },
 });
 

@@ -7,7 +7,7 @@ export type McpServer = z.infer<typeof describedMcpServerResponse>;
 
 export const mcpServersQuery = queryOptions({
   queryKey: ["mcp-servers"],
-  queryFn: ({ signal }) => api<"mcpServers">("/v1/mcp-servers", { signal }),
+  queryFn: ({ signal }) => api("mcpServers", "/v1/mcp-servers", { signal }),
 });
 
 export const mcpServerPath = (id: string) =>

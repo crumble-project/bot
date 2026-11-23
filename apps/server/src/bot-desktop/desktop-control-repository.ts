@@ -25,7 +25,9 @@ export class DesktopControlRepository extends Context.Service<
           .from(desktopControl)
           .where(eq(desktopControl.agentId, agentId));
 
-        if (!row) return null;
+        if (!row) {
+          return null;
+        }
 
         const state: ControlState = {
           holder: row.holder === "owner" ? "owner" : "bot",

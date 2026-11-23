@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { BotAvatar, type AvatarBot } from "@/components/bot-avatar";
+import { BotAvatar } from "@/components/bot-avatar";
+import type { AvatarBot } from "@/components/bot-avatar";
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 

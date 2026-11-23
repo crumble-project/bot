@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import type { Env } from "hono";
 import type { z } from "zod";
-import { routes, type memoryInput } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
+import type { memoryInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { BotLookup } from "../bot-ports/bot-lookup";
 import { NotFound } from "../shared/errors";
@@ -19,8 +20,9 @@ const memoryOf = Effect.fnUntraced(function* (
   const memories = yield* MemoryRepository;
   const memory = yield* memories.get(memoryId);
 
-  if (!memory || memory.agentId !== agentId)
+  if (!memory || memory.agentId !== agentId) {
     return yield* Effect.fail(new NotFound({ message: "Memory not found" }));
+  }
 
   return memory;
 });
@@ -29,15 +31,15 @@ const createMemory = (
   agentId: string | null,
   input: z.output<typeof memoryInput>,
 ) =>
-  MemoryRepository.use((r) =>
+  Effect.flatMap(MemoryRepository, (r) =>
     r.create({ agentId, content: input.content, source: { kind: "owner" } }),
   );
 
 const updateMemory = (memoryId: string, input: z.output<typeof memoryInput>) =>
-  MemoryRepository.use((r) => r.update(memoryId, input));
+  Effect.flatMap(MemoryRepository, (r) => r.update(memoryId, input));
 
 const deleteMemory = (memoryId: string) =>
-  MemoryRepository.use((r) => r.delete(memoryId));
+  Effect.flatMap(MemoryRepository, (r) => r.delete(memoryId));
 
 const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register, service } = options;

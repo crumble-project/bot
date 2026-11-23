@@ -1,9 +1,7 @@
-import { type ReactNode, useState } from "react";
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   IconCheck,
   IconCopy,
@@ -14,10 +12,10 @@ import {
 import { EditorSheet } from "@/components/form-fields";
 import {
   SecretSourceField,
-  type SecretInput,
   useConnectedPasswordManagers,
   useSecretDraft,
 } from "@/features/password-managers/secret-source-field";
+import type { SecretInput } from "@/features/password-managers/secret-source-field";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
@@ -38,17 +36,15 @@ import {
   PageToolbar,
 } from "@/components/page";
 import { send } from "@/lib/api";
+import { invalidateSecrets } from "@/features/password-managers/api";
+import type { PasswordManager } from "@/features/password-managers/api";
 import {
-  type PasswordManager,
-  invalidateSecrets,
-} from "@/features/password-managers/api";
-import {
-  type Provider,
   providersQuery,
   providerPath,
   invalidateProviders,
   usageQuery,
 } from "./api";
+import type { Provider } from "./api";
 import { SignInDialog } from "./provider-sign-in";
 import { ProviderTile } from "./provider-tile";
 import { UsageView } from "./usage";
@@ -60,8 +56,10 @@ const EXTERNAL_STATUS = {
   error: "Unavailable",
 } as const;
 
-function keyStatus(provider: Provider, managers: PasswordManager[]) {
-  if (!provider.apiKey.passwordManager) return "Key saved";
+function keyStatus(provider: Provider, managers: Array<PasswordManager>) {
+  if (!provider.apiKey.passwordManager) {
+    return "Key saved";
+  }
 
   const manager = managers.find(
     (item) => item.id === provider.apiKey.passwordManager,
@@ -70,16 +68,22 @@ function keyStatus(provider: Provider, managers: PasswordManager[]) {
   return `Key in ${manager?.name ?? "a password manager"}`;
 }
 
-function status(provider: Provider, managers: PasswordManager[]) {
-  if (provider.externalAuth)
+function status(provider: Provider, managers: Array<PasswordManager>) {
+  if (provider.externalAuth) {
     return EXTERNAL_STATUS[provider.externalAuth.status];
+  }
 
-  if (provider.credentialType === "oauth") return "Signed in";
+  if (provider.credentialType === "oauth") {
+    return "Signed in";
+  }
 
-  if (provider.credentialType === "api_key")
+  if (provider.credentialType === "api_key") {
     return keyStatus(provider, managers);
+  }
 
-  if (provider.configured) return "From environment";
+  if (provider.configured) {
+    return "From environment";
+  }
 
   return provider.activeLoginId ? "Signing in…" : null;
 }
@@ -138,7 +142,7 @@ function ProviderActions({
 
   const signInLabel = provider.activeLoginId ? "Continue sign-in" : "Sign in";
 
-  if (!provider.credentialType)
+  if (!provider.credentialType) {
     return (
       <>
         {addKey && (
@@ -153,6 +157,7 @@ function ProviderActions({
         )}
       </>
     );
+  }
 
   return (
     <RowMenu>
@@ -245,7 +250,9 @@ function ProviderNotes({
 
   const problem = externalProblem(provider);
 
-  if (!failed && !problem) return null;
+  if (!failed && !problem) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
@@ -294,7 +301,9 @@ function ExternalActions({
   const signedIn = external.status === "signed_in";
   const command = signedIn ? external.signOutCommand : external.signInCommand;
 
-  if (!command || external.status === "cli_missing") return null;
+  if (!command || external.status === "cli_missing") {
+    return null;
+  }
 
   return (
     <RowMenu>
@@ -329,7 +338,7 @@ function CopyCommandItem({
   );
 }
 
-function matching(providers: Provider[], needle: string) {
+function matching(providers: Array<Provider>, needle: string) {
   return providers
     .filter(
       (provider) =>
@@ -348,10 +357,12 @@ function ProviderSection({
 }: {
   title: string;
   description?: string;
-  providers: Provider[];
+  providers: Array<Provider>;
   onSignIn: (provider: Provider) => void;
 }) {
-  if (!providers.length) return null;
+  if (!providers.length) {
+    return null;
+  }
 
   return (
     <Section title={title} description={description}>
@@ -419,7 +430,7 @@ function ProvidersSetup({
   providers,
   tabs,
 }: {
-  providers: UseQueryResult<Provider[]>;
+  providers: UseQueryResult<Array<Provider>>;
   tabs: ReactNode;
 }) {
   const [search, setSearch] = useState("");

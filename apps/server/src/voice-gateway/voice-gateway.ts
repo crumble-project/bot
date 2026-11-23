@@ -1,18 +1,21 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { Clock, Context, Effect, Layer, type Scope } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import { z } from "zod";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { Agent } from "../contract/agents";
 import {
   defaultVoiceGatewayConfig,
   voiceGatewayConfigInput,
-  type CallParty,
-  type VoiceCallEvent,
-  type VoiceCallReport,
-  type VoiceGatewayConfig,
-  type VoiceGatewayDescription,
-  type VoiceGatewayServedConfig,
-  type VoiceLinesReport,
+} from "../contract/voice-gateway";
+import type {
+  CallParty,
+  VoiceCallEvent,
+  VoiceCallReport,
+  VoiceGatewayConfig,
+  VoiceGatewayDescription,
+  VoiceGatewayServedConfig,
+  VoiceLinesReport,
 } from "../contract/voice-gateway";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -50,7 +53,7 @@ type IssuedToken = z.infer<typeof issuedToken>;
 
 const digest = (token: string) => createHash("sha256").update(token).digest();
 
-const unavailableLines = (config: VoiceGatewayConfig, bots: Agent[]) =>
+const unavailableLines = (config: VoiceGatewayConfig, bots: Array<Agent>) =>
   config.lines.flatMap((line) => {
     const bot = bots.find((candidate) => candidate.id === line.botId);
 
@@ -64,7 +67,7 @@ const unavailableLines = (config: VoiceGatewayConfig, bots: Agent[]) =>
         ];
   });
 
-const servedLines = (config: VoiceGatewayConfig, bots: Agent[]) =>
+const servedLines = (config: VoiceGatewayConfig, bots: Array<Agent>) =>
   config.enabled
     ? config.lines.flatMap((line) => {
         const bot = bots.find((candidate) => candidate.id === line.botId);
@@ -236,17 +239,20 @@ export class VoiceGateway extends Context.Service<
         );
 
         const closeLine = (username: string) => {
-          for (const stream of lineStreams)
+          for (const stream of lineStreams) {
             if (stream.username === username) {
               lineStreams.delete(stream);
               stream.close();
             }
+          }
         };
 
         const closeAll = (now: number) => {
           calls.endAll(now);
 
-          for (const stream of lineStreams) stream.close();
+          for (const stream of lineStreams) {
+            stream.close();
+          }
           lineStreams.clear();
           live?.close();
           live = null;
@@ -293,12 +299,15 @@ export class VoiceGateway extends Context.Service<
 
           served = next;
 
-          for (const username of new Set([...before.keys(), ...after.keys()]))
-            if (before.get(username) !== after.get(username))
+          for (const username of new Set([...before.keys(), ...after.keys()])) {
+            if (before.get(username) !== after.get(username)) {
               reassign(username, after.get(username), now);
+            }
+          }
 
-          if (live && JSON.stringify(previous) !== JSON.stringify(next))
+          if (live && JSON.stringify(previous) !== JSON.stringify(next)) {
             live.send({ event: "config", data: next });
+          }
 
           return next;
         });
@@ -321,11 +330,13 @@ export class VoiceGateway extends Context.Service<
         const update = Effect.fn("VoiceGateway.update")(function* (
           input: VoiceGatewayConfig,
         ) {
-          for (const line of input.lines)
-            if (!(yield* agents.get(line.botId)))
+          for (const line of input.lines) {
+            if (!(yield* agents.get(line.botId))) {
               return yield* new InvalidInput({
                 message: `Unknown bot ${line.botId}`,
               });
+            }
+          }
 
           yield* locked(
             Effect.andThen(settings.set(CONFIG_KEY, input), reconcile),
@@ -353,10 +364,11 @@ export class VoiceGateway extends Context.Service<
 
         const revokeToken = locked(
           Effect.gen(function* () {
-            if (!(yield* settings.delete(TOKEN_KEY)))
+            if (!(yield* settings.delete(TOKEN_KEY))) {
               return yield* new NotFound({
                 message: "No voice gateway token is issued",
               });
+            }
 
             issued = null;
             closeAll(yield* Clock.currentTimeMillis);
@@ -378,7 +390,9 @@ export class VoiceGateway extends Context.Service<
             (candidate) => candidate.username === username,
           );
 
-          if (issued?.hash !== hash) return Effect.succeed(null);
+          if (issued?.hash !== hash) {
+            return Effect.succeed(null);
+          }
 
           return found
             ? Effect.succeed({
@@ -444,10 +458,14 @@ export class VoiceGateway extends Context.Service<
               calls.connected();
               opened.send({ event: "config", data: current });
 
-              if (opened.calls) calls.replay();
+              if (opened.calls) {
+                calls.replay();
+              }
 
               return () => {
-                if (live !== opened) return;
+                if (live !== opened) {
+                  return;
+                }
                 live = null;
                 calls.disconnected(clock.currentTimeMillisUnsafe());
                 lineReport = [];
@@ -458,10 +476,11 @@ export class VoiceGateway extends Context.Service<
         const reportLines = (hash: string, lines: VoiceLinesReport) =>
           locked(
             Effect.gen(function* () {
-              if (live?.hash !== hash)
+              if (live?.hash !== hash) {
                 return yield* new Conflict({
                   message: "Open /v1/voice/events before reporting lines",
                 });
+              }
               lineReport = lines;
             }),
           );

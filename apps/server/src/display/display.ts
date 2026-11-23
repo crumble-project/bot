@@ -1,8 +1,9 @@
 import { readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Type, type Static } from "@earendil-works/pi-ai";
-import type { JsonValue } from "@earendil-works/chord";
+import { Type } from "@earendil-works/pi-ai";
+import type { Static } from "@earendil-works/pi-ai";
+import { copyJson } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
@@ -49,7 +50,7 @@ const chart = Type.Object({
   kind: Type.Literal("chart"),
   title,
   height: Type.Optional(Type.Integer({ minimum: 120, maximum: 480 })),
-  code: Type.String({ minLength: 1, maxLength: 60000 }),
+  code: Type.String({ minLength: 1, maxLength: 60_000 }),
 });
 
 const component = Type.Union([stats, table, chart]);
@@ -57,12 +58,15 @@ const component = Type.Union([stats, table, chart]);
 type Component = Static<typeof component>;
 
 function countMismatch(value: Component): string | undefined {
-  if (value.kind !== "table") return undefined;
+  if (value.kind !== "table") {
+    return undefined;
+  }
   const width = value.columns.length;
   const row = value.rows.findIndex((cells) => cells.length !== width);
 
-  if (row !== -1)
-    return `Row ${row} has ${value.rows[row]!.length} cells; every row needs ${width}, one per column.`;
+  if (row !== -1) {
+    return `Row ${row} has ${value.rows[row]?.length ?? 0} cells; every row needs ${width}, one per column.`;
+  }
 
   return undefined;
 }
@@ -85,8 +89,11 @@ const chartTopics = new Map<string, string>([
   ["guides/choosing-a-chart", join(CHART_DOCS, "guides/choosing-a-chart.md")],
 ]);
 
-for (const topic of chartTopics.keys())
-  if (UNBUNDLED.test(topic)) chartTopics.delete(topic);
+for (const topic of chartTopics.keys()) {
+  if (UNBUNDLED.test(topic)) {
+    chartTopics.delete(topic);
+  }
+}
 
 const SHOW_DESCRIPTION = `Show the owner a visual inline in your reply. Use it when a visual reads faster than prose, not for one or two plain facts. Your turn ends once it is shown, so call it last and write any text before the call. Do not restate the shown data in that text; add only interpretation the visual lacks, or nothing.
 - "stats": one to six headline numbers. Give values formatted for display (e.g. "€1.2M", "+4.3%").
@@ -113,15 +120,18 @@ function showTool(charts: ChartCompiler) {
     execute: async ({ component }, _api, context) => {
       const error = countMismatch(component);
 
-      if (error) throw new Error(error);
+      if (error) {
+        throw new Error(error);
+      }
       context.abortSignal?.throwIfAborted();
 
-      if (component.kind !== "chart")
+      if (component.kind !== "chart") {
         return {
           output: [{ type: "text" as const, text: "Shown to the owner." }],
           details: component,
           control: { terminate: true as const },
         };
+      }
 
       // Clients receive the compiled layouts, never the code.
       const { code, height, ...chart } = component;
@@ -133,8 +143,8 @@ function showTool(charts: ChartCompiler) {
 
       const details = {
         ...chart,
-        // SAFETY: chartLayout validated these; storing details as JSON drops the style keys left undefined.
-        layouts: layouts as JsonValue,
+        // The layouts are stored as JSON: the style keys they leave undefined stay out of it.
+        layouts: copyJson(layouts, { omitUndefinedProperties: true }),
       };
 
       return {
@@ -156,14 +166,18 @@ function chartDocsTool() {
       ),
     }),
     replay: "safe",
-    execute: async ({ topic }) => ({
-      output: [
-        {
-          type: "text" as const,
-          text: await Bun.file(chartTopics.get(topic)!).text(),
-        },
-      ],
-    }),
+    execute: async ({ topic }) => {
+      const file = chartTopics.get(topic);
+
+      return {
+        output: [
+          {
+            type: "text" as const,
+            text: file ? await Bun.file(file).text() : "",
+          },
+        ],
+      };
+    },
   });
 }
 

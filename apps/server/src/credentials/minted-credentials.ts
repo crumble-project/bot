@@ -25,7 +25,7 @@ export class CredentialSource extends Context.Service<
       CredentialUnminted | SecretUnavailable
     >;
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    readonly lines: (agentId: string) => Effect.Effect<string[]>;
+    readonly lines: (agentId: string) => Effect.Effect<Array<string>>;
     /** Signs a commit or tag as the bot; undefined when the source has no key for it. */
     readonly sign: (
       agentId: string,
@@ -42,7 +42,7 @@ export class MintedCredentials extends Context.Service<
     readonly grant: (
       agentId: string,
       name: string,
-      hosts: string[],
+      hosts: Array<string>,
     ) => Effect.Effect<void>;
     readonly revoke: (agentId: string) => Effect.Effect<void>;
   }

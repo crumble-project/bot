@@ -62,7 +62,7 @@ export const EMULATE_SEED = {
           stream: true,
         },
         reply: [{ type: "text", text: STREAM_TEXT }],
-        fault: { kind: "stall", afterChunks: 1, stallMs: 30000 },
+        fault: { kind: "stall", afterChunks: 1, stallMs: 30_000 },
       },
     ],
   },

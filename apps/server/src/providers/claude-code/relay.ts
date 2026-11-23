@@ -1,22 +1,19 @@
 // Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { randomBytes } from "node:crypto";
+import { Predicate } from "effect";
+import { logWarning } from "../../shared/process-log";
 import { z } from "zod";
 import { Capture } from "./relay-capture";
+import { gzipEligible, gzipPayload, rejectionKind } from "./relay-gzip";
+import type { GzipFallback } from "./relay-gzip";
 import {
-  gzipEligible,
-  gzipPayload,
-  rejectionKind,
-  type GzipFallback,
-} from "./relay-gzip";
-import {
-  QueriedTurnMismatch,
   dropMessageBreakpoints,
   pinMessageBreakpoint,
   restoreQueriedTurn,
   stableRequestContext,
   streamToolInput,
-  type Block,
 } from "./relay-request";
+import type { Block } from "./relay-request";
 
 // Native's own byte-level watchdog against api.anthropic.com (180 s); behind the relay it widens to 300 s.
 const UPSTREAM_IDLE_MS = 180_000;
@@ -52,8 +49,11 @@ const FORWARDED_RESPONSE_HEADERS_EXCLUDED = new Set([
 function forwardedRequestHeaders(request: Request) {
   const headers = new Headers();
 
-  for (const [key, value] of request.headers)
-    if (!FORWARDED_REQUEST_HEADERS_EXCLUDED.has(key)) headers.set(key, value);
+  for (const [key, value] of request.headers) {
+    if (!FORWARDED_REQUEST_HEADERS_EXCLUDED.has(key)) {
+      headers.set(key, value);
+    }
+  }
   headers.set("accept-encoding", "identity");
 
   return headers;
@@ -62,16 +62,18 @@ function forwardedRequestHeaders(request: Request) {
 function forwardedResponseHeaders(response: Response) {
   const forwarded = new Headers();
 
-  for (const [key, value] of response.headers)
-    if (!FORWARDED_RESPONSE_HEADERS_EXCLUDED.has(key))
+  for (const [key, value] of response.headers) {
+    if (!FORWARDED_RESPONSE_HEADERS_EXCLUDED.has(key)) {
       forwarded.set(key, value);
+    }
+  }
   forwarded.set("connection", "close");
 
   return forwarded;
 }
 
 export type AdmissionOptions = {
-  queried?: readonly Block[] | undefined;
+  queried?: ReadonlyArray<Block> | undefined;
   oneShot?: boolean;
   /** The environment the child runs in, whose proxy and certificate settings forbid compression. */
   env: Record<string, string | undefined>;
@@ -84,13 +86,17 @@ function rewrittenPayload(
 ) {
   let payload = native;
 
-  if (oneShot) payload = dropMessageBreakpoints(payload);
+  if (oneShot) {
+    payload = dropMessageBreakpoints(payload);
+  }
 
   try {
     payload = restoreQueriedTurn(payload, queried);
   } catch (error) {
     // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
-    if (!(error instanceof QueriedTurnMismatch)) throw error;
+    if (!Predicate.isError(error) || error.name !== "QueriedTurnMismatch") {
+      throw error;
+    }
   }
 
   payload = stableRequestContext(payload, queried);
@@ -141,10 +147,11 @@ export class Admission {
       this.upstream.password ||
       this.upstream.search ||
       this.upstream.hash
-    )
+    ) {
       throw new Error(
         "Native upstream must be HTTPS or a loopback HTTP fixture",
       );
+    }
     this.server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -192,8 +199,9 @@ export class Admission {
       request.method !== "POST" ||
       path.pathname !== `${this.prefix}/v1/messages` ||
       request.headers.has("origin")
-    )
+    ) {
       return new Response(null, { status: 404 });
+    }
 
     if (this.cancelled || this.used) {
       this.denied++;
@@ -225,7 +233,9 @@ export class Admission {
     const send = (gzip: boolean) => {
       const sent = new Headers(headers);
 
-      if (gzip) sent.set("content-encoding", "gzip");
+      if (gzip) {
+        sent.set("content-encoding", "gzip");
+      }
 
       return fetch(route, {
         method: "POST",
@@ -251,11 +261,13 @@ export class Admission {
       if (reason) {
         this.status = undefined;
         gzip.disable(reason);
-        console.warn(
+        logWarning(
           `request gzip disabled: ${reason} status=${response.status}`,
         );
 
-        if (this.cancelled) return new Response(null, { status: 499 });
+        if (this.cancelled) {
+          return new Response(null, { status: 499 });
+        }
         response = await send(false);
         prefix = undefined;
       }
@@ -288,15 +300,18 @@ export class Admission {
     const idle = Math.min(this.timeoutMs, UPSTREAM_IDLE_MS);
 
     const deliver = async (chunk: Uint8Array) => {
-      if (response.status === 200) this.capture.feed(chunk);
-      else if (this.errorBody.length < 65536)
+      if (response.status === 200) {
+        this.capture.feed(chunk);
+      } else if (this.errorBody.length < 65_536) {
         this.errorBody += new TextDecoder().decode(chunk);
+      }
       await writer.write(chunk);
     };
 
     try {
-      if (prefix) await deliver(prefix);
-      else if (response.body) {
+      if (prefix) {
+        await deliver(prefix);
+      } else if (response.body) {
         const reader = response.body.getReader();
 
         for (;;) {
@@ -312,7 +327,9 @@ export class Admission {
             }),
           ]).finally(() => clearTimeout(timer));
 
-          if (result.done) break;
+          if (result.done) {
+            break;
+          }
           await deliver(result.value);
         }
       }

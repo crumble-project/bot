@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createElement, useState } from "react";
 import { IconDownload, IconTrash } from "@tabler/icons-react";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -12,7 +12,8 @@ import {
 import { ConfirmDeleteContent, RowMenu } from "@/components/page";
 import { Heading, TableFrame } from "@/components/table-frame";
 import { AttachmentImage } from "@/features/chat/transcript";
-import { isPreviewable, type LibraryFile } from "./api";
+import { isPreviewable } from "./api";
+import type { LibraryFile } from "./api";
 import { fileIcon } from "./file-icon";
 import { cn } from "@/lib/utils";
 
@@ -48,18 +49,21 @@ function modifiedLabel(createdAt: string) {
   const date = new Date(createdAt);
   const now = new Date();
 
-  if (date.toDateString() === now.toDateString())
+  if (date.toDateString() === now.toDateString()) {
     return date.toLocaleTimeString(undefined, {
       hour: "numeric",
       minute: "2-digit",
     });
+  }
 
   const options: Intl.DateTimeFormatOptions = {
     day: "numeric",
     month: "short",
   };
 
-  if (date.getFullYear() !== now.getFullYear()) options.year = "numeric";
+  if (date.getFullYear() !== now.getFullYear()) {
+    options.year = "numeric";
+  }
 
   return date.toLocaleDateString(undefined, options);
 }
@@ -75,7 +79,7 @@ function Preview({
   className: string;
   iconClassName: string;
 }) {
-  if (isPreviewable(file.mimeType))
+  if (isPreviewable(file.mimeType)) {
     return (
       <span className={cn("overflow-hidden bg-muted", className)}>
         <AttachmentImage
@@ -86,8 +90,7 @@ function Preview({
         />
       </span>
     );
-
-  const Icon = fileIcon(file.mimeType);
+  }
 
   return (
     <span
@@ -96,7 +99,11 @@ function Preview({
         className,
       )}
     >
-      <Icon aria-hidden className={iconClassName} stroke={1.5} />
+      {createElement(fileIcon(file.mimeType), {
+        "aria-hidden": true,
+        className: iconClassName,
+        stroke: 1.5,
+      })}
     </span>
   );
 }
@@ -145,7 +152,7 @@ export function FileTable({
   files,
   actions,
 }: {
-  files: LibraryFile[];
+  files: Array<LibraryFile>;
   actions: FileActions;
 }) {
   return (
@@ -204,7 +211,7 @@ export function FileGrid({
   files,
   actions,
 }: {
-  files: LibraryFile[];
+  files: Array<LibraryFile>;
   actions: FileActions;
 }) {
   return (

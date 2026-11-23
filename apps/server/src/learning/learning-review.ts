@@ -29,7 +29,9 @@ const DEFAULTS = {
 const nameOf = (change: LearnedChange) => {
   const state = change.after ?? change.before;
 
-  if (!state) return change.targetId;
+  if (!state) {
+    return change.targetId;
+  }
 
   return "name" in state ? state.name : state.content.slice(0, 80);
 };
@@ -68,19 +70,21 @@ export class LearningReview extends Context.Service<
         agent: Agent,
         report: Awaited<ReturnType<typeof turnReport>>,
       ) {
-        if (report.roundsSinceSkillWrite !== null)
+        if (report.roundsSinceSkillWrite !== null) {
           yield* reviews.setCounter(
             agent.id,
             "skill",
             report.roundsSinceSkillWrite,
           );
+        }
 
-        if (report.roundsSinceMemoryWrite !== null)
+        if (report.roundsSinceMemoryWrite !== null) {
           yield* reviews.setCounter(
             agent.id,
             "memory",
             report.roundsSinceMemoryWrite,
           );
+        }
 
         return yield* reviews.addRounds(
           agent.id,
@@ -114,7 +118,9 @@ export class LearningReview extends Context.Service<
       ) {
         const made = yield* changes.listOfExecution(turnId, "review");
 
-        if (!made.length) return;
+        if (!made.length) {
+          return;
+        }
 
         yield* changes.addReviewResult(
           turnId,
@@ -162,11 +168,17 @@ export class LearningReview extends Context.Service<
 
         const scope = reviewScope(agent, settings, counters);
 
-        if (!scope.skills && !scope.memory) return;
+        if (!scope.skills && !scope.memory) {
+          return;
+        }
 
-        if (scope.skills) yield* reviews.setCounter(agent.id, "skill", 0);
+        if (scope.skills) {
+          yield* reviews.setCounter(agent.id, "skill", 0);
+        }
 
-        if (scope.memory) yield* reviews.setCounter(agent.id, "memory", 0);
+        if (scope.memory) {
+          yield* reviews.setCounter(agent.id, "memory", 0);
+        }
 
         const conversation = yield* pi(() =>
           openReviewConversation(runtime, agent, turn, scope, budgetChars),
@@ -186,11 +198,15 @@ export class LearningReview extends Context.Service<
         submissionId: string,
         agentId: string,
       ) {
-        if (running.has(turn.id)) return;
+        if (running.has(turn.id)) {
+          return;
+        }
         const agent = yield* agents.get(agentId);
         const settings = { ...DEFAULTS, ...agent?.review };
 
-        if (!agent?.enabled || !settings.enabled) return;
+        if (!agent?.enabled || !settings.enabled) {
+          return;
+        }
         running.add(turn.id);
 
         yield* review(turn, submissionId, agent, settings).pipe(
@@ -204,12 +220,13 @@ export class LearningReview extends Context.Service<
           for (const pending of yield* reviews.listPending) {
             const agent = yield* agents.get(pending.agentId);
 
-            if (agent)
+            if (agent) {
               yield* pi(() =>
                 runtime.abort(agent, pending.conversationId),
               ).pipe(
                 logged("Dropping a pending review failed", pending.executionId),
               );
+            }
             yield* reviews.removePending(pending.executionId);
           }
         }),
@@ -219,10 +236,13 @@ export class LearningReview extends Context.Service<
           const { submissionId } = execution;
 
           // A callee's words must never reach a conversation that writes memory or skills.
-          if (isCallTurn(execution)) return;
+          if (isCallTurn(execution)) {
+            return;
+          }
 
-          if (execution.status === "done" && submissionId)
+          if (execution.status === "done" && submissionId) {
             yield* reviewOnce(execution, submissionId, execution.agentId);
+          }
         }),
         afterJob: Effect.fn("LearningReview.afterJob")(function* (
           finished: JobFinished,
@@ -278,7 +298,9 @@ export const learningReviews = Layer.effectDiscard(
       ),
       (stops) =>
         Effect.sync(() => {
-          for (const stop of stops) stop();
+          for (const stop of stops) {
+            stop();
+          }
         }),
     );
   }),

@@ -1,4 +1,5 @@
 import { sleep } from "../shared/time";
+import { fallingBackTo } from "../shared/fallback-schema";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
 import type { ComputerUseArgs } from "./computer-use-args";
@@ -15,17 +16,15 @@ import {
   messageOf,
   refusalOf,
   targetWindow,
-  type DriverArgs,
-  type DriverReply,
-  type Window,
 } from "./computer-use-driver";
+import type { DriverArgs, DriverReply, Window } from "./computer-use-driver";
 import {
   forgetScreen,
   refOf,
   scrubText,
   textResult,
-  type ComputerUseState,
 } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 const tabSchema = z.object({
   tab_id: z.string(),
@@ -42,8 +41,8 @@ const bindReply = z.object({
 const refSchema = z.object({
   ref: z.string(),
   role: loose(z.string()),
-  name: z.string().nullish().catch(undefined),
-  value: z.string().nullish().catch(undefined),
+  name: fallingBackTo(z.string().nullish(), undefined),
+  value: fallingBackTo(z.string().nullish(), undefined),
   frame: loose(z.string()),
   states: loose(z.record(z.string(), z.unknown())),
 });
@@ -53,10 +52,10 @@ export type PageRef = z.infer<typeof refSchema>;
 const semanticSnapshot = z.object({
   page: loose(z.object({ title: loose(z.string()), url: loose(z.string()) })),
   outline: loose(z.string()),
-  refs: z.array(refSchema).catch([]),
+  refs: fallingBackTo(z.array(refSchema), []),
   snapshot: loose(
     z.object({
-      continuation: z.string().nullish().catch(undefined),
+      continuation: fallingBackTo(z.string().nullish(), undefined),
     }),
   ),
 });
@@ -84,11 +83,15 @@ export async function chromiumWindow(
 ) {
   const focused = await targetWindow(state, windowId, context);
 
-  if (windowId !== undefined || isChromium(focused)) return focused;
+  if (windowId !== undefined || isChromium(focused)) {
+    return focused;
+  }
 
   const browser = (await listWindows(state, context)).find(isChromium);
 
-  if (!browser) throw new Error("Chromium is not open");
+  if (!browser) {
+    throw new Error("Chromium is not open");
+  }
 
   return browser;
 }
@@ -124,7 +127,9 @@ async function attach(
     context,
   );
 
-  if (refusalOf(reply)) return { refused: refusalText(reply) };
+  if (refusalOf(reply)) {
+    return { refused: refusalText(reply) };
+  }
 
   forgetScreen(state);
 
@@ -138,8 +143,9 @@ function boundTab(
   const bound = bindReply.parse(reply);
   const tab = bound.tabs?.find((each) => each.active) ?? bound.tabs?.[0];
 
-  if (refusalOf(reply) || !bound.target_id || !tab)
+  if (refusalOf(reply) || !bound.target_id || !tab) {
     return { refused: refusalText(reply) };
+  }
 
   return {
     target_id: bound.target_id,
@@ -159,17 +165,21 @@ async function bindPage(
   target: Window,
   context: Context,
 ): Promise<PageBinding | Refused> {
-  if (!isChromium(target))
+  if (!isChromium(target)) {
     return { refused: "page actions work in Chromium only" };
+  }
 
   const reply = await bind(state, target, context);
 
-  if (codeOf(reply) !== "browser_consent_required")
+  if (codeOf(reply) !== "browser_consent_required") {
     return boundTab(reply, false);
+  }
 
   const refused = await attach(state, target, context);
 
-  if (refused) return refused;
+  if (refused) {
+    return refused;
+  }
 
   return boundTab(await bind(state, target, context), true);
 }
@@ -249,8 +259,9 @@ async function readBound(
     context,
   );
 
-  if (refusalOf(reply))
+  if (refusalOf(reply)) {
     return textResult(`read failed: ${refusalText(reply)}`, true);
+  }
 
   state.lastRead = { page, read };
 
@@ -265,7 +276,9 @@ export async function readPage(
 ): Promise<ComputerUseResult> {
   const page = await bindPage(state, target, context);
 
-  if ("refused" in page) return textResult(`REFUSED: ${page.refused}`, true);
+  if ("refused" in page) {
+    return textResult(`REFUSED: ${page.refused}`, true);
+  }
 
   return readBound(state, page, args, context);
 }
@@ -289,15 +302,23 @@ async function waitForLoad(
 
     const now = await bindPage(state, target, context);
 
-    if ("refused" in now) continue;
+    if ("refused" in now) {
+      continue;
+    }
 
-    if (now.title !== before.title) return true;
+    if (now.title !== before.title) {
+      return true;
+    }
 
-    if (now.url === before.url && now.url !== url) continue;
+    if (now.url === before.url && now.url !== url) {
+      continue;
+    }
 
     movedAt ??= Date.now();
 
-    if (Date.now() - movedAt >= SETTLE_MS) return true;
+    if (Date.now() - movedAt >= SETTLE_MS) {
+      return true;
+    }
   }
 
   return false;
@@ -309,15 +330,18 @@ export async function openPage(
   target: Window,
   context: Context,
 ): Promise<ComputerUseResult> {
-  if (!args.url || !/^(https?:|about:)/i.test(args.url))
+  if (!args.url || !/^(https?:|about:)/i.test(args.url)) {
     return textResult(
       "open needs a url starting with http, https, or about:",
       true,
     );
+  }
 
   const page = await bindPage(state, target, context);
 
-  if ("refused" in page) return textResult(`REFUSED: ${page.refused}`, true);
+  if ("refused" in page) {
+    return textResult(`REFUSED: ${page.refused}`, true);
+  }
 
   const { reply } = await driverCall(
     state,
@@ -326,13 +350,16 @@ export async function openPage(
     context,
   );
 
-  if (refusalOf(reply))
+  if (refusalOf(reply)) {
     return textResult(`REFUSED: ${refusalText(reply)}`, true);
+  }
 
   const loaded = await waitForLoad(state, target, page, args.url, context);
   const read = await readBound(state, page, args, context);
 
-  if (loaded || read.isError) return read;
+  if (loaded || read.isError) {
+    return read;
+  }
 
   return {
     ...read,
@@ -348,11 +375,17 @@ const SELECTS = new Set(["combobox", "listbox"]);
 const scrollDelta = (args: ComputerUseArgs) => {
   const pixels = (args.amount ?? SCROLL_DEFAULTS.amount) * 100;
 
-  if (args.direction === "up") return { delta_y: -pixels };
+  if (args.direction === "up") {
+    return { delta_y: -pixels };
+  }
 
-  if (args.direction === "left") return { delta_x: -pixels };
+  if (args.direction === "left") {
+    return { delta_x: -pixels };
+  }
 
-  if (args.direction === "right") return { delta_x: pixels };
+  if (args.direction === "right") {
+    return { delta_x: pixels };
+  }
 
   return { delta_y: pixels };
 };
@@ -376,7 +409,9 @@ const pointerCall =
   });
 
 const valueCall: RefCallBuilder = (state, ids, args) => {
-  if (args.value === undefined) return { invalid: "set_value needs value" };
+  if (args.value === undefined) {
+    return { invalid: "set_value needs value" };
+  }
 
   const role = refOf(state, args.ref)?.role;
 
@@ -414,10 +449,13 @@ export async function actOnRef(
 ): Promise<Acted | Invalid> {
   const page = state.lastRead?.page;
 
-  if (!page)
+  if (!page) {
     return { invalid: "read the page first, then act on a ref from it" };
+  }
 
-  if (!build) return { invalid: `${args.action} takes no ref` };
+  if (!build) {
+    return { invalid: `${args.action} takes no ref` };
+  }
 
   const call = build(
     state,
@@ -425,7 +463,9 @@ export async function actOnRef(
     args,
   );
 
-  if ("invalid" in call) return call;
+  if ("invalid" in call) {
+    return call;
+  }
 
   const { reply } = await driverCall(state, call.tool, call.args, context);
 

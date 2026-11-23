@@ -8,12 +8,8 @@ import type {
   SkillInput,
   skillLifecycleInput,
 } from "../contract/skills";
-import {
-  InvalidInput,
-  NotFound,
-  ReadOnly,
-  type AppError,
-} from "../shared/errors";
+import { InvalidInput, NotFound, ReadOnly } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { MAX_BOT_SKILLS } from "../shared/limits";
 import { atomic, ProductDatabase } from "../shared/product-database";
 import { DefaultSkills } from "./default-skills";
@@ -25,10 +21,13 @@ const tooManySkills = () =>
     message: `A bot can use at most ${MAX_BOT_SKILLS} shared skills`,
   });
 
+const readOnly = () =>
+  new ReadOnly({ message: "Bundled skills are read-only" });
+
 export class OwnerSkills extends Context.Service<
   OwnerSkills,
   {
-    readonly catalog: Effect.Effect<z.infer<typeof listedSkillResponse>[]>;
+    readonly catalog: Effect.Effect<Array<z.infer<typeof listedSkillResponse>>>;
     readonly shared: (skillId: string) => Effect.Effect<Skill, NotFound>;
     readonly own: (
       agentId: string,
@@ -50,8 +49,8 @@ export class OwnerSkills extends Context.Service<
     ) => Effect.Effect<boolean, AppError>;
     /** Adds `skillIds` to each bot's shared skills: all of them, or none when one bot would go over the limit. */
     readonly shareWith: (
-      botIds: string[],
-      skillIds: string[],
+      botIds: Array<string>,
+      skillIds: Array<string>,
     ) => Effect.Effect<void, InvalidInput>;
   }
 >()("crumble/skills/OwnerSkills") {
@@ -66,9 +65,6 @@ export class OwnerSkills extends Context.Service<
 
       const isDefault = (skillId: string) =>
         defaults.some((skill) => skill.id === skillId);
-
-      const readOnly = () =>
-        new ReadOnly({ message: "Bundled skills are read-only" });
 
       const catalog = Effect.gen(function* () {
         const updates = yield* installer.updates;
@@ -98,8 +94,9 @@ export class OwnerSkills extends Context.Service<
       ) {
         const skill = yield* skills.get(skillId);
 
-        if (!skill || skill.agentId)
+        if (!skill || skill.agentId) {
           return yield* new NotFound({ message: "Skill not found" });
+        }
 
         return skill;
       });
@@ -110,8 +107,9 @@ export class OwnerSkills extends Context.Service<
       ) {
         const skill = yield* skills.get(skillId);
 
-        if (!skill || skill.agentId !== agentId)
+        if (!skill || skill.agentId !== agentId) {
           return yield* new NotFound({ message: "Skill not found" });
+        }
 
         return skill;
       });
@@ -119,15 +117,18 @@ export class OwnerSkills extends Context.Service<
       const editable = Effect.fn("OwnerSkills.editable")(function* (
         skillId: string,
       ) {
-        if (isDefault(skillId)) return yield* readOnly();
+        if (isDefault(skillId)) {
+          return yield* readOnly();
+        }
 
         const skill = yield* shared(skillId);
 
-        if (skill.origin)
+        if (skill.origin) {
           return yield* new ReadOnly({
             message:
               "Installed skills are read-only. Make a copy to change one.",
           });
+        }
 
         return skill;
       });
@@ -146,22 +147,26 @@ export class OwnerSkills extends Context.Service<
       const removeShared = Effect.fn("OwnerSkills.removeShared")(function* (
         skillId: string,
       ) {
-        if (isDefault(skillId)) return yield* readOnly();
+        if (isDefault(skillId)) {
+          return yield* readOnly();
+        }
 
         yield* transaction(
           Effect.gen(function* () {
             const skill = yield* skills.get(skillId);
 
-            if (skill?.agentId || !(yield* skills.delete(skillId)))
+            if (skill?.agentId || !(yield* skills.delete(skillId))) {
               return yield* new NotFound({ message: "Skill not found" });
+            }
 
             for (const agent of yield* agents.list) {
               const sharedSkills = agent.sharedSkills ?? [];
 
-              if (sharedSkills.includes(skillId))
+              if (sharedSkills.includes(skillId)) {
                 yield* agents.update(agent.id, {
                   sharedSkills: sharedSkills.filter((id) => id !== skillId),
                 });
+              }
             }
           }),
         );
@@ -175,16 +180,18 @@ export class OwnerSkills extends Context.Service<
         const current = target.sharedSkills ?? [];
         const already = current.includes(source.id);
 
-        if (assigned && !already && current.length >= MAX_BOT_SKILLS)
+        if (assigned && !already && current.length >= MAX_BOT_SKILLS) {
           return yield* tooManySkills();
+        }
 
-        if (assigned !== already)
+        if (assigned !== already) {
           yield* agents.update(target.id, {
             sharedSkills: (assigned
               ? [...current, source.id]
               : current.filter((id) => id !== source.id)
             ).toSorted(),
           });
+        }
 
         return assigned === already;
       });
@@ -194,13 +201,15 @@ export class OwnerSkills extends Context.Service<
         target: Agent,
         assigned: boolean,
       ) {
-        if (source.agentId === target.id) return true;
+        if (source.agentId === target.id) {
+          return true;
+        }
 
         const copies = (yield* skills.list(target.id)).filter(
           (skill) => skill.copiedFromSkillId === source.id,
         );
 
-        if (assigned && !copies.length)
+        if (assigned && !copies.length) {
           yield* skills.create({
             agentId: target.id,
             name: source.name,
@@ -209,8 +218,13 @@ export class OwnerSkills extends Context.Service<
             documents: source.documents,
             copiedFromSkillId: source.id,
           });
+        }
 
-        if (!assigned) for (const copy of copies) yield* skills.delete(copy.id);
+        if (!assigned) {
+          for (const copy of copies) {
+            yield* skills.delete(copy.id);
+          }
+        }
 
         return assigned ? copies.length > 0 : copies.length === 0;
       });
@@ -220,34 +234,40 @@ export class OwnerSkills extends Context.Service<
         target: Agent,
         assigned: boolean,
       ) {
-        if (isDefault(skillId))
+        if (isDefault(skillId)) {
           return yield* new ReadOnly({
             message: "Default skills cannot be assigned",
           });
+        }
 
         const source = yield* skills.get(skillId);
 
-        if (!source) return yield* new NotFound({ message: "Skill not found" });
+        if (!source) {
+          return yield* new NotFound({ message: "Skill not found" });
+        }
 
         return yield* source.agentId
           ? assignOwn(source, target, assigned)
           : assignShared(source, target, assigned);
       });
 
-      const shareWith = (botIds: string[], skillIds: string[]) =>
+      const shareWith = (botIds: Array<string>, skillIds: Array<string>) =>
         transaction(
           Effect.gen(function* () {
             for (const botId of botIds) {
               const agent = yield* agents.get(botId);
 
-              if (!agent) continue;
+              if (!agent) {
+                continue;
+              }
 
               const sharedSkills = [
                 ...new Set([...(agent.sharedSkills ?? []), ...skillIds]),
               ].toSorted();
 
-              if (sharedSkills.length > MAX_BOT_SKILLS)
+              if (sharedSkills.length > MAX_BOT_SKILLS) {
                 return yield* tooManySkills();
+              }
 
               yield* agents.update(agent.id, { sharedSkills });
             }

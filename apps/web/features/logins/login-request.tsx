@@ -1,7 +1,8 @@
 import { IconLogin2 } from "@tabler/icons-react";
 import { secretRequestResult } from "@/features/bot-secrets/secret-request";
 import { REQUEST_LOGIN_TOOL_NAME } from "@crumble/server/contract/tools";
-import { type Logins, loginPath, loginsQuery, invalidateLogins } from "./api";
+import { loginPath, loginsQuery, invalidateLogins } from "./api";
+import type { Logins } from "./api";
 import { LoginSheet } from "./login-sheet";
 
 export const loginRequestResult = secretRequestResult({

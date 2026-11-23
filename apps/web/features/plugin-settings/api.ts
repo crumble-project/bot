@@ -8,7 +8,7 @@ export type PluginSettings = z.infer<typeof pluginSettingsResponse>;
 export const pluginSettingsQuery = queryOptions({
   queryKey: ["plugin-settings"],
   queryFn: ({ signal }) =>
-    api<"pluginSettings">("/v1/plugin-settings", { signal }),
+    api("pluginSettings", "/v1/plugin-settings", { signal }),
 });
 
 export const pluginSettingPath = (pluginId: string, key: string) =>

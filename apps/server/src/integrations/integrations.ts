@@ -5,23 +5,21 @@ import {
   McpClient,
   StreamableHttpTransport,
   toLlmContent,
-  type AuthProvider,
-  type CallToolResult,
-  type McpRequestOptions,
-  type McpTransport,
-  type InitializeResult,
-  type Tool,
+} from "@earendil-works/pi-mcp";
+import type {
+  AuthProvider,
+  CallToolResult,
+  McpRequestOptions,
+  McpTransport,
+  InitializeResult,
+  Tool,
 } from "@earendil-works/pi-mcp";
 import { McpOAuthAuthorizationRequiredError } from "@earendil-works/pi-mcp/oauth";
 import { Type } from "@earendil-works/pi-ai";
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
-import {
-  defineExtension,
-  defineTool,
-  type Extension,
-  type ToolRegistration,
-} from "@earendil-works/pi-durable";
+import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
 import type { Agent } from "../contract/agents";
 import type { MCPServer } from "./mcp-server-repository";
 import { Context, Duration, Effect, Layer } from "effect";
@@ -33,17 +31,17 @@ import { runnerOf } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import {
-  type ClientDocument,
   connectionAuth,
   mcpTokenKey,
   hasOAuthTokens,
   secretStorage,
 } from "./mcp-oauth";
+import type { ClientDocument } from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
 export type MCPClient = {
   connect(transport: McpTransport): Promise<InitializeResult | void>;
-  listTools(options?: McpRequestOptions): Promise<Tool[]>;
+  listTools(options?: McpRequestOptions): Promise<Array<Tool>>;
   callTool(
     name: string,
     args?: McpArguments,
@@ -67,9 +65,13 @@ export type IntegrationsOptions = {
 };
 
 const stable = (value: JsonValue): string => {
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map(stable).join(",")}]`;
+  }
 
-  if (!isJsonObject(value)) return JSON.stringify(value);
+  if (!isJsonObject(value)) {
+    return JSON.stringify(value);
+  }
 
   return `{${Object.keys(value)
     .sort()
@@ -93,8 +95,9 @@ function defaultClientFactory(
 ) {
   const url = new URL(server.url);
 
-  if (url.protocol !== "https:" && url.protocol !== "http:")
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error(`Unsupported MCP URL protocol: ${url.protocol}`);
+  }
 
   const transportOptions: ConstructorParameters<
     typeof StreamableHttpTransport
@@ -105,7 +108,9 @@ function defaultClientFactory(
     fetch: (input, init) => fetch(input, { ...init, redirect: "error" }),
   };
 
-  if (authProvider) transportOptions.authProvider = authProvider;
+  if (authProvider) {
+    transportOptions.authProvider = authProvider;
+  }
 
   const transport = new StreamableHttpTransport(transportOptions);
 
@@ -120,17 +125,19 @@ const authFailure = (
   cause: unknown,
   authenticated: boolean,
 ) => {
-  if (cause instanceof McpOAuthAuthorizationRequiredError)
+  if (cause instanceof McpOAuthAuthorizationRequiredError) {
     return new Error(
       `Sign in to ${server.name} again under Integrations to use its tools`,
     );
+  }
 
-  if (cause instanceof McpAuthRequiredError)
+  if (cause instanceof McpAuthRequiredError) {
     return new Error(
       authenticated
         ? `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`
         : `${server.name} needs a sign-in or token. Add one under Integrations to use its tools`,
     );
+  }
 
   return cause;
 };
@@ -164,8 +171,8 @@ export class McpIntegrations extends Context.Service<
     readonly oauthClient: ClientDocument | undefined;
     /** Why a server's tools were left out of a bot's last turn, until it connects again. */
     readonly failure: (serverId: string) => string | null;
-    readonly extensionsForAgent: (agent: Agent) => Promise<Extension[]>;
-    readonly codemodeNamespaces: (agent: Agent) => CodemodeNamespace[];
+    readonly extensionsForAgent: (agent: Agent) => Promise<Array<Extension>>;
+    readonly codemodeNamespaces: (agent: Agent) => Array<CodemodeNamespace>;
     /** Drops a server's open connection, so the next use picks up a new token or sign-in. */
     readonly disconnect: (serverId: string) => Effect.Effect<void>;
   }
@@ -241,7 +248,9 @@ export class McpIntegrations extends Context.Service<
           const fingerprint = digest({ url: server.url, headers, oauth });
           const existing = connections.get(server.id);
 
-          if (existing?.fingerprint === fingerprint) return existing;
+          if (existing?.fingerprint === fingerprint) {
+            return existing;
+          }
 
           if (existing) {
             yield* closeConnection(existing);
@@ -309,7 +318,7 @@ export class McpIntegrations extends Context.Service<
             return listed;
           }).pipe(
             Effect.catch((error) =>
-              Effect.sync((): Tool[] => {
+              Effect.sync((): Array<Tool> => {
                 failures.set(server.id, errorText(error));
 
                 return [];
@@ -333,17 +342,19 @@ export class McpIntegrations extends Context.Service<
                 !current ||
                 !owner?.enabled ||
                 !owner.mcpServers.includes(server.id)
-              )
+              ) {
                 return yield* Effect.fail(
                   new Error(
                     `MCP server ${server.name} is no longer enabled for this agent`,
                   ),
                 );
+              }
 
-              if (current.url !== server.url)
+              if (current.url !== server.url) {
                 return yield* Effect.fail(
                   new Error("MCP server address changed; retry this task"),
                 );
+              }
 
               return current;
             });
@@ -370,7 +381,7 @@ export class McpIntegrations extends Context.Service<
 
         const toolOf = (agent: Agent, server: MCPServer, remote: Tool) =>
           defineTool({
-            name: `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+            name: `${mcpToolPrefix(server.id)}${remote.name.replaceAll(/[^a-zA-Z0-9_]/g, "_")}`,
             description:
               remote.description ?? `MCP tool ${remote.name} (${server.name})`,
             // Providers need an object schema, and some reject one without `properties`.
@@ -388,25 +399,30 @@ export class McpIntegrations extends Context.Service<
           });
 
         const extensions = Effect.fnUntraced(function* (agent: Agent) {
-          const tools: ToolRegistration[] = [];
-          const connected: string[] = [];
-          const leftOut: string[] = [];
+          const tools: Array<ToolRegistration> = [];
+          const connected: Array<string> = [];
+          const leftOut: Array<string> = [];
 
           for (const serverId of agent.mcpServers) {
             const server = yield* servers.usable(agent.id, serverId);
 
-            if (!server) continue;
+            if (!server) {
+              continue;
+            }
             const listed = yield* listedTools(server);
             const reason = failure(server.id);
 
-            if (reason) leftOut.push(`- ${server.name}: ${reason}`);
-            else
+            if (reason) {
+              leftOut.push(`- ${server.name}: ${reason}`);
+            } else {
               connected.push(
                 `- ${server.name}: ${listed.length} tools named ${mcpToolPrefix(server.id)}*`,
               );
+            }
 
-            for (const remote of listed)
+            for (const remote of listed) {
               tools.push(toolOf(agent, server, remote));
+            }
           }
 
           const summary = [
@@ -439,7 +455,9 @@ export class McpIntegrations extends Context.Service<
             connections.delete(serverId);
             failures.delete(serverId);
 
-            if (existing) yield* closeConnection(existing);
+            if (existing) {
+              yield* closeConnection(existing);
+            }
           });
 
         yield* Effect.addFinalizer(() =>

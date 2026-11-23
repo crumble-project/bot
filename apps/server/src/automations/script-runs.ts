@@ -28,9 +28,11 @@ import type { AppError } from "../shared/errors";
 import { pruneHourly, startTicking } from "../shared/ticker";
 import { nowIso } from "../shared/time";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
-import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
+import { BotWorkspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
 import { ScriptRunRepository } from "./script-run-repository";
-import { scriptEvent, type ScriptEvent } from "../event-sources/event-payload";
+import { scriptEvent } from "../event-sources/event-payload";
+import type { ScriptEvent } from "../event-sources/event-payload";
 import { BOT_TOOL } from "../contract/tools";
 
 type Outcome = {
@@ -42,7 +44,7 @@ type Outcome = {
 export const SCRIPT_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const OUTPUT_LIMITS = {
-  maxBytes: 65536,
+  maxBytes: 65_536,
   maxLines: 2000,
   retain: "tail",
 } as const;
@@ -69,7 +71,9 @@ const scriptNotStarted = (error: string): Outcome => ({
 });
 
 const exitOutcome = (exit: Exit.Exit<Outcome>): Outcome => {
-  if (Exit.isSuccess(exit)) return exit.value;
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
 
   const error = Cause.pretty(exit.cause);
 
@@ -103,7 +107,9 @@ const runInShell = async (
       context,
     );
 
-    if (!written.ok) throw new ExecutionError("unknown", written.error.message);
+    if (!written.ok) {
+      throw new ExecutionError("unknown", written.error.message);
+    }
   }
 
   return shell.exec(
@@ -140,12 +146,13 @@ const shellOutcome = (shellRun: ScriptShellRun) =>
       }),
     ),
     Effect.map((result): Outcome => {
-      if (result.ok)
+      if (result.ok) {
         return {
           status: result.value.exitCode === 0 ? "succeeded" : "failed",
           exitCode: result.value.exitCode,
           error: null,
         };
+      }
 
       return {
         status: result.error.code === "timeout" ? "timed_out" : "failed",
@@ -167,7 +174,7 @@ export class ScriptRuns extends Context.Service<
     readonly list: (
       scheduleId: string,
       options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<ScriptRun[]>;
+    ) => Effect.Effect<Array<ScriptRun>>;
   }
 >()("crumble/automations/ScriptRuns") {
   static readonly layer = Layer.effect(
@@ -206,7 +213,7 @@ export class ScriptRuns extends Context.Service<
           finishedAt: yield* nowIso,
         });
 
-        if (schedule.notify)
+        if (schedule.notify) {
           yield* notices
             .notice(
               schedule.agentId,
@@ -222,6 +229,7 @@ export class ScriptRuns extends Context.Service<
                 ),
               ),
             );
+        }
       });
 
       const execute = (
@@ -232,12 +240,15 @@ export class ScriptRuns extends Context.Service<
         const output = new OutputBuffer(OUTPUT_LIMITS);
 
         const command = Effect.gen(function* (): Effect.fn.Return<Outcome> {
-          if (!workspaces) return scriptNotStarted("workspace unavailable");
+          if (!workspaces) {
+            return scriptNotStarted("workspace unavailable");
+          }
 
           const agent = yield* agents.get(schedule.agentId);
 
-          if (!agent?.tools.includes(BOT_TOOL.coding))
+          if (!agent?.tools.includes(BOT_TOOL.coding)) {
             return scriptNotStarted("coding is turned off for this bot");
+          }
 
           const release = workspaces.keepAwake(schedule.agentId);
 
@@ -283,7 +294,9 @@ export class ScriptRuns extends Context.Service<
 
       const start = Effect.fn("ScriptRuns.start")(
         function* (schedule: Schedule, event?: ScriptEvent) {
-          if (closing || inFlight.has(schedule.id)) return { admitted: false };
+          if (closing || inFlight.has(schedule.id)) {
+            return { admitted: false };
+          }
           inFlight.add(schedule.id);
 
           const run: ScriptRun = {

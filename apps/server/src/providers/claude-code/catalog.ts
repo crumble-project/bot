@@ -46,14 +46,19 @@ const ALIASES = new Map([
 const NO_ADAPTIVE_THINKING = new Set(["claude-haiku-4-5-20251001"]);
 
 function routeBase(base: string): string {
-  if (ALIASES.has(base) || CONTEXT_WINDOWS.has(base)) return base;
+  if (ALIASES.has(base) || CONTEXT_WINDOWS.has(base)) {
+    return base;
+  }
   const dotted = base.replaceAll(".", "-");
 
-  if (dotted !== base) return routeBase(dotted);
+  if (dotted !== base) {
+    return routeBase(dotted);
+  }
   const withVendor = `claude-${base.replace(/^claude-/, "")}`;
 
-  if (CONTEXT_WINDOWS.has(withVendor) || ALIASES.has(withVendor))
+  if (CONTEXT_WINDOWS.has(withVendor) || ALIASES.has(withVendor)) {
     return withVendor;
+  }
 
   return base;
 }
@@ -68,11 +73,14 @@ export function nativeModel(model: string) {
   const canonical = canonicalOf(model);
   const window = CONTEXT_WINDOWS.get(canonical);
 
-  if (window === 1_000_000) return longContextRoute(canonical);
+  if (window === 1_000_000) {
+    return longContextRoute(canonical);
+  }
 
   if (window === 200_000) {
-    if (isLongContext(model))
+    if (isLongContext(model)) {
       throw new Error(`${canonical} does not support a 1M context window`);
+    }
 
     return canonical;
   }
@@ -111,7 +119,9 @@ export function thinkingLevelMap(model: string): ThinkingLevelMap {
 export function contextWindow(route: string) {
   const pinned = CONTEXT_WINDOWS.get(canonicalOf(route));
 
-  if (pinned !== undefined) return pinned;
+  if (pinned !== undefined) {
+    return pinned;
+  }
 
   return isLongContext(route) ? 1_000_000 : UNPINNED_WINDOW;
 }
@@ -119,7 +129,9 @@ export function contextWindow(route: string) {
 export function catalogLabel(model: string) {
   const parts = model.replace(/^claude-/, "").split("-");
 
-  if (/^\d{8}$/.test(parts.at(-1) ?? "")) parts.pop();
+  if (/^\d{8}$/.test(parts.at(-1) ?? "")) {
+    parts.pop();
+  }
   const [family = "", ...rest] = parts;
   const version = rest.filter((part) => /^\d+$/.test(part)).join(".");
 

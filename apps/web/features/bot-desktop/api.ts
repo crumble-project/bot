@@ -20,14 +20,14 @@ export const desktopStatusQuery = (id: string) =>
   queryOptions({
     queryKey: ["desktop-status", id],
     queryFn: ({ signal }) =>
-      api<"desktopStatus">(`${agentPath(id)}/desktop/status`, { signal }),
+      api("desktopStatus", `${agentPath(id)}/desktop/status`, { signal }),
   });
 
 export const heldActionsQuery = (id: string) =>
   queryOptions({
     queryKey: ["held-actions", id],
     queryFn: ({ signal }) =>
-      api<"agentHeldActions">(`${agentPath(id)}/held-actions`, { signal }),
+      api("agentHeldActions", `${agentPath(id)}/held-actions`, { signal }),
     // A stopped job, a restart, or another client can end a waiting action.
     refetchInterval: (query) =>
       query.state.data?.some((action) => action.status === "pending")

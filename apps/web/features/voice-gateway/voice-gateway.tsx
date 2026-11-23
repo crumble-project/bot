@@ -49,14 +49,12 @@ import {
   SaveBar,
 } from "@/components/config-editor";
 import { Heading } from "@/components/table-frame";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { BotSelect } from "@/features/bots/bot-select";
 import { call, queryClient, send } from "@/lib/api";
-import {
-  type VoiceGateway,
-  type VoiceGatewayConfig,
-  voiceGatewayQuery,
-} from "./api";
+import { voiceGatewayQuery } from "./api";
+import type { VoiceGateway, VoiceGatewayConfig } from "./api";
 
 type DraftLine = {
   id: string;
@@ -69,8 +67,8 @@ type DraftLine = {
 
 type Draft = {
   enabled: boolean;
-  ownerNumbers: { id: string; value: string }[];
-  lines: DraftLine[];
+  ownerNumbers: Array<{ id: string; value: string }>;
+  lines: Array<DraftLine>;
 };
 
 const draftOf = (config: VoiceGatewayConfig): Draft => ({
@@ -154,11 +152,17 @@ const USERNAME_RULE = "Use up to 64 letters, numbers, or . _ ~ + -";
 function lineMessage(issue: Issue, username: string | undefined) {
   const key = String(issue.path[2]);
 
-  if (key === "botId") return "Choose a bot for this line.";
+  if (key === "botId") {
+    return "Choose a bot for this line.";
+  }
 
-  if (key === "displayName") return "Use at most 64 characters.";
+  if (key === "displayName") {
+    return "Use at most 64 characters.";
+  }
 
-  if (!username) return "Enter the line's SIP username.";
+  if (!username) {
+    return "Enter the line's SIP username.";
+  }
 
   return issue.code === "custom" ? issue.message : USERNAME_RULE;
 }
@@ -166,22 +170,30 @@ function lineMessage(issue: Issue, username: string | undefined) {
 function issueMessage(issue: Issue, config: VoiceGatewayConfig) {
   const [field, index] = issue.path;
 
-  if (issue.path.length < 2 && issue.code === "too_big")
+  if (issue.path.length < 2 && issue.code === "too_big") {
     return field === "lines"
       ? "Add at most 64 lines."
       : "Add at most 20 numbers.";
+  }
 
-  if (issue.path.length < 2) return issue.message;
+  if (issue.path.length < 2) {
+    return issue.message;
+  }
 
   const row = Number(index);
 
-  if (field === "ownerNumbers")
+  if (field === "ownerNumbers") {
     return config.ownerNumbers[row] ? NUMBER_RULE : "Enter a number.";
+  }
 
   return lineMessage(issue, config.lines[row]?.username);
 }
 
-function voiceErrors(config: VoiceGatewayConfig, bots: Bot[], parsed: Parsed) {
+function voiceErrors(
+  config: VoiceGatewayConfig,
+  bots: Array<Bot>,
+  parsed: Parsed,
+) {
   const errors: Record<string, string> = {};
 
   for (const issue of parsed.error?.issues ?? []) {
@@ -191,9 +203,10 @@ function voiceErrors(config: VoiceGatewayConfig, bots: Bot[], parsed: Parsed) {
   }
 
   config.lines.forEach((line, index) => {
-    if (line.botId && !bots.some((bot) => bot.id === line.botId))
+    if (line.botId && !bots.some((bot) => bot.id === line.botId)) {
       errors[`lines.${index}`] ??=
         "The bot was deleted. Choose another bot, or remove the line.";
+    }
   });
 
   return errors;
@@ -204,14 +217,16 @@ const fieldError = (message: string | undefined) =>
 
 type FieldsProps = {
   draft: Draft;
-  bots: Bot[];
+  bots: Array<Bot>;
   errors: Errors;
   gateway: VoiceGateway;
   patch: (next: Partial<Draft>) => void;
 };
 
 function StatusBadge({ gateway }: { gateway: VoiceGateway }) {
-  if (!gateway.config.enabled) return <Badge variant="outline">Disabled</Badge>;
+  if (!gateway.config.enabled) {
+    return <Badge variant="outline">Disabled</Badge>;
+  }
 
   return (
     <Badge variant={gateway.status === "error" ? "destructive" : "secondary"}>
@@ -329,7 +344,9 @@ function NumbersSection({ draft, errors, patch }: FieldsProps) {
     const next = [...numbers];
     const [moved] = next.splice(index, 1);
 
-    if (moved) next.splice(index + offset, 0, moved);
+    if (moved) {
+      next.splice(index + offset, 0, moved);
+    }
     patch({ ownerNumbers: next });
   };
 
@@ -381,7 +398,9 @@ function savedLineState(gateway: VoiceGateway, line: DraftLine) {
   const username = line.username.trim();
   const saved = gateway.config.lines.find((item) => item.username === username);
 
-  if (saved?.botId !== line.botId) return null;
+  if (saved?.botId !== line.botId) {
+    return null;
+  }
 
   const unavailable = gateway.unavailableLines.find(
     (item) => item.username === username,
@@ -393,34 +412,42 @@ function savedLineState(gateway: VoiceGateway, line: DraftLine) {
     return { label: badge ?? description, detail: description, badge: true };
   }
 
-  if (!gateway.config.enabled)
+  if (!gateway.config.enabled) {
     return { label: "Off", detail: "The voice gateway is turned off." };
+  }
 
-  if (gateway.status !== "connected")
+  if (gateway.status !== "connected") {
     return GATEWAY_UNREACHABLE[gateway.status];
+  }
 
   const report = gateway.lines.find((item) => item.username === username);
 
-  if (!report)
+  if (!report) {
     return {
       label: "Waiting",
       detail: "The voice gateway hasn't reported this line yet.",
     };
+  }
 
-  if (report.registered) return { label: "Registered" };
+  if (report.registered) {
+    return { label: "Registered" };
+  }
 
   return { label: "Not registered", detail: report.error ?? undefined };
 }
 
 function LineStatus({ state }: { state: ReturnType<typeof savedLineState> }) {
-  if (!state) return <span className="text-muted-foreground">Not saved</span>;
+  if (!state) {
+    return <span className="text-muted-foreground">Not saved</span>;
+  }
 
-  if (state.badge)
+  if (state.badge) {
     return (
       <Badge variant="outline" title={state.detail}>
         {state.label}
       </Badge>
     );
+  }
 
   return (
     <span className="text-muted-foreground" title={state.detail}>
@@ -441,7 +468,7 @@ function LineRow({
 }: {
   line: DraftLine;
   index: number;
-  bots: Bot[];
+  bots: Array<Bot>;
   gateway: VoiceGateway;
   error: string | undefined;
   selected: boolean;
@@ -549,7 +576,9 @@ function SelectAllLines({
       className="checkbox"
       aria-label="Select all lines"
       ref={(node) => {
-        if (node) node.indeterminate = count > 0 && count < total;
+        if (node) {
+          node.indeterminate = count > 0 && count < total;
+        }
       }}
       checked={count > 0 && count === total}
       onChange={(event) => onChange(event.target.checked)}
@@ -575,8 +604,11 @@ function LinesTable({
   const select = (id: string, on: boolean) => {
     const next = new Set(selected);
 
-    if (on) next.add(id);
-    else next.delete(id);
+    if (on) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
     setSelected(next);
   };
 
@@ -823,7 +855,7 @@ function TokenSheet({
 function TokenRow({ gateway }: { gateway: VoiceGateway }) {
   const issue = useMutation({
     mutationFn: () =>
-      call<"issueVoiceGatewayToken">("/v1/voice-gateway/token", "POST"),
+      call("issueVoiceGatewayToken", "/v1/voice-gateway/token", "POST"),
     onSuccess: refresh,
   });
 
@@ -837,10 +869,13 @@ function TokenRow({ gateway }: { gateway: VoiceGateway }) {
   const error = issue.error ?? revoke.error;
 
   const descriptionOf = () => {
-    if (error) return fieldError(error.message);
+    if (error) {
+      return fieldError(error.message);
+    }
 
-    if (gateway.token)
+    if (gateway.token) {
       return `Issued ${new Date(gateway.token.issuedAt).toLocaleString()}`;
+    }
 
     return "Not issued. The voice gateway connects with this token.";
   };
@@ -897,7 +932,7 @@ function VoiceGatewayEditor({
   bots,
 }: {
   gateway: VoiceGateway;
-  bots: Bot[];
+  bots: Array<Bot>;
 }) {
   const [draft, setDraft] = useState(() => draftOf(gateway.config));
   const [attempted, setAttempted] = useState(false);
@@ -912,7 +947,7 @@ function VoiceGatewayEditor({
 
   const save = useMutation({
     mutationFn: (next: VoiceGatewayConfig) =>
-      call<"updateVoiceGateway">("/v1/voice-gateway", "PUT", next),
+      call("updateVoiceGateway", "/v1/voice-gateway", "PUT", next),
     onSuccess: (next) => {
       restart(next.config);
       queryClient.setQueryData(voiceGatewayQuery.queryKey, next);
@@ -938,8 +973,9 @@ function VoiceGatewayEditor({
           event.preventDefault();
           setAttempted(true);
 
-          if (parsed.success && !Object.keys(errors).length)
+          if (parsed.success && !Object.keys(errors).length) {
             save.mutate(parsed.data);
+          }
         }}
       >
         <NumbersSection {...fields} />

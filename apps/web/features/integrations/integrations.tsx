@@ -32,8 +32,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
-import { type McpServer, mcpServersQuery, mcpServerPath } from "./api";
+import { botsQuery, invalidateBots } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
+import { mcpServersQuery, mcpServerPath } from "./api";
+import type { McpServer } from "./api";
 import { call, queryClient, send } from "@/lib/api";
 import {
   ConfirmDeleteContent,
@@ -63,7 +65,9 @@ async function refresh() {
 }
 
 function authLabel(server: McpServer) {
-  if (server.auth === "oauth") return "Signed in";
+  if (server.auth === "oauth") {
+    return "Signed in";
+  }
 
   return server.auth === "token" ? "Token" : "No sign-in";
 }
@@ -80,7 +84,7 @@ function validUrl(value: string) {
 
 type Editing = { server: McpServer | null };
 
-function botServers(bots: Bot[], list: McpServer[]) {
+function botServers(bots: Array<Bot>, list: Array<McpServer>) {
   return bots.flatMap((bot) => {
     const own = list.filter((server) => server.agentId === bot.id);
 
@@ -93,8 +97,8 @@ function IntegrationSections({
   botOwn,
   onEdit,
 }: {
-  shared: McpServer[];
-  botOwn: { bot: Bot; servers: McpServer[] }[];
+  shared: Array<McpServer>;
+  botOwn: Array<{ bot: Bot; servers: Array<McpServer> }>;
   onEdit: (server: McpServer) => void;
 }) {
   return (
@@ -149,11 +153,13 @@ export function IntegrationsPage() {
   );
 
   const contentOf = () => {
-    if (servers.isPending || bots.isPending)
+    if (servers.isPending || bots.isPending) {
       return <Skeleton className="h-40" />;
+    }
 
-    if (servers.isError)
+    if (servers.isError) {
       return <ErrorAlert>{servers.error.message}</ErrorAlert>;
+    }
 
     return (
       <IntegrationSections
@@ -195,7 +201,8 @@ export function IntegrationsPage() {
 function useServerActions(server: McpServer) {
   const signIn = useMutation({
     mutationFn: async () => {
-      const result = await call<"oauth">(
+      const result = await call(
+        "oauth",
         `${mcpServerPath(server.id)}/oauth`,
         "POST",
         { redirectUri: `${location.origin}${MCP_OAUTH_WEB_PATH}` },
@@ -353,7 +360,9 @@ const BLANK_DRAFT: ServerDraft = {
 };
 
 function initialDraft(server: McpServer | null): ServerDraft {
-  if (!server) return BLANK_DRAFT;
+  if (!server) {
+    return BLANK_DRAFT;
+  }
 
   return {
     ...BLANK_DRAFT,
@@ -431,7 +440,7 @@ function ServerDialog({
   server,
   onClose,
 }: {
-  bots: Bot[];
+  bots: Array<Bot>;
   server: McpServer | null;
   onClose: () => void;
 }) {
@@ -498,7 +507,7 @@ function ServerFields({
   draft,
   patch,
   secrets,
-}: DraftFieldsProps & { bots: Bot[] }) {
+}: DraftFieldsProps & { bots: Array<Bot> }) {
   const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
 
   return (
@@ -555,7 +564,7 @@ function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
     <FieldSet>
       <FieldLegend variant="label">OAuth app</FieldLegend>
       <FieldDescription>
-        Only for servers whose sign-in can't register Crumble, such as
+        Only for servers whose sign-in can&apos;t register Crumble, such as
         GitHub&apos;s. Register an OAuth app there with the callback URL{" "}
         <code className="rounded bg-muted px-1 py-0.5 text-xs break-all">
           {callback}
@@ -596,17 +605,19 @@ function finishOAuth(
   sessionStorage.removeItem(OAUTH_SERVER_KEY);
   const denied = params.get("error");
 
-  if (denied)
+  if (denied) {
     return Promise.reject(new Error(params.get("error_description") ?? denied));
+  }
 
   const code = params.get("code");
   const state = params.get("state");
   const iss = params.get("iss");
 
-  if (!serverId || !code || !state)
+  if (!serverId || !code || !state) {
     return Promise.reject(
       new Error("This sign-in link is incomplete or was already used."),
     );
+  }
 
   return send<"oauthCallback">(
     `${mcpServerPath(serverId)}/oauth/callback`,

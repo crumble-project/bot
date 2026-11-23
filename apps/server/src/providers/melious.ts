@@ -1,11 +1,9 @@
-import {
-  createProvider,
-  envApiKeyAuth,
-  type Model,
-} from "@earendil-works/pi-ai";
+import { createProvider, envApiKeyAuth } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { z } from "zod";
 import type { CrumblePlugin } from "../plugins/plugins";
+import { fallingBackTo } from "../shared/fallback-schema";
 
 const MELIOUS_URL = "https://api.melious.ai/v1";
 
@@ -13,8 +11,8 @@ const modelCatalog = z.object({
   data: z
     .array(
       z.object({
-        id: z.string().optional().catch(undefined),
-        name: z.string().optional().catch(undefined),
+        id: fallingBackTo(z.string().optional(), undefined),
+        name: fallingBackTo(z.string().optional(), undefined),
       }),
     )
     .nullish(),
@@ -36,20 +34,23 @@ export function meliousProvider() {
     fetchModels: async ({ credential, signal, baseUrl }) => {
       const key = credential?.type === "api_key" ? credential.key : undefined;
 
-      if (!key) return [];
+      if (!key) {
+        return [];
+      }
 
       const response = await fetch(`${baseUrl ?? MELIOUS_URL}/models`, {
         headers: { authorization: `Bearer ${key}` },
         signal,
       });
 
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(`Melious model list failed with ${response.status}`);
+      }
 
       const body = modelCatalog.parse(await response.json());
 
       return (body.data ?? []).flatMap(
-        (entry): Model<"openai-completions">[] =>
+        (entry): Array<Model<"openai-completions">> =>
           entry.id !== undefined
             ? [
                 {
@@ -60,8 +61,8 @@ export function meliousProvider() {
                   baseUrl: baseUrl ?? MELIOUS_URL,
                   input: ["text"],
                   reasoning: false,
-                  contextWindow: 128000,
-                  maxTokens: 16384,
+                  contextWindow: 128_000,
+                  maxTokens: 16_384,
                   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
                 },
               ]

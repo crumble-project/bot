@@ -10,7 +10,8 @@ import {
 import type { ComputerUseArgs } from "./computer-use-args";
 import type { ComputerUseResult } from "./computer-use";
 import { driverCall, listWindows, sh } from "./computer-use-driver";
-import { textResult, type ComputerUseState } from "./computer-use-state";
+import { textResult } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 const FOLDER_APPS = {
   files: (path: string) => `${FILES_PROGRAM} ${shellQuote(path)}`,
@@ -46,10 +47,13 @@ export async function listApps(state: ComputerUseState, context: Context) {
   // cua-driver lists a running app once per process.
   const running = new Map<string, boolean>();
 
-  for (const app of await desktopApps(state, context))
+  for (const app of await desktopApps(state, context)) {
     running.set(app.name, (running.get(app.name) ?? false) || !!app.running);
+  }
 
-  if (!running.size) return textResult("no installed apps found");
+  if (!running.size) {
+    return textResult("no installed apps found");
+  }
 
   return textResult(
     [...running]
@@ -66,13 +70,17 @@ async function commandFor(
 ) {
   const key = app.toLowerCase();
 
-  if (isFolderApp(key)) return FOLDER_APPS[key](path ?? WORKSPACE_PATH);
+  if (isFolderApp(key)) {
+    return FOLDER_APPS[key](path ?? WORKSPACE_PATH);
+  }
 
   const entry = (await desktopApps(state, context)).find(
     (each) => each.name.toLowerCase() === key,
   );
 
-  if (!entry?.launch_path) return;
+  if (!entry?.launch_path) {
+    return;
+  }
 
   return path ? `${entry.launch_path} ${shellQuote(path)}` : entry.launch_path;
 }
@@ -90,22 +98,25 @@ export async function launchApp(
   args: ComputerUseArgs,
   context: Context,
 ): Promise<ComputerUseResult> {
-  if (!args.app)
+  if (!args.app) {
     return textResult(
       "launch needs app: Files, Terminal, or a name from list_apps",
       true,
     );
+  }
 
-  if (args.path !== undefined && !args.path.startsWith("/"))
+  if (args.path !== undefined && !args.path.startsWith("/")) {
     return textResult("launch: path must be absolute", true);
+  }
 
   const command = await commandFor(state, args.app, args.path, context);
 
-  if (!command)
+  if (!command) {
     return textResult(
       `no installed app named "${args.app}"; call list_apps for the names`,
       true,
     );
+  }
 
   const before = new Set(
     (await listWindows(state, context)).map((each) => each.window_id),
@@ -123,10 +134,11 @@ export async function launchApp(
       (each) => !before.has(each.window_id),
     );
 
-    if (opened)
+    if (opened) {
       return textResult(
         `opened ${args.app}${args.path ? ` at ${args.path}` : ""}: window ${opened.window_id} ${opened.app_name} "${opened.title}". Capture it to act in it.`,
       );
+    }
 
     await sleep(POLL_MS);
   }

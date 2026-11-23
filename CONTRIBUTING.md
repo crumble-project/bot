@@ -138,7 +138,7 @@ cd apps/site && bun install && bun run build
 - **Terminology:** follow [`GLOSSARY.md`](GLOSSARY.md). When a word in the docs or UI and a word in the code disagree, the glossary wins.
 - **Effect:** server code uses [Effect](https://effect.website). Read [`AGENTS.md`](AGENTS.md) and `apps/server/node_modules/effect/AGENTS.md` before you write Effect services or layers.
 - **Web UI components:** add shadcn components with `bun run ui:add`, as described in [`AGENTS.md`](AGENTS.md).
-- **Formatting and lint:** `bun run fix` formats with `bun fmt` and applies `oxlint` fixes.
+- **Formatting and lint:** `bun run fix` formats with `bun fmt` and applies `oxlint` fixes. Lint uses [`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config) in `oxlint.config.ts`, without custom rules or plugins.
 - **Test speed:** the unit test suite in CI must finish in two minutes or less.
 - **Documentation:** when a change alters behavior, settings, endpoints, or UI labels described in the docs, update the matching page in [`apps/docs/content/`](apps/docs/content) in the same pull request and run `bun run check` in `apps/docs`.
 

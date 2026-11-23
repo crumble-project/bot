@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  type AvatarBot,
-  type BotState,
-  BotAvatar,
-} from "@/components/bot-avatar";
-import { type Working, isBusy, useWorking, workingAvatar } from "./working";
+import { BotAvatar } from "@/components/bot-avatar";
+import type { AvatarBot, BotState } from "@/components/bot-avatar";
+import { isBusy, useWorking, workingAvatar } from "./working";
+import type { Working } from "./working";
 
 const DONE_MS = 4000;
 

@@ -1,13 +1,10 @@
-import {
-  IconDeviceDesktop,
-  IconHammer,
-  type TablerIcon,
-} from "@tabler/icons-react";
+import { IconDeviceDesktop, IconHammer } from "@tabler/icons-react";
+import type { TablerIcon } from "@tabler/icons-react";
 import {
   CODING_TOOL_NAME,
   DESKTOP_TOOL_NAME,
-  type JobKind,
 } from "@crumble/server/contract/tools";
+import type { JobKind } from "@crumble/server/contract/tools";
 
 type JobKindInfo = {
   tool: JobKind;

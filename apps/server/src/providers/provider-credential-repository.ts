@@ -34,7 +34,7 @@ export class ProviderCredentialRepository extends Context.Service<
     ) => Effect.Effect<void>;
     readonly delete: (providerId: string) => Effect.Effect<boolean>;
     /** Metadata only: listing never decrypts a credential. */
-    readonly list: Effect.Effect<CredentialInfo[]>;
+    readonly list: Effect.Effect<Array<CredentialInfo>>;
   }
 >()("crumble/providers/ProviderCredentialRepository") {
   static readonly layer = Layer.effect(
@@ -51,7 +51,9 @@ export class ProviderCredentialRepository extends Context.Service<
           .from(providerCredentials)
           .where(eq(providerCredentials.provider, providerId));
 
-        if (!row) return;
+        if (!row) {
+          return;
+        }
 
         return row.value === null
           ? { type: "api_key" as const }

@@ -26,12 +26,14 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import { type Job, jobPath, useJobs } from "./api";
+import { jobPath, useJobs } from "./api";
+import type { Job } from "./api";
 import { JobStatus } from "./job-card";
-import { type Message, historyPage } from "@/features/chat/api";
+import { historyPage } from "@/features/chat/api";
+import type { Message } from "@/features/chat/api";
 import { api } from "@/lib/api";
 import { JOB_KINDS } from "./kinds";
-import { type JobRef } from "./api";
+import type { JobRef } from "./api";
 import { Reply } from "@/components/markdown";
 import { blocksOf } from "@/features/chat/tool-details";
 import { costLine } from "@/features/chat/usage";
@@ -103,7 +105,7 @@ function Step({ item }: { item: StepItem }) {
 }
 
 function JobItem({ item }: { item: Item }) {
-  if (item.kind === "task")
+  if (item.kind === "task") {
     return (
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-muted-foreground">Task</span>
@@ -112,13 +114,15 @@ function JobItem({ item }: { item: Item }) {
         </div>
       </div>
     );
+  }
 
-  if (item.kind === "reply")
+  if (item.kind === "reply") {
     return (
       <div className="text-sm">
         <Reply source={item.text} />
       </div>
     );
+  }
 
   return <Step item={item} />;
 }
@@ -133,7 +137,7 @@ function JobHistoryError({
   return (
     <Alert variant="destructive">
       <AlertDescription className="flex items-center justify-between gap-2">
-        Couldn't load this {label}.
+        Couldn&apos;t load this {label}.
         <Button size="sm" variant="outline" onClick={onRetry}>
           Try again
         </Button>
@@ -142,7 +146,7 @@ function JobHistoryError({
   );
 }
 
-const STEP_REFRESH_MS = 3_000;
+const STEP_REFRESH_MS = 3000;
 
 type JobHistoryRoute = "codingJobHistory" | "desktopJobHistory";
 
@@ -154,7 +158,11 @@ function useJobHistory(botId: string, job: JobRef, status?: string) {
   const history = useInfiniteQuery({
     queryKey: ["job-history", botId, job.kind, job.name, status],
     queryFn: ({ pageParam, signal }) =>
-      api<JobHistoryRoute>(historyPage(base, 100, pageParam), { signal }),
+      api(
+        job.kind === "coding" ? "codingJobHistory" : "desktopJobHistory",
+        historyPage(base, 100, pageParam),
+        { signal },
+      ),
     initialPageParam: "",
     getNextPageParam: (page) =>
       page.hasMore && page.oldestEntryId ? page.oldestEntryId : undefined,
@@ -176,7 +184,7 @@ function JobHistoryBody({
   working,
 }: {
   history: ReturnType<typeof useJobHistory>["history"];
-  items: Item[];
+  items: Array<Item>;
   label: string;
   working: boolean;
 }) {
@@ -238,22 +246,30 @@ function fenced(text: string, info = "") {
 }
 
 function messageMarkdown(message: Message) {
-  if (message.role === "user") return [`## Task\n\n${message.content}`];
+  if (message.role === "user") {
+    return [`## Task\n\n${message.content}`];
+  }
 
-  if (message.role === "toolResult")
+  if (message.role === "toolResult") {
     return [
       `${message.isError ? "Failed:\n\n" : ""}${fenced(message.content)}`,
     ];
+  }
 
-  if (message.role !== "assistant") return [];
+  if (message.role !== "assistant") {
+    return [];
+  }
 
   return blocksOf(message).flatMap((block) => {
-    if (block.type === "text" && block.text?.trim()) return [block.text];
+    if (block.type === "text" && block.text?.trim()) {
+      return [block.text];
+    }
 
-    if (block.type === "toolCall" && block.name)
+    if (block.type === "toolCall" && block.name) {
       return [
         `### ${block.name}\n\n${fenced(JSON.stringify(block.arguments ?? {}, null, 2), "json")}`,
       ];
+    }
 
     return [];
   });
@@ -262,11 +278,12 @@ function messageMarkdown(message: Message) {
 async function fullHistory(botId: string, job: JobRef) {
   const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
 
-  const pages: JobHistoryPage[] = [];
+  const pages: Array<JobHistoryPage> = [];
   let before: string | null = null;
 
   do {
-    const page: JobHistoryPage = await api<JobHistoryRoute>(
+    const page: JobHistoryPage = await api(
+      job.kind === "coding" ? "codingJobHistory" : "desktopJobHistory",
       historyPage(base, 200, before),
     );
 

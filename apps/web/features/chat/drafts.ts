@@ -7,9 +7,14 @@ try {
     localStorage.key(index),
   );
 
-  for (const key of keys)
-    if (key?.startsWith(`${PREFIX}group:`)) localStorage.removeItem(key);
-} catch {}
+  for (const key of keys) {
+    if (key?.startsWith(`${PREFIX}group:`)) {
+      localStorage.removeItem(key);
+    }
+  }
+} catch {
+  // Storage unavailable: the saved drafts are best effort and never block the app.
+}
 
 export const readDraft = (chat: string) =>
   localStorage.getItem(`${PREFIX}${chat}`) ?? "";
@@ -17,8 +22,11 @@ export const readDraft = (chat: string) =>
 /** Best effort: full or blocked storage loses only the saved copy, never the text being typed. */
 export function saveDraft(chat: string, text: string) {
   try {
-    if (text) localStorage.setItem(`${PREFIX}${chat}`, text);
-    else localStorage.removeItem(`${PREFIX}${chat}`);
+    if (text) {
+      localStorage.setItem(`${PREFIX}${chat}`, text);
+    } else {
+      localStorage.removeItem(`${PREFIX}${chat}`);
+    }
   } catch {
     return;
   }
@@ -30,6 +38,9 @@ onSessionReset(() => {
     localStorage.key(index),
   );
 
-  for (const key of keys)
-    if (key?.startsWith(PREFIX)) localStorage.removeItem(key);
+  for (const key of keys) {
+    if (key?.startsWith(PREFIX)) {
+      localStorage.removeItem(key);
+    }
+  }
 });

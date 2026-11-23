@@ -1,46 +1,60 @@
 import { bodyLimit } from "hono/body-limit";
-import type { Env, MiddlewareHandler } from "hono";
+import type { Context, Env, MiddlewareHandler } from "hono";
 import type { OpenAPIHono, RouteConfig, RouteHandler } from "@hono/zod-openapi";
-import { Effect } from "effect";
-import { z } from "zod";
+import { Effect, Predicate } from "effect";
+import type { z } from "zod";
 import { routes } from "../contract/api-contract";
 import type {
   EffectRouteHandler,
   PlainRegister,
   Register,
 } from "../contract/route";
-import { noServices, type Runner } from "../shared/runner";
+import { noServices } from "../shared/runner";
+import type { Runner } from "../shared/runner";
 import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
 import { MAX_FILE_BYTES } from "../files/library";
 import { fileName, fileTooLarge } from "../files/files-api";
+import { isZodSchema } from "../shared/zod-guards";
 
 const requiredBody = (definition: RouteConfig) => {
   const body = definition.request?.body;
   const media = body?.required ? body.content["application/json"] : undefined;
   const schema = media && "schema" in media ? media.schema : undefined;
 
-  return schema instanceof z.ZodType ? schema : undefined;
+  return isZodSchema(schema) ? schema : undefined;
 };
 
-type RequestObject = z.ZodType<object> | undefined;
+/** A contract's params, query, and JSON bodies parse to objects, which is what hono's validated data takes. */
+const validatedObject = (schema: z.ZodType, value: unknown) => {
+  const parsed = schema.parse(value);
+
+  if (!Predicate.isObject(parsed)) {
+    throw new Error("The route's request schema parsed to a non-object");
+  }
+
+  return parsed;
+};
 
 const validated = (
   definition: RouteConfig,
   body: z.ZodType | undefined,
 ): MiddlewareHandler => {
-  // SAFETY: a contract's params, query, and JSON bodies are all objects.
-  const { params, query, json } = {
-    params: definition.request?.params as RequestObject,
-    query: definition.request?.query as RequestObject,
-    json: body as RequestObject,
-  };
+  const params = definition.request?.params;
+  const query = definition.request?.query;
+  const json = body;
 
   return async (c, next) => {
-    if (params) c.req.addValidatedData("param", params.parse(c.req.param()));
+    if (params) {
+      c.req.addValidatedData("param", validatedObject(params, c.req.param()));
+    }
 
-    if (query) c.req.addValidatedData("query", query.parse(c.req.query()));
+    if (query) {
+      c.req.addValidatedData("query", validatedObject(query, c.req.query()));
+    }
 
-    if (json) c.req.addValidatedData("json", json.parse(await c.req.json()));
+    if (json) {
+      c.req.addValidatedData("json", validatedObject(json, await c.req.json()));
+    }
 
     await next();
   };
@@ -106,12 +120,12 @@ export function pathRegister<E extends Env, S>(
 
 const messagePaths = [routes.sendMessage].map(
   (route) =>
-    new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
+    new RegExp(`^${route.getRoutingPath().replaceAll(/:[^/]+/g, "[^/]+")}$`),
 );
 
 const uploadPaths = [routes.uploadFile].map(
   (route) =>
-    new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
+    new RegExp(`^${route.getRoutingPath().replaceAll(/:[^/]+/g, "[^/]+")}$`),
 );
 
 export const limitBodies = <E extends Env>(app: OpenAPIHono<E>) => {
@@ -127,7 +141,7 @@ export const limitBodies = <E extends Env>(app: OpenAPIHono<E>) => {
   const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
 
-  app.use("*", (c, next) => {
+  app.use("*", (c: Context<E, "*", object>, next) => {
     if (
       c.req.method === "POST" &&
       uploadPaths.some((path) => path.test(c.req.path))

@@ -2,12 +2,14 @@ import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { BotNotices, requestAnswers } from "../bot-ports/bot-notices";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
-import { botSecretRequests, parseHosts, type BotSecretKind } from "./schema";
+import { botSecretRequests, parseHosts } from "./schema";
+import type { BotSecretKind } from "./schema";
 
 export type BotSecretRequest = {
   name: string;
-  hosts: string[];
+  hosts: Array<string>;
   reason: string;
   oneTimeCode: boolean;
   requestedAt: string;
@@ -23,13 +25,20 @@ const requestOf = (
   requestedAt: row.requestedAt,
 });
 
+const where = (agentId: string, kind: BotSecretKind, name: string) =>
+  and(
+    eq(botSecretRequests.agentId, agentId),
+    eq(botSecretRequests.kind, kind),
+    eq(botSecretRequests.name, name),
+  );
+
 export class BotSecretRequests extends Context.Service<
   BotSecretRequests,
   {
     readonly list: (
       agentId: string,
       kind: BotSecretKind,
-    ) => Effect.Effect<BotSecretRequest[]>;
+    ) => Effect.Effect<Array<BotSecretRequest>>;
     readonly get: (
       agentId: string,
       kind: BotSecretKind,
@@ -41,7 +50,7 @@ export class BotSecretRequests extends Context.Service<
       kind: BotSecretKind,
       input: {
         name: string;
-        hosts: string[];
+        hosts: Array<string>;
         reason: string;
         oneTimeCode?: boolean | undefined;
       },
@@ -66,13 +75,6 @@ export class BotSecretRequests extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const notices = yield* BotNotices;
-
-      const where = (agentId: string, kind: BotSecretKind, name: string) =>
-        and(
-          eq(botSecretRequests.agentId, agentId),
-          eq(botSecretRequests.kind, kind),
-          eq(botSecretRequests.name, name),
-        );
 
       const get = Effect.fn("BotSecretRequests.get")(function* (
         agentId: string,
@@ -99,7 +101,9 @@ export class BotSecretRequests extends Context.Service<
           .returning({ name: botSecretRequests.name })
           .pipe(Effect.orDie);
 
-        if (!deleted.length) return false;
+        if (!deleted.length) {
+          return false;
+        }
 
         yield* requestAnswers(notices, kind)(agentId, name, text);
 
@@ -144,7 +148,10 @@ export class BotSecretRequests extends Context.Service<
               })
               .pipe(Effect.orDie);
 
-            return (yield* get(agentId, kind, input.name))!;
+            return required(
+              yield* get(agentId, kind, input.name),
+              "The bot secret request was not stored",
+            );
           },
         ),
         answer: (agentId, kind, name, text) =>

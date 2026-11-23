@@ -4,16 +4,15 @@ import {
   AuthExpiredError,
   createClient,
   RateLimitExceededError,
-  type ResolveReferenceError,
 } from "@1password/sdk";
+import type { ResolveReferenceError } from "@1password/sdk";
 import { Effect, Redacted, Result, Schema } from "effect";
 import {
   PasswordManagerTokenRejected,
   PasswordManagerUnreachable,
   SecretUnreadable,
-  type PasswordManagerVendor,
-  type SecretRead,
 } from "./password-manager";
+import type { PasswordManagerVendor, SecretRead } from "./password-manager";
 
 const NAME = "1Password";
 
@@ -83,11 +82,12 @@ export const onePassword: PasswordManagerVendor = {
                   references.map((reference): [string, SecretRead] => {
                     const response = individualResponses[reference];
 
-                    if (response?.content)
+                    if (response?.content) {
                       return [
                         reference,
                         Result.succeed(Redacted.make(response.content.secret)),
                       ];
+                    }
 
                     const type = response?.error?.type ?? "other";
 

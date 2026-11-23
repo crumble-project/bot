@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import type { Schedule, ScheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
 import { schedules } from "../bot-store/schema.schedules";
 
@@ -33,7 +34,7 @@ const columns = (
 export class ScheduleRepository extends Context.Service<
   ScheduleRepository,
   {
-    readonly list: (agentId?: string) => Effect.Effect<Schedule[]>;
+    readonly list: (agentId?: string) => Effect.Effect<Array<Schedule>>;
     readonly get: (scheduleId: string) => Effect.Effect<Schedule | null>;
     readonly create: (
       input: ScheduleInput,
@@ -94,7 +95,7 @@ export class ScheduleRepository extends Context.Service<
           createdByAgentId: options.createdByAgentId ?? null,
         });
 
-        return (yield* get(scheduleId))!;
+        return required(yield* get(scheduleId), "The schedule was not stored");
       }, Effect.orDie);
 
       const update = Effect.fn("ScheduleRepository.update")(function* (
@@ -123,7 +124,9 @@ export class ScheduleRepository extends Context.Service<
 
       const updateNextRunAt = Effect.fn("ScheduleRepository.updateNextRunAt")(
         function* (scheduleId: string, nextRunAt: string | null) {
-          if (!(yield* get(scheduleId))) return null;
+          if (!(yield* get(scheduleId))) {
+            return null;
+          }
 
           yield* db
             .update(schedules)

@@ -12,12 +12,12 @@ export const botMemoriesQuery = (id: string) =>
   queryOptions({
     queryKey: [...memoriesKey, id],
     queryFn: ({ signal }) =>
-      api<"agentMemories">(`${agentPath(id)}/memories`, { signal }),
+      api("agentMemories", `${agentPath(id)}/memories`, { signal }),
   });
 
 export const sharedMemoriesQuery = queryOptions({
   queryKey: [...memoriesKey, "shared"],
-  queryFn: ({ signal }) => api<"memories">("/v1/memories", { signal }),
+  queryFn: ({ signal }) => api("memories", "/v1/memories", { signal }),
 });
 
 export const invalidateMemories = () =>

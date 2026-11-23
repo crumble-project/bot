@@ -33,7 +33,7 @@ export type LocalProcess = {
 
 async function startProcess(
   command: string,
-  args: string[],
+  args: Array<string>,
 ): Promise<LocalProcess> {
   const child = spawn(command, args, {
     cwd: REPOSITORY_DIR,
@@ -70,7 +70,7 @@ async function startProcess(
       const record = readiness.safeParse(JSON.parse(line));
 
       if (!record.success) {
-        console.error(line);
+        process.stderr.write(`${line}\n`);
 
         return;
       }
@@ -83,29 +83,38 @@ async function startProcess(
         !url.port ||
         url.username ||
         url.password
-      )
+      ) {
         throw new Error("Local service returned a non-loopback address");
+      }
+
       ready.resolve(url.origin);
     } catch {
-      console.error(line);
+      process.stderr.write(`${line}\n`);
     }
   });
   let closing: Promise<void> | undefined;
 
   const signal = (value: NodeJS.Signals | 0) => {
-    if (!child.pid) return;
+    if (!child.pid) {
+      return;
+    }
 
     try {
-      if (process.platform === "win32") child.kill(value);
-      else process.kill(-child.pid, value);
+      if (process.platform === "win32") {
+        child.kill(value);
+      } else {
+        process.kill(-child.pid, value);
+      }
     } catch (error) {
-      if (!missingProcess.safeParse(error).success) throw error;
+      if (!missingProcess.safeParse(error).success) {
+        throw error;
+      }
     }
   };
 
   const close = () =>
     (closing ??= (async () => {
-      const deadline = Date.now() + 5_000;
+      const deadline = Date.now() + 5000;
       signal("SIGTERM");
       let killTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -116,7 +125,7 @@ async function startProcess(
             killTimer = setTimeout(() => {
               signal("SIGKILL");
               resolve();
-            }, 5_000);
+            }, 5000);
           }),
         ]);
         await exit.promise;
@@ -130,15 +139,21 @@ async function startProcess(
 
               return true;
             } catch (error) {
-              if (!missingProcess.safeParse(error).success) throw error;
+              if (!missingProcess.safeParse(error).success) {
+                throw error;
+              }
 
               return false;
             }
           };
 
-          while (groupExists() && Date.now() < deadline) await delay(25);
+          while (groupExists() && Date.now() < deadline) {
+            await delay(25);
+          }
 
-          if (groupExists()) signal("SIGKILL");
+          if (groupExists()) {
+            signal("SIGKILL");
+          }
         }
       } finally {
         clearTimeout(killTimer);
@@ -160,17 +175,18 @@ export async function startEmulate(): Promise<LocalProcess> {
   const version = spawnSync("node", ["--version"], {
     env: localEnvironment(process.env),
     encoding: "utf8",
-    timeout: 3_000,
+    timeout: 3000,
   });
 
   if (
     version.error ||
     version.status !== 0 ||
     Number(/^v(\d+)/.exec(version.stdout)?.[1] ?? 0) < 24
-  )
+  ) {
     throw new Error(
       "Emulate needs Node 24 or later on PATH. Install Node, then run this command again.",
     );
+  }
 
   return startProcess("node", [
     "--experimental-strip-types",

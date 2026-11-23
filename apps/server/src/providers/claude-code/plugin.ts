@@ -1,4 +1,5 @@
-import { createProvider, type Model } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { chmodSync, mkdirSync } from "node:fs";
 import type { CrumblePlugin, ExternalAuth } from "../../plugins/plugins";
@@ -18,9 +19,11 @@ import {
   resolveClaude,
   signInCommand,
   signOutCommand,
-  type ClaudeCodeOptions,
-  type ClaudeCodeStatus,
-  type DiscoveredModel,
+} from "./setup";
+import type {
+  ClaudeCodeOptions,
+  ClaudeCodeStatus,
+  DiscoveredModel,
 } from "./setup";
 
 export const CLAUDE_CODE_PROVIDER = "claude-code";
@@ -41,7 +44,9 @@ export function claudeCodeOptions(
 
   const command = env["CRUMBLE_CLAUDE_COMMAND"];
 
-  if (command) options.command = command;
+  if (command) {
+    options.command = command;
+  }
 
   return options;
 }
@@ -71,7 +76,7 @@ const pinnedModels = () =>
     chatModel(modelId(route, true), catalogLabel(canonical)),
   );
 
-function discovered(rows: DiscoveredModel[]) {
+function discovered(rows: Array<DiscoveredModel>) {
   const pinned = pinnedRouteSet();
 
   return rows.map((row) =>
@@ -112,8 +117,9 @@ export function claudeCodePlugin(
   let cached: { at: number; status: Promise<ClaudeCodeStatus> } | undefined;
 
   const status = () => {
-    if (!cached || Date.now() - cached.at > STATUS_TTL_MS)
+    if (!cached || Date.now() - cached.at > STATUS_TTL_MS) {
       cached = { at: Date.now(), status: claudeCodeStatus(options) };
+    }
 
     return cached.status;
   };

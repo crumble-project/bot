@@ -9,14 +9,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import {
-  type Bot,
-  agentPath,
-  botsQuery,
-  type BotInput,
-  invalidateBots,
-} from "./api";
-import { call, queryClient, send, type ResponseBody } from "@/lib/api";
+import { agentPath, botsQuery, invalidateBots } from "./api";
+import type { Bot, BotInput } from "./api";
+import { call, queryClient, send } from "@/lib/api";
+import type { ResponseBody } from "@/lib/api";
 
 export type ThinkingLevel = ResponseBody<"previewReasoning">["effectiveLevel"];
 
@@ -26,7 +22,7 @@ export function matchingReasoningPreview(
   provider?: string,
   model?: string,
   previous?: ResponseBody<"previewReasoning">,
-  query?: { queryKey: readonly unknown[] },
+  query?: { queryKey: ReadonlyArray<unknown> },
 ) {
   return query !== undefined &&
     query.queryKey[1] === provider &&
@@ -44,10 +40,10 @@ export function reasoningQuery(
     queryKey: ["reasoning-preview", provider, model, thinkingLevel] as const,
     placeholderData: (
       previous: ResponseBody<"previewReasoning"> | undefined,
-      query: { queryKey: readonly unknown[] } | undefined,
+      query: { queryKey: ReadonlyArray<unknown> } | undefined,
     ) => matchingReasoningPreview(provider, model, previous, query),
     queryFn: () =>
-      call<"previewReasoning">("/v1/reasoning/preview", "POST", {
+      call("previewReasoning", "/v1/reasoning/preview", "POST", {
         provider,
         model,
         thinkingLevel,
@@ -97,7 +93,7 @@ export function ReasoningSelect({
   disabled,
 }: {
   id?: string;
-  options: ReasoningOption[];
+  options: Array<ReasoningOption>;
   value: ThinkingLevel;
   onChange: (level: ThinkingLevel) => void;
   compact?: boolean;
@@ -111,7 +107,9 @@ export function ReasoningSelect({
       value={value}
       disabled={disabled}
       onValueChange={(next) => {
-        if (next) onChange(next);
+        if (next) {
+          onChange(next);
+        }
       }}
     >
       <SelectTrigger
@@ -164,7 +162,9 @@ export function BotReasoning({ bot }: { bot: Bot }) {
     onSettled: () => invalidateBots(),
   });
 
-  if (!preview.data || preview.data.options.length < 2) return null;
+  if (!preview.data || preview.data.options.length < 2) {
+    return null;
+  }
 
   return (
     <ReasoningSelect

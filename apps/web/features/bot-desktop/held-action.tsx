@@ -1,4 +1,5 @@
-import { type Ref, useState } from "react";
+import { useState } from "react";
+import type { Ref } from "react";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import { ReplyAttention } from "@/features/chat/reply-attention";
 import { useMutation } from "@tanstack/react-query";
@@ -7,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettledCard, useFreshRequest } from "@/components/request-card";
 import { messageCard } from "@/features/chat/message-card";
-import { type HeldAction, heldActionPath, heldActionsQuery } from "./api";
+import { heldActionPath, heldActionsQuery } from "./api";
+import type { HeldAction } from "./api";
 import { queryClient, send } from "@/lib/api";
 
 const OUTCOMES: Record<Exclude<HeldAction["status"], "pending">, string> = {
@@ -22,12 +24,12 @@ function HeldActionCard({
   botId,
   references,
 }: {
-  references: readonly ReplyReference[];
+  references: ReadonlyArray<ReplyReference>;
   held: { id: string; job: string };
   title: string;
   botId: string;
 }) {
-  const heldIn = (actions: HeldAction[]) =>
+  const heldIn = (actions: Array<HeldAction>) =>
     actions.find((item) => item.id === held.id);
 
   // A settled action stays settled; a waiting one in the cache may have ended since.
@@ -51,7 +53,7 @@ function HeldActionCard({
     />
   );
 
-  if (reading || !action)
+  if (reading || !action) {
     return (
       <SettledCard
         icon={IconHandStop}
@@ -59,8 +61,9 @@ function HeldActionCard({
         outcome={reading ?? "Unavailable"}
       />
     );
+  }
 
-  if (action.status !== "pending")
+  if (action.status !== "pending") {
     return (
       <>
         {attention}
@@ -72,6 +75,7 @@ function HeldActionCard({
         />
       </>
     );
+  }
 
   return (
     <>

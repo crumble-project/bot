@@ -1,9 +1,6 @@
 import { useState } from "react";
-import {
-  type UseQueryResult,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
   IconBell,
@@ -100,6 +97,21 @@ function Notifications() {
   const on = enabled && permission === "granted";
   const [sound, setSound] = useState(notifications.sound);
 
+  const chooseEnabled = async (next: boolean) => {
+    setEnabled(next);
+    await notifications.setEnabled(next);
+    setPermission(notifications.permission());
+  };
+
+  const chooseSound = async (next: boolean) => {
+    setSound(next);
+    notifications.setSound(next);
+
+    if (next) {
+      await unlock();
+    }
+  };
+
   return (
     <Section title="Notifications">
       <SettingRow
@@ -119,10 +131,8 @@ function Notifications() {
           id="notifications"
           checked={on}
           disabled={permission === "unsupported"}
-          onCheckedChange={async (next) => {
-            setEnabled(next);
-            await notifications.setEnabled(next);
-            setPermission(notifications.permission());
+          onCheckedChange={(next) => {
+            void chooseEnabled(next);
           }}
         />
       </SettingRow>
@@ -138,11 +148,8 @@ function Notifications() {
           id="notification-sound"
           checked={sound}
           disabled={!on}
-          onCheckedChange={async (next) => {
-            setSound(next);
-            notifications.setSound(next);
-
-            if (next) await unlock();
+          onCheckedChange={(next) => {
+            void chooseSound(next);
           }}
         />
       </SettingRow>
@@ -155,7 +162,9 @@ const passkeysQuery = {
   queryFn: async () => {
     const result = await authClient.passkey.listUserPasskeys();
 
-    if (result.error) throw new Error(result.error.message);
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
 
     return result.data;
   },
@@ -176,7 +185,9 @@ function useRenamePasskey(passkey: Passkey, onDone: () => void) {
         name: next,
       });
 
-      if (result.error) throw new Error(result.error.message);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
     },
     onSuccess: async () => {
       await invalidatePasskeys();
@@ -202,7 +213,9 @@ function RenamePasskey({
       onSubmit={(event) => {
         event.preventDefault();
 
-        if (name.trim()) rename.mutate(name.trim());
+        if (name.trim()) {
+          rename.mutate(name.trim());
+        }
       }}
     >
       <Field data-invalid={rename.isError || undefined}>
@@ -244,10 +257,11 @@ function PasskeyRow({
 }) {
   const [renaming, setRenaming] = useState(false);
 
-  if (renaming)
+  if (renaming) {
     return (
       <RenamePasskey passkey={passkey} onDone={() => setRenaming(false)} />
     );
+  }
 
   return (
     <SettingRow
@@ -284,8 +298,8 @@ function PasskeyRow({
 
 const PASSKEYS_FOOTER = passkeysAvailable ? (
   <>
-    Passkeys belong to {location.hostname}. They stop working if the server's
-    address changes.
+    Passkeys belong to {location.hostname}. They stop working if the
+    server&apos;s address changes.
   </>
 ) : (
   <>
@@ -299,19 +313,22 @@ function PasskeyList({
   removing,
   onRemove,
 }: {
-  passkeys: UseQueryResult<Passkey[] | null>;
+  passkeys: UseQueryResult<Array<Passkey> | null>;
   removing: boolean;
   onRemove: (id: string) => void;
 }) {
-  if (passkeys.isPending) return <Skeleton className="m-3 h-5 w-40" />;
+  if (passkeys.isPending) {
+    return <Skeleton className="m-3 h-5 w-40" />;
+  }
 
-  if (!passkeys.data?.length)
+  if (!passkeys.data?.length) {
     return (
       <SectionEmpty>
-        Sign in with your device's screen lock or a security key instead of a
-        password.
+        Sign in with your device&apos;s screen lock or a security key instead of
+        a password.
       </SectionEmpty>
     );
+  }
 
   return passkeys.data.map((passkey) => (
     <PasskeyRow
@@ -337,7 +354,9 @@ function Passkeys() {
     mutationFn: async (id: string) => {
       const result = await authClient.passkey.deletePasskey({ id });
 
-      if (result.error) throw new Error(result.error.message);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
     },
     onSettled: invalidatePasskeys,
   });

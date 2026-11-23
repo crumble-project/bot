@@ -1,6 +1,8 @@
 import { logged } from "../shared/app-errors";
-import { noticeRequest, type NoticeKind } from "../shared/request-ids";
-import { Context, Effect, Layer, Option, Ref, type Scope } from "effect";
+import { noticeRequest } from "../shared/request-ids";
+import type { NoticeKind } from "../shared/request-ids";
+import { Context, Effect, Layer, Option, Ref } from "effect";
+import type { Scope } from "effect";
 
 export type NoticeHandler = (
   agentId: string,

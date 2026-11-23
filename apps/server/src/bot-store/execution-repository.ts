@@ -1,19 +1,19 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import {
-  attachmentInput,
-  type AttachmentInput,
-} from "../shared/attachment-rules";
-import { ACTIVE_EXECUTION_STATUSES, type Execution } from "../shared/domain";
+import { attachmentInput } from "../shared/attachment-rules";
+import type { AttachmentInput } from "../shared/attachment-rules";
+import { ACTIVE_EXECUTION_STATUSES } from "../shared/domain";
+import type { Execution } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
 import { executions } from "./schema.executions";
 
 export type NewExecution = Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
   prompt?: string;
   replyTo?: string | null;
-  attachments?: string[];
+  attachments?: Array<string>;
 };
 
 const executionOf = (row: typeof executions.$inferSelect): Execution => ({
@@ -36,9 +36,9 @@ export class ExecutionRepository extends Context.Service<
   ExecutionRepository,
   {
     /** Newest first. */
-    readonly list: (agentId?: string) => Effect.Effect<Execution[]>;
+    readonly list: (agentId?: string) => Effect.Effect<Array<Execution>>;
     /** The pending and running ones, of one bot or of every bot; newest first. */
-    readonly active: (agentId?: string) => Effect.Effect<Execution[]>;
+    readonly active: (agentId?: string) => Effect.Effect<Array<Execution>>;
     readonly latestIn: (
       conversationId: string,
     ) => Effect.Effect<Execution | null>;
@@ -68,8 +68,8 @@ export class ExecutionRepository extends Context.Service<
     readonly attachments: (
       executionId: string,
     ) => Effect.Effect<
-      | { kind: "files"; ids: string[] }
-      | { kind: "legacy"; attachments: AttachmentInput[] }
+      | { kind: "files"; ids: Array<string> }
+      | { kind: "legacy"; attachments: Array<AttachmentInput> }
     >;
     readonly clearAttachments: (executionId: string) => Effect.Effect<void>;
   }
@@ -202,7 +202,10 @@ export class ExecutionRepository extends Context.Service<
           updatedAt: at,
         });
 
-        return (yield* get(executionId))!;
+        return required(
+          yield* get(executionId),
+          "The execution was not stored",
+        );
       }, Effect.orDie);
 
       const update = Effect.fn("ExecutionRepository.update")(function* (
@@ -211,7 +214,9 @@ export class ExecutionRepository extends Context.Service<
       ) {
         const execution = yield* get(executionId);
 
-        if (!execution) return null;
+        if (!execution) {
+          return null;
+        }
         const next = { ...execution, ...patch };
 
         yield* db
@@ -236,7 +241,9 @@ export class ExecutionRepository extends Context.Service<
             .from(executions)
             .where(eq(executions.id, executionId));
 
-          if (!row?.attachments) return { kind: "files" as const, ids: [] };
+          if (!row?.attachments) {
+            return { kind: "files" as const, ids: [] };
+          }
 
           const value: unknown = JSON.parse(row.attachments);
           const parsed = z.array(z.uuid()).safeParse(value);

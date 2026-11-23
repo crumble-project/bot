@@ -2,11 +2,8 @@ import { Effect, Layer } from "effect";
 import { Bots } from "../bots/bots";
 import { JOB_KINDS } from "../shared/job-kinds";
 import { ChatAttention } from "../push/chat-attention";
-import {
-  HeldActions,
-  type HeldAction,
-  type HeldActionSurface,
-} from "./held-actions";
+import { HeldActions } from "./held-actions";
+import type { HeldAction, HeldActionSurface } from "./held-actions";
 
 export const heldActionNotices = Layer.effectDiscard(
   Effect.gen(function* () {

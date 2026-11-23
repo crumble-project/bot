@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Ref, type Scope } from "effect";
+import { Context, Effect, Layer, Ref } from "effect";
+import type { Scope } from "effect";
 
 /**
  * One feature's part in deleting a bot. It runs while the bot still exists, to read what the delete's cascade takes,

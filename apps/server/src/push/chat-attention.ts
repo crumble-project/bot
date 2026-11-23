@@ -58,14 +58,18 @@ export class ChatAttention extends Context.Service<
       });
 
       const requireChat = Effect.fnUntraced(function* (chat: ChatReference) {
-        if (!(yield* exists(chat))) return yield* missing();
+        if (!(yield* exists(chat))) {
+          return yield* missing();
+        }
       });
 
       const view = Effect.fn("ChatAttention.view")(function* (
         viewId: string,
         chat: ChatReference | null,
       ) {
-        if (chat) yield* requireChat(chat);
+        if (chat) {
+          yield* requireChat(chat);
+        }
 
         if (!chat) {
           yield* db
@@ -95,7 +99,9 @@ export class ChatAttention extends Context.Service<
       ) {
         yield* requireChat(chat);
 
-        if (!eventIds.length) return;
+        if (!eventIds.length) {
+          return;
+        }
 
         const valid = yield* db
           .transaction((tx) =>
@@ -111,7 +117,9 @@ export class ChatAttention extends Context.Service<
                   ),
                 );
 
-              if (rows.length !== new Set(eventIds).size) return false;
+              if (rows.length !== new Set(eventIds).size) {
+                return false;
+              }
               yield* tx
                 .update(replyAssociations)
                 .set({ seen: true })
@@ -122,7 +130,9 @@ export class ChatAttention extends Context.Service<
           )
           .pipe(Effect.orDie);
 
-        if (!valid) return yield* missing();
+        if (!valid) {
+          return yield* missing();
+        }
       });
 
       const register = Effect.fn("ChatAttention.register")(function* (
@@ -164,10 +174,11 @@ export class ChatAttention extends Context.Service<
           )
           .pipe(Effect.orDie);
 
-        if (!matching)
+        if (!matching) {
           return yield* new Conflict({
             message: "Reply association already exists",
           });
+        }
       });
 
       const references = Effect.fn("ChatAttention.references")(function* (
@@ -175,9 +186,11 @@ export class ChatAttention extends Context.Service<
         messageIds: ReadonlyArray<string>,
       ) {
         yield* requireChat(chat);
-        const result = new Map<string, ReplyReference[]>();
+        const result = new Map<string, Array<ReplyReference>>();
 
-        if (!messageIds.length) return result;
+        if (!messageIds.length) {
+          return result;
+        }
 
         const rows = yield* db
           .select()
@@ -221,7 +234,9 @@ export class ChatAttention extends Context.Service<
           )
           .pipe(Effect.orDie);
 
-        if (association?.seen) return true;
+        if (association?.seen) {
+          return true;
+        }
         const now = yield* Clock.currentTimeMillis;
 
         const views = yield* db
@@ -265,8 +280,9 @@ export class ChatAttention extends Context.Service<
               for (const row of rows) {
                 const event = replyEvent.parse(JSON.parse(row.eventJson));
 
-                if (event.agentId === chat.id)
+                if (event.agentId === chat.id) {
                   yield* tx.delete(pushOutbox).where(eq(pushOutbox.id, row.id));
+                }
               }
             }),
           )
@@ -289,11 +305,12 @@ export class ChatAttention extends Context.Service<
 
         const chats = new Map<string, ChatReference>();
 
-        for (const row of [...views, ...associations])
+        for (const row of [...views, ...associations]) {
           chats.set(`${row.chatKind}:${row.chatId}`, {
             kind: row.chatKind,
             id: row.chatId,
           });
+        }
         const outbox = yield* db.select().from(pushOutbox).pipe(Effect.orDie);
 
         for (const row of outbox) {
@@ -304,8 +321,11 @@ export class ChatAttention extends Context.Service<
           chats.set(`${chat.kind}:${chat.id}`, chat);
         }
 
-        for (const chat of chats.values())
-          if (!(yield* exists(chat))) yield* removeChat(chat);
+        for (const chat of chats.values()) {
+          if (!(yield* exists(chat))) {
+            yield* removeChat(chat);
+          }
+        }
       });
 
       return ChatAttention.of({

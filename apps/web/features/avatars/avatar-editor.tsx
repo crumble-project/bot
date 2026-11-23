@@ -1,9 +1,7 @@
 import { useId, useState } from "react";
 import { examples, validateAvatar } from "open-bot-avatar";
-import {
-  avatarDefinitionSchema,
-  type BotAvatarDefinition,
-} from "@crumble/server/contract/avatar";
+import { avatarDefinitionSchema } from "@crumble/server/contract/avatar";
+import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +19,9 @@ export function importDefinition(
 ): BotAvatarDefinition {
   const result = validateAvatar(JSON.parse(json));
 
-  if (!result.ok) throw new Error(result.errors.join("\n"));
+  if (!result.ok) {
+    throw new Error(result.errors.join("\n"));
+  }
 
   return avatarDefinitionSchema.parse({ ...current, definition: result.value });
 }
@@ -78,7 +78,9 @@ function ColorFields({
       setColorEdit(undefined);
       setEyeEdit(undefined);
       onError("");
-    } else onError("Colors must be #rgb or #rrggbb.");
+    } else {
+      onError("Colors must be #rgb or #rrggbb.");
+    }
   };
 
   return (
@@ -159,8 +161,8 @@ function ImportTab({
       onChange(importDefinition(json, value));
       onError("");
       onStatus("Avatar imported. Save the bot to keep it.");
-    } catch (cause) {
-      onError(cause instanceof Error ? cause.message : "Invalid avatar JSON");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Invalid avatar JSON");
       onStatus("");
     }
   };
@@ -171,7 +173,7 @@ function ImportTab({
       <Textarea
         id={`${id}-json`}
         value={json}
-        maxLength={16000}
+        maxLength={16_000}
         rows={6}
         placeholder='{"version":1,"id":"…","name":"…","body":{"path":"…"},"eyes":{…}}'
         onChange={(e) => setJson(e.target.value)}

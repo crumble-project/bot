@@ -32,15 +32,18 @@ export const connecting = (state: Reconnecting) => {
 export const connectionUp = (state: Reconnecting, now: number) => {
   state.connectedAt = now;
 
-  if (state.status === "connecting") state.status = "connected";
+  if (state.status === "connecting") {
+    state.status = "connected";
+  }
 };
 
 export const stayedUp = (state: Reconnecting, now: number) => {
   if (
     state.connectedAt !== null &&
     now - state.connectedAt >= STABLE_CONNECTION_MS
-  )
+  ) {
     state.failures = 0;
+  }
 };
 
 export const reported = (

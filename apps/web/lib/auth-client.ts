@@ -37,9 +37,13 @@ const DISMISSED = new Set([
 export function passkeyDone(result: {
   error: { code?: string | undefined; message?: string | undefined } | null;
 }) {
-  if (!result.error) return true;
+  if (!result.error) {
+    return true;
+  }
 
-  if (DISMISSED.has(result.error.code ?? "")) return false;
+  if (DISMISSED.has(result.error.code ?? "")) {
+    return false;
+  }
 
   throw new Error(result.error.message);
 }

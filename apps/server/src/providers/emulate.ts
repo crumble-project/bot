@@ -1,17 +1,12 @@
-import {
-  createModels,
-  createProvider,
-  type Model,
-  type Models,
-  type Provider,
-} from "@earendil-works/pi-ai";
+import { createModels, createProvider } from "@earendil-works/pi-ai";
+import type { Model, Models, Provider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { EMULATE_MODEL_IDS } from "./emulate-profile";
 
 export function validateEmulateBaseUrl(baseUrl: string): void {
   const match = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/v1$/.exec(baseUrl);
 
-  if (!match || match[0] !== baseUrl || Number(match[1]) > 65535) {
+  if (!match || match[0] !== baseUrl || Number(match[1]) > 65_535) {
     throw new Error(
       "Emulate requires http://127.0.0.1:PORT/v1 with a port from 1 to 65535",
     );
@@ -45,8 +40,8 @@ export function emulateProvider(
       baseUrl,
       input: ["text"],
       reasoning: false,
-      contextWindow: 128000,
-      maxTokens: 16384,
+      contextWindow: 128_000,
+      maxTokens: 16_384,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     })),
     api: openAICompletionsApi(),

@@ -4,10 +4,12 @@ import {
   pinsEvent,
 } from "@crumble/server/contract/api-responses";
 import { authClient } from "@/lib/auth-client";
-import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
+import { botsQuery, invalidateBots } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { chatQuery } from "@/features/chat/api";
 import { follow, queryClient } from "@/lib/api";
-import { type ChatLinks, notifyReply } from "@/lib/notifications";
+import { notifyReply } from "@/lib/notifications";
+import type { ChatLinks } from "@/lib/notifications";
 import { onSessionReset } from "@/lib/session";
 
 type Status = "connected" | "reconnecting" | "disconnected";
@@ -18,7 +20,9 @@ const statusListeners = new Set<() => void>();
 function setStatus(next: Status) {
   status = next;
 
-  for (const listener of statusListeners) listener();
+  for (const listener of statusListeners) {
+    listener();
+  }
 }
 
 export function useConnectionStatus() {
@@ -33,7 +37,7 @@ export function useConnectionStatus() {
 }
 
 function preview(agentId: string, lastMessage: string) {
-  queryClient.setQueryData(botsQuery.queryKey, (bots: Bot[] | undefined) =>
+  queryClient.setQueryData(botsQuery.queryKey, (bots: Array<Bot> | undefined) =>
     bots?.map((bot) => (bot.id === agentId ? { ...bot, lastMessage } : bot)),
   );
 }
@@ -53,7 +57,9 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
 
   // A stopped follower may settle after its replacement connected; only the latest reports.
   const report = (next: Status) => {
-    if (current === activityFollower) setStatus(next);
+    if (current === activityFollower) {
+      setStatus(next);
+    }
   };
 
   const controller = new AbortController();
@@ -82,13 +88,15 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
           return;
         }
 
-        if (name !== "activity") return;
+        if (name !== "activity") {
+          return;
+        }
 
         const event = activityEvent.parse(JSON.parse(data));
 
-        if (event.type === "chat-preview")
+        if (event.type === "chat-preview") {
           preview(event.agentId, event.lastMessage);
-        else {
+        } else {
           const queryKey = chatQuery(event.agentId).queryKey;
 
           void queryClient.invalidateQueries({ queryKey });
@@ -98,7 +106,9 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
     },
     controller.signal,
   ).finally(() => {
-    if (current === activityFollower) activityController = null;
+    if (current === activityFollower) {
+      activityController = null;
+    }
     report("disconnected");
   });
 }

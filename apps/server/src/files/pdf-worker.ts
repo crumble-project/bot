@@ -20,17 +20,20 @@ try {
 
     size += encoder.encode(text).byteLength + 1;
 
-    if (size > MAX_OUTPUT_BYTES)
+    if (size > MAX_OUTPUT_BYTES) {
       throw new Error("PDF text exceeds output limit");
+    }
     output += `${text}\n`;
     page.cleanup();
   }
 
   const ack = new Promise<void>((resolve, reject) => {
     process.once("message", (message) => {
-      if (z.object({ kind: z.literal("ack") }).safeParse(message).success)
+      if (z.object({ kind: z.literal("ack") }).safeParse(message).success) {
         resolve();
-      else reject(new Error("Invalid acknowledgment"));
+      } else {
+        reject(new Error("Invalid acknowledgment"));
+      }
     });
     process.once("disconnect", () => reject(new Error("Parent disconnected")));
   });
@@ -40,8 +43,9 @@ try {
   );
   await ack;
 
-  if (!process.send || !process.connected)
+  if (!process.send || !process.connected) {
     throw new Error("Parent disconnected");
+  }
   await new Promise<void>((resolve, reject) => {
     process.send?.({ kind: "ack-received" }, (error) =>
       error ? reject(error) : resolve(),
@@ -49,6 +53,8 @@ try {
   });
   process.disconnect?.();
 } catch {
-  if (process.connected) process.disconnect?.();
+  if (process.connected) {
+    process.disconnect?.();
+  }
   process.exitCode = 1;
 }

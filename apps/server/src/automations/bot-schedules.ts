@@ -1,26 +1,22 @@
-import { Type, type TSchema } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import type { TSchema } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer } from "effect";
-import { z } from "zod";
+import type { z } from "zod";
 import {
   SCHEDULE_KINDS,
   SCHEDULE_TRIGGER_MESSAGE,
-  type Schedule,
-  type ScheduleInput,
 } from "../contract/schedules";
-import { type Agent } from "../contract/agents";
+import type { Schedule, ScheduleInput } from "../contract/schedules";
+import type { Agent } from "../contract/agents";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler } from "./scheduler";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
-import {
-  InvalidInput,
-  Forbidden,
-  NotFound,
-  Conflict,
-  type AppError,
-} from "../shared/errors";
+import { InvalidInput, Forbidden, NotFound, Conflict } from "../shared/errors";
+import { isAppError } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { toolOutput } from "../shared/tool-output";
 import { BOT_TOOL, SCHEDULE_TOOL_NAME } from "../contract/tools";
 import {
@@ -69,11 +65,6 @@ const presentedFields = {
 
 const presentedSchema = Type.Object(presentedFields);
 
-// SAFETY: the keys of presentedFields are PresentedAutomation's keys, checked by satisfies.
-const PRESENTED_KEYS = Object.keys(presentedFields) as Array<
-  keyof PresentedAutomation
->;
-
 const visible = (source: Agent, schedule: Schedule) =>
   schedule.agentId === source.id || schedule.createdByAgentId === source.id;
 
@@ -96,7 +87,9 @@ const kindFields = (
   const kind = draft.kind ?? existing.kind;
 
   const commandOf = () => {
-    if (draft.command !== undefined) return draft.command;
+    if (draft.command !== undefined) {
+      return draft.command;
+    }
 
     return kind === "script" ? existing.command : null;
   };
@@ -122,10 +115,11 @@ const requiredContent = Effect.fnUntraced(function* (
   const name = draft.name?.trim() ?? "";
   const prompt = draft.prompt?.trim() ?? "";
 
-  if (!name || (kind === "prompt" && !prompt))
+  if (!name || (kind === "prompt" && !prompt)) {
     return yield* new InvalidInput({
       message: "Automation name and prompt are required",
     });
+  }
 
   return { name, prompt };
 });
@@ -150,7 +144,9 @@ const when = (
   const requested = trigger((key) => draft[key]?.trim() || null);
   const count = named(requested);
 
-  if (count === 1) return Effect.succeed(requested);
+  if (count === 1) {
+    return Effect.succeed(requested);
+  }
 
   const kept = trigger((key) =>
     draft[key] !== undefined ? null : existing[key],
@@ -161,10 +157,8 @@ const when = (
     : Effect.fail(new InvalidInput({ message: SCHEDULE_TRIGGER_MESSAGE }));
 };
 
-const worded = Effect.mapError((error: AppError | z.ZodError) =>
-  error instanceof z.ZodError
-    ? new InvalidInput({ message: error.message })
-    : error,
+const worded = Effect.mapError((error: AppError | z.ZodError): AppError =>
+  isAppError(error) ? error : new InvalidInput({ message: error.message }),
 );
 
 export class BotSchedules extends Context.Service<
@@ -172,7 +166,7 @@ export class BotSchedules extends Context.Service<
   {
     readonly list: (
       sourceId: string,
-    ) => Effect.Effect<PresentedAutomation[], AppError>;
+    ) => Effect.Effect<Array<PresentedAutomation>, AppError>;
     readonly create: (
       sourceId: string,
       draft: ScheduleDraft,
@@ -188,7 +182,7 @@ export class BotSchedules extends Context.Service<
     ) => Effect.Effect<{ deleted: true; id: string }, AppError>;
     readonly sources: (
       sourceId: string,
-    ) => Effect.Effect<PresentedSource[], AppError>;
+    ) => Effect.Effect<Array<PresentedSource>, AppError>;
     readonly run: (
       sourceId: string,
       id: string,
@@ -213,10 +207,11 @@ export class BotSchedules extends Context.Service<
       const source = Effect.fnUntraced(function* (id: string) {
         const agent = yield* agents.get(id);
 
-        if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.schedule))
+        if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.schedule)) {
           return yield* Effect.fail(
             new Forbidden({ message: "Scheduling is turned off for this bot" }),
           );
+        }
 
         return agent;
       });
@@ -233,22 +228,25 @@ export class BotSchedules extends Context.Service<
             from.tools.includes(BOT_TOOL.delegate) &&
             from.delegates.includes(id)
           )
-        )
+        ) {
           return yield* Effect.fail(
             new Forbidden({
               message:
                 "You can schedule an automation for yourself, or for a bot you are allowed to message",
             }),
           );
+        }
         const targeted = yield* agents.get(id);
 
-        if (!targeted)
+        if (!targeted) {
           return yield* Effect.fail(new NotFound({ message: "Bot not found" }));
+        }
 
-        if (id !== from.id && !targeted.enabled)
+        if (id !== from.id && !targeted.enabled) {
           return yield* Effect.fail(
             new Conflict({ message: "That bot is disabled" }),
           );
+        }
 
         return targeted.id;
       });
@@ -256,22 +254,37 @@ export class BotSchedules extends Context.Service<
       const manageable = Effect.fnUntraced(function* (from: Agent, id: string) {
         const schedule = yield* schedules.get(id);
 
-        if (!schedule || !visible(from, schedule))
+        if (!schedule || !visible(from, schedule)) {
           return yield* Effect.fail(
             new NotFound({ message: "Automation not found" }),
           );
+        }
 
         return schedule;
       });
 
       const present = Effect.fnUntraced(function* (schedule: Schedule) {
         const agentName = (yield* agents.get(schedule.agentId))?.name ?? "";
-        const automation = { ...schedule, agentName };
 
-        // SAFETY: PRESENTED_KEYS lists exactly the keys of PresentedAutomation.
-        return Object.fromEntries(
-          PRESENTED_KEYS.map((key) => [key, automation[key]]),
-        ) as PresentedAutomation;
+        // Every presented field, named once: the row's id and its bot's name, but never its createdAt.
+        return {
+          id: schedule.id,
+          agentId: schedule.agentId,
+          agentName,
+          name: schedule.name,
+          prompt: schedule.prompt,
+          kind: schedule.kind,
+          command: schedule.command,
+          timeoutSeconds: schedule.timeoutSeconds,
+          notify: schedule.notify,
+          cron: schedule.cron,
+          timezone: schedule.timezone,
+          runAt: schedule.runAt,
+          eventSourceId: schedule.eventSourceId,
+          enabled: schedule.enabled,
+          nextRunAt: schedule.nextRunAt,
+          createdByAgentId: schedule.createdByAgentId,
+        } satisfies PresentedAutomation;
       });
 
       const list = Effect.fn("BotSchedules.list")(function* (sourceId: string) {
@@ -293,11 +306,12 @@ export class BotSchedules extends Context.Service<
         const fields = kindFields(draft);
         const { kind } = fields;
 
-        if (kind === "script")
+        if (kind === "script") {
           yield* scheduler.scriptPolicy(
             draft.agentId?.trim() || from.id,
             from.id,
           );
+        }
 
         const content = yield* requiredContent(draft, kind);
         const agentId = yield* target(from, draft.agentId);
@@ -330,12 +344,13 @@ export class BotSchedules extends Context.Service<
         const fields = kindFields(draft, existing);
         const { kind } = fields;
 
-        if (kind === "script")
+        if (kind === "script") {
           yield* scheduler.scriptPolicy(
             requested || existing.agentId,
             from.id,
             existing.createdByAgentId,
           );
+        }
 
         const agentId =
           requested && requested !== existing.agentId
@@ -358,10 +373,11 @@ export class BotSchedules extends Context.Service<
           )
           .pipe(worded);
 
-        if (!schedule)
+        if (!schedule) {
           return yield* Effect.fail(
             new NotFound({ message: "Automation not found" }),
           );
+        }
 
         return yield* present(schedule);
       });
@@ -373,10 +389,11 @@ export class BotSchedules extends Context.Service<
         const from = yield* source(sourceId);
         const existing = yield* manageable(from, id);
 
-        if (!(yield* schedules.delete(existing.id)))
+        if (!(yield* schedules.delete(existing.id))) {
           return yield* Effect.fail(
             new NotFound({ message: "Automation not found" }),
           );
+        }
 
         return { deleted: true as const, id: existing.id };
       });
@@ -478,31 +495,37 @@ export function scheduleExtension(
     execute: async (args) => {
       const { action, id, ...draft } = args;
 
-      if (action === "list")
+      if (action === "list") {
         return toolOutput(await Effect.runPromise(schedules.list(agent.id)));
+      }
 
-      if (action === "sources")
+      if (action === "sources") {
         return toolOutput(await Effect.runPromise(schedules.sources(agent.id)));
+      }
 
-      if (!id && action !== "create")
-        throw new InvalidInput({ message: "Automation ID is required" });
-
-      if (action === "create")
+      if (action === "create") {
         return toolOutput(
           await Effect.runPromise(schedules.create(agent.id, draft)),
         );
+      }
 
-      if (action === "update")
+      if (!id) {
+        throw new InvalidInput({ message: "Automation ID is required" });
+      }
+
+      if (action === "update") {
         return toolOutput(
-          await Effect.runPromise(schedules.update(agent.id, id!, draft)),
+          await Effect.runPromise(schedules.update(agent.id, id, draft)),
         );
+      }
 
-      if (action === "delete")
+      if (action === "delete") {
         return toolOutput(
-          await Effect.runPromise(schedules.delete(agent.id, id!)),
+          await Effect.runPromise(schedules.delete(agent.id, id)),
         );
+      }
 
-      return toolOutput(await Effect.runPromise(schedules.run(agent.id, id!)));
+      return toolOutput(await Effect.runPromise(schedules.run(agent.id, id)));
     },
   });
 

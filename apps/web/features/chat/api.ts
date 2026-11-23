@@ -25,5 +25,5 @@ export const historyPage = <P extends string>(
 export const chatQuery = (id: string) =>
   queryOptions({
     queryKey: [CHAT_KEY, id],
-    queryFn: ({ signal }) => api<"chat">(`${agentPath(id)}/chat`, { signal }),
+    queryFn: ({ signal }) => api("chat", `${agentPath(id)}/chat`, { signal }),
   });

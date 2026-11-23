@@ -1,20 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  type UseMutationResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { IconArrowLeft, IconRefresh, IconZzz } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MobileSidebarTrigger } from "@/components/page";
-import {
-  type DesktopControl,
-  type DesktopViewer,
-  desktopStatusQuery,
-} from "./api";
+import { desktopStatusQuery } from "./api";
+import { desktopControlResponse } from "@crumble/server/contract/api-responses";
+import type { DesktopControl, DesktopViewer } from "./api";
 import { agentPath, botsQuery } from "@/features/bots/api";
 import { call, follow, send } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -40,7 +35,9 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
       `${path}/desktop/events`,
       {
         onEvent: (event, data) => {
-          if (event === "control") apply(JSON.parse(data));
+          if (event === "control") {
+            apply(desktopControlResponse.parse(JSON.parse(data)));
+          }
         },
       },
       controller.signal,
@@ -50,10 +47,11 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
       controller.abort();
 
       // Leaving the desktop hands control back, so the bot's job can continue.
-      if (holder.current === "owner")
+      if (holder.current === "owner") {
         void send<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
           holder: "bot",
         });
+      }
     };
   }, [path]);
 
@@ -61,7 +59,7 @@ function useDesktopControl(path: ReturnType<typeof agentPath>) {
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const take = useMutation({
     mutationFn: (next: DesktopControl["holder"]) =>
-      call<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
+      call("putDesktopControl", `${path}/desktop/control`, "PUT", {
         holder: next,
       }),
     onSuccess: apply,
@@ -116,7 +114,7 @@ export function BotDesktop({ botId }: { botId: string }) {
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const viewer = useMutation({
     mutationFn: () =>
-      call<"createDesktopViewer">(`${path}/desktop/viewer`, "POST"),
+      call("createDesktopViewer", `${path}/desktop/viewer`, "POST"),
   });
 
   const { mutate: connect } = viewer;
@@ -159,8 +157,8 @@ export function BotDesktop({ botId }: { botId: string }) {
       <ViewerPane viewer={viewer} />
       {owner && (
         <p className="border-t px-4 py-2 text-xs text-muted-foreground">
-          The bot's desktop job waits while you have control. Hand back when
-          you're done.
+          The bot&apos;s desktop job waits while you have control. Hand back
+          when you&apos;re done.
         </p>
       )}
     </div>
@@ -258,7 +256,8 @@ export function DesktopPreview({ botId }: { botId: string }) {
   // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
   const viewer = useMutation({
     mutationFn: () =>
-      call<"createDesktopViewer">(
+      call(
+        "createDesktopViewer",
         asked
           ? `${path}/desktop/viewer`
           : `${path}/desktop/viewer?passive=true`,
@@ -269,11 +268,16 @@ export function DesktopPreview({ botId }: { botId: string }) {
   const { mutate: connect, reset } = viewer;
 
   useEffect(() => {
-    if (live) connect();
-    else reset();
+    if (live) {
+      connect();
+    } else {
+      reset();
+    }
   }, [live, connect, reset]);
 
-  if (!live) return <SleepingPreview onWake={() => setAsked(true)} />;
+  if (!live) {
+    return <SleepingPreview onWake={() => setAsked(true)} />;
+  }
 
   return <LivePreview botId={botId} viewer={viewer} />;
 }
@@ -296,7 +300,7 @@ function ViewerPane({
       )}
       {viewer.isError && (
         <Alert variant="destructive" className="m-6 w-auto">
-          <AlertTitle>Can't show the bot desktop</AlertTitle>
+          <AlertTitle>Can&apos;t show the bot desktop</AlertTitle>
           <AlertDescription>{viewer.error.message}</AlertDescription>
         </Alert>
       )}

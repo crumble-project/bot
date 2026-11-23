@@ -25,7 +25,7 @@ export function RecentFiles({
       const query = new URLSearchParams({ limit: String(RECENT_COUNT) });
       const response = await apiRaw(`${path}?${query}`, { signal });
 
-      return bodyOf<"listFiles">(response);
+      return bodyOf("listFiles", response);
     },
   });
 

@@ -5,7 +5,13 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./app/router";
 import { queryClient } from "@/lib/api";
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root");
+
+if (!root) {
+  throw new Error("Missing #root element");
+}
+
+createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

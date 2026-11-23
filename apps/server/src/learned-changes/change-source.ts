@@ -4,13 +4,13 @@ import type { ChangeBy, ChangeSource } from "../shared/domain";
 
 /** What a tool call knows of its turn: its inputs and the execution its review digests. */
 export type ChangeContext = {
-  submissionIds: string[];
+  submissionIds: Array<string>;
   reviewOf: string | null;
 };
 
 export const newestExecution = Effect.fnUntraced(function* (
   agentId: string,
-  submissionIds: string[],
+  submissionIds: Array<string>,
 ) {
   const executions = yield* ExecutionRepository;
 
@@ -23,7 +23,7 @@ export const newestExecution = Effect.fnUntraced(function* (
 
 export const changeSourceOf = Effect.fnUntraced(function* (
   agentId: string,
-  context: { submissionIds: string[] },
+  context: { submissionIds: Array<string> },
 ) {
   const execution = yield* newestExecution(agentId, context.submissionIds);
 
@@ -38,11 +38,12 @@ export const changeByOf = Effect.fnUntraced(function* (
   agentId: string,
   context: ChangeContext,
 ) {
-  if (context.reviewOf)
+  if (context.reviewOf) {
     return {
       actor: "review",
       source: { executionId: context.reviewOf },
     } satisfies ChangeBy;
+  }
 
   return {
     actor: "bot",

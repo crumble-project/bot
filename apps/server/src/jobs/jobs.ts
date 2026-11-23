@@ -17,24 +17,26 @@ import {
   defineTool,
   LiveDoc,
   UsageDoc,
-  type ConversationDocToken,
-  type ConversationId,
-  type DocumentReader,
-  type EntryId,
-  type EnvTarget,
-  type Extension,
-  type Harness,
-  type ModelRef,
-  type NextTaskState,
-  type RunningTask,
-  type SettledSubmissionRecord,
-  type Task,
-  type TaskId,
-  type TaskRuntime,
-  type ToolExecutionApi,
-  type ToolExecutionResult,
-  type Tx,
-  type UsageState,
+} from "@earendil-works/pi-durable";
+import type {
+  ConversationDocToken,
+  ConversationId,
+  DocumentReader,
+  EntryId,
+  EnvTarget,
+  Extension,
+  Harness,
+  ModelRef,
+  NextTaskState,
+  RunningTask,
+  SettledSubmissionRecord,
+  Task,
+  TaskId,
+  TaskRuntime,
+  ToolExecutionApi,
+  ToolExecutionResult,
+  Tx,
+  UsageState,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { formatEntryId } from "../shared/entry-ids";
@@ -42,12 +44,8 @@ import { replyText } from "../shared/reply-text";
 import { defineAnchorTask } from "../shared/anchor-task";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import type { Workspaces } from "../workspaces/workspace";
-import {
-  addToRequest,
-  ownerMessages,
-  type JobRequest,
-  type OwnerMessage,
-} from "./owner-request";
+import { addToRequest, ownerMessages } from "./owner-request";
+import type { JobRequest, OwnerMessage } from "./owner-request";
 import { chatExcerpt } from "./chat-excerpt";
 import type { JobKindFacts } from "../shared/job-kinds";
 import { ASK_OWNER_TOOL_NAME } from "../contract/tools";
@@ -70,7 +68,7 @@ export type JobQuestion = {
   id: string;
   text: string;
   askedAt: number;
-  options?: string[];
+  options?: Array<string>;
   multiple?: boolean;
 };
 
@@ -80,12 +78,12 @@ export type JobAsked = {
   label: string;
   name: string;
   question: JobQuestion;
-  turn: string[];
+  turn: Array<string>;
 };
 
 export type TurnWork = {
   open: boolean;
-  reports: string[];
+  reports: Array<string>;
   error?: string;
 };
 
@@ -96,13 +94,13 @@ export type ListedJob = JobInfo & {
 };
 
 export type JobExtensions = {
-  chat: Extension[];
-  job: Extension[];
+  chat: Array<Extension>;
+  job: Array<Extension>;
 };
 
 type Job = {
   conversationId: ConversationId;
-  reported: EntryId[];
+  reported: Array<EntryId>;
   stops: number;
   /**
    * Deliveries not yet admitted to the job, by reporter task ID: waiting for their turn, or submitting right now. A job
@@ -114,8 +112,8 @@ type Job = {
 type Holder = { name: string; deliveries: number };
 
 type TurnDeliveries = {
-  open: string[];
-  reports: string[];
+  open: Array<string>;
+  reports: Array<string>;
   error?: string;
 };
 
@@ -179,25 +177,35 @@ const COMPLETED = {
 } as const;
 
 const releaseHolder = (state: JobsState, name: string) => {
-  if (state.holder?.name !== name) return;
+  if (state.holder?.name !== name) {
+    return;
+  }
   state.holder.deliveries -= 1;
 
-  if (state.holder.deliveries <= 0) delete state.holder;
+  if (state.holder.deliveries <= 0) {
+    delete state.holder;
+  }
 };
 
 const settleDelivery = (job: Job | undefined, reporterId: TaskId<null>) => {
-  if (job?.deliveries) delete job.deliveries[String(reporterId)];
+  if (job?.deliveries) {
+    delete job.deliveries[String(reporterId)];
+  }
 };
 
 const KEPT_TURNS = 200;
 
 const pruneTurns = (turns: Record<string, TurnDeliveries>) => {
   const settled = Object.keys(turns)
-    .filter((key) => turns[key]!.open.length === 0)
-    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    .filter((key) => (turns[key]?.open.length ?? 0) === 0)
+    .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
 
-  for (const key of settled.slice(0, Math.max(0, settled.length - KEPT_TURNS)))
+  for (const key of settled.slice(
+    0,
+    Math.max(0, settled.length - KEPT_TURNS),
+  )) {
     delete turns[key];
+  }
 };
 
 const openTurnWork = (
@@ -206,7 +214,9 @@ const openTurnWork = (
   reporterId: string,
   replaces?: string,
 ) => {
-  if (turn === undefined) return;
+  if (turn === undefined) {
+    return;
+  }
   state.turns ??= {};
   const work = state.turns[turn];
 
@@ -228,10 +238,14 @@ const closeTurnWork = (
 ) => {
   const work = turn === undefined ? undefined : state.turns?.[turn];
 
-  if (!work?.open.includes(reporterId)) return;
+  if (!work?.open.includes(reporterId)) {
+    return;
+  }
   work.open = work.open.filter((id) => id !== reporterId);
 
-  if (error && !work.error) work.error = error;
+  if (error && !work.error) {
+    work.error = error;
+  }
 };
 
 const stoppedError = (kindState: JobKindBase, name: string) =>
@@ -267,7 +281,7 @@ type StartOrSend = {
   name: string;
   message: string;
   followUp: boolean;
-  ownerMessages: string[];
+  ownerMessages: Array<string>;
   job: Extension;
   instructions: string;
   model: ModelRef | undefined;
@@ -290,7 +304,9 @@ function jobReply(
 ): ToolExecutionResult<JobDetails> {
   const result = { output: [{ type: "text" as const, text }] };
 
-  if (!found) return result;
+  if (!found) {
+    return result;
+  }
 
   // Clients attach a job card to the job's conversation through the details.
   return {
@@ -334,7 +350,7 @@ type JobToolArgs = {
   name?: string;
   message?: string;
   followUp?: boolean;
-  owner_messages?: string[];
+  owner_messages?: Array<string>;
 };
 
 type PendingQuestion = JobQuestion & {
@@ -413,8 +429,9 @@ const deliveryTarget = async (
   const state = await tx.doc(Jobs, chatId);
   const job = state.jobs[name];
 
-  if (job && job.stops === stops)
+  if (job && job.stops === stops) {
     return { state, job, stopped: false as const };
+  }
 
   settleDelivery(job, reporter.id);
 
@@ -470,7 +487,9 @@ const jobReporterWait =
         return { status: "running", checkpoint: { phase: "deliver" } };
       }, taskContext);
 
-      if (!waiting) return;
+      if (!waiting) {
+        return;
+      }
 
       await awaitWithContext(sleep(WAIT_MS), taskContext);
     }
@@ -531,10 +550,14 @@ const deliveryReport = async (
       : { frame: `[${failure}]`, failure };
   }
 
-  if (settled.type !== "input") return undefined;
+  if (settled.type !== "input") {
+    return undefined;
+  }
   const job = state.jobs[name];
 
-  if (!job || job.reported.includes(settled.answer)) return undefined;
+  if (!job || job.reported.includes(settled.answer)) {
+    return undefined;
+  }
   job.reported.push(settled.answer);
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
@@ -596,7 +619,11 @@ const submitAndReport = async (
 ): Promise<void> => {
   const { name, conversationId, message, followUp } = reporter.input;
 
-  const job = (await runtime.conversation(conversationId, taskContext))!;
+  const job = await runtime.conversation(conversationId, taskContext);
+
+  if (!job) {
+    throw new Error(`Conversation ${conversationId} is missing`);
+  }
 
   const submission = await job.submit(
     {
@@ -628,8 +655,8 @@ const submitAndReport = async (
   const { agentId } = reporter.input;
 
   // After the commit, so a review never reads a turn that a crash would deliver again.
-  if (reported)
-    for (const listener of kindState.finishedListeners)
+  if (reported) {
+    for (const listener of kindState.finishedListeners) {
       listener({
         agentId,
         kind: kindState.kind,
@@ -637,6 +664,8 @@ const submitAndReport = async (
         conversationId,
         submissionId: String(settled.id),
       });
+    }
+  }
 };
 
 const deliveryError = (
@@ -644,7 +673,9 @@ const deliveryError = (
   name: string,
   settled: SettledSubmissionRecord,
 ) => {
-  if (settled.status !== "unanswered") return;
+  if (settled.status !== "unanswered") {
+    return;
+  }
 
   return settled.reason === "aborted"
     ? stoppedError(kindState, name)
@@ -675,7 +706,9 @@ const postQuestion = async (
   const question = await tx.doc(kindState.Question, conversationId);
   const pending = question.pending;
 
-  if (!pending || pending.posted) return undefined;
+  if (!pending || pending.posted) {
+    return undefined;
+  }
   question.pending = {
     ...pending,
     posted: true,
@@ -708,8 +741,9 @@ const jobReporterDeliver =
     runtime: ReporterRuntime,
     taskContext: Context,
   ): Promise<void> => {
-    if (!(await admitDelivery(kindState, reporter, runtime, taskContext)))
+    if (!(await admitDelivery(kindState, reporter, runtime, taskContext))) {
       return;
+    }
 
     await submitAndReport(kindState, reporter, runtime, taskContext);
   };
@@ -718,14 +752,17 @@ const announceCheckpoint = async (
   tx: Tx,
   settled: SettledSubmissionRecord,
 ): Promise<NextTaskState<ReporterState, null>> => {
-  if (settled.status === "unanswered" || settled.type !== "input")
+  if (settled.status === "unanswered" || settled.type !== "input") {
     return COMPLETED;
+  }
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
 
   const preview = answer?.role === "assistant" ? replyText(answer).trim() : "";
 
-  if (!preview) return COMPLETED;
+  if (!preview) {
+    return COMPLETED;
+  }
 
   return {
     status: "running",
@@ -744,10 +781,11 @@ const submitReport = async (
   report: JobReport,
   taskContext: Context,
 ) => {
-  const chat = (await runtime.conversation(
-    runtime.conversationId,
-    taskContext,
-  ))!;
+  const chat = await runtime.conversation(runtime.conversationId, taskContext);
+
+  if (!chat) {
+    throw new Error(`Conversation ${runtime.conversationId} is missing`);
+  }
 
   return chat.submit(
     {
@@ -783,23 +821,26 @@ const jobReporterReport =
     const id = String(reporter.id);
 
     // A rerun after a restart asks again; listeners recognize the question by its ID.
-    if (asked?.turn.length)
+    if (asked?.turn.length) {
       await Promise.allSettled(
         [...kindState.questionListeners].map((listener) => listener(asked)),
       );
+    }
 
-    if (report === undefined)
+    if (report === undefined) {
       return runtime.commit(async (tx) => {
-        if (!asked)
+        if (!asked) {
           closeTurnWork(
             await tx.doc(kindState.Jobs, runtime.conversationId),
             turn,
             id,
             error,
           );
+        }
 
         return COMPLETED;
       }, taskContext);
+    }
 
     const submission = await submitReport(
       kindState,
@@ -809,14 +850,16 @@ const jobReporterReport =
       taskContext,
     );
 
-    if (turn !== undefined)
+    if (turn !== undefined) {
       await runtime.commit(async (tx) => {
         const work = (await tx.doc(kindState.Jobs, runtime.conversationId))
           .turns?.[turn];
 
-        if (work && !work.reports.includes(String(submission.id)))
+        if (work && !work.reports.includes(String(submission.id))) {
           work.reports.push(String(submission.id));
+        }
       }, taskContext);
+    }
 
     const settled = await submission.wait(taskContext);
 
@@ -842,7 +885,7 @@ const jobReporterAnnounce =
     const { entryId, preview } = reporter.state.checkpoint;
     const { agentId, name } = reporter.input;
 
-    for (const listener of kindState.answerListeners)
+    for (const listener of kindState.answerListeners) {
       listener({
         agentId,
         kind: kindState.kind,
@@ -851,6 +894,7 @@ const jobReporterAnnounce =
         preview,
         eventId: jobReportRequest(kindState.kind, reporter.id),
       });
+    }
 
     await runtime.commit(() => COMPLETED, taskContext);
   };
@@ -873,8 +917,9 @@ const jobReporterAbort =
         stoppedError(kindState, reporter.input.name),
       );
 
-      if (reporter.state.checkpoint.phase === "deliver")
+      if (reporter.state.checkpoint.phase === "deliver") {
         releaseHolder(state, reporter.input.name);
+      }
 
       return { status: "terminal", outcome: { status: "aborted" } };
     }, taskContext);
@@ -909,7 +954,9 @@ const startJob = async (
 ) => {
   const { name, job, instructions, model, knowledge } = request;
 
-  if (Object.hasOwn(state.jobs, name)) return false;
+  if (Object.hasOwn(state.jobs, name)) {
+    return false;
+  }
 
   const anchor = await tx.createTask(kindState.Anchor, null, BACKGROUND);
 
@@ -957,7 +1004,9 @@ const stopJob = async (
   await api.commit(async (tx) => {
     const job = (await tx.doc(kindState.Jobs, api.conversationId)).jobs[name];
 
-    if (job) job.stops += 1;
+    if (job) {
+      job.stops += 1;
+    }
   }, context);
 
   // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
@@ -965,12 +1014,15 @@ const stopJob = async (
     let waited = 0;
     waited < STOP_WAIT_MS && (await submitting(kindState, api, context, name));
     waited += STOP_POLL_MS
-  )
+  ) {
     await awaitWithContext(sleep(STOP_POLL_MS), context);
+  }
 
-  await (await api.conversation(existing.conversationId, context))!.abort(
-    context,
-  );
+  const conversation = await api.conversation(existing.conversationId, context);
+
+  if (conversation) {
+    await conversation.abort(context);
+  }
 
   return reply(`Stopped ${name}.`);
 };
@@ -1023,7 +1075,9 @@ const citedOwnerMessages = async (
   chatId: ConversationId,
   request: StartOrSend,
 ) => {
-  if (!kindState.ownerRequest) return { messages: [] };
+  if (!kindState.ownerRequest) {
+    return { messages: [] };
+  }
 
   return ownerMessages(tx, chatId, request.ownerMessages);
 };
@@ -1036,8 +1090,9 @@ const clearPendingQuestion = async (
 ) => {
   const question = await tx.doc(kindState.Question, conversationId);
 
-  if (question.pending?.reporter)
+  if (question.pending?.reporter) {
     closeTurnWork(state, question.pending.turn, question.pending.reporter);
+  }
 
   question.pending = null;
 };
@@ -1048,19 +1103,24 @@ const deliverToJob = async (
   request: StartOrSend,
   tx: Tx,
   state: JobsState,
-  attached: OwnerMessage[],
+  attached: Array<OwnerMessage>,
 ) => {
   const { agentId, api } = call;
-  const record = state.jobs[request.name]!;
+  const record = state.jobs[request.name];
+
+  if (!record) {
+    throw new Error(`${request.name} is not a ${kindState.kind} job`);
+  }
   const conversationId = record.conversationId;
 
-  if (kindState.ownerRequest)
+  if (kindState.ownerRequest) {
     addToRequest(
       await tx.doc(kindState.Request, conversationId),
       { name: request.name, chatId: api.conversationId },
       attached,
       request.message,
     );
+  }
 
   await clearPendingQuestion(kindState, tx, state, conversationId);
   await queueDelivery(kindState, tx, state, record, {
@@ -1093,22 +1153,24 @@ const startOrSend = async (
       request,
     );
 
-    if ("unknown" in cited)
+    if ("unknown" in cited) {
       return {
         text: `Not owner messages of this chat: ${cited.unknown.join(", ")}. Cite the request IDs shown as [message ID].`,
         found: undefined,
       };
+    }
 
     const chat = await startExcerpt(tx, api.conversationId, request, state);
 
     if (
       request.action === "start" &&
       !(await startJob(kindState, tx, request, state, chat))
-    )
+    ) {
       return {
         text: `${request.name} already exists; use send.`,
         found: undefined,
       };
+    }
 
     const conversationId = await deliverToJob(
       kindState,
@@ -1140,17 +1202,18 @@ const statusReply = async (
 ) => {
   const { api, context, jobs, reply } = call;
   const names = name === undefined ? Object.keys(jobs) : [name];
-  const found: JobInfo[] = [];
+  const found: Array<JobInfo> = [];
 
   for (const each of names) {
     const job = Object.hasOwn(jobs, each) ? jobs[each] : undefined;
 
-    if (job)
+    if (job) {
       found.push({
         name: each,
         conversationId: job.conversationId,
         status: await statusOf(api, job, context),
       });
+    }
   }
 
   const asked = await Promise.all(
@@ -1176,7 +1239,7 @@ const listedJobs = async (
   kindState: JobKindBase,
   harness: Harness,
   chatId: ConversationId,
-): Promise<ListedJob[]> => {
+): Promise<Array<ListedJob>> => {
   const jobs =
     (await harness.snapshot(kindState.Jobs, chatId, BACKGROUND_CONTEXT))
       ?.jobs ?? {};
@@ -1329,17 +1392,28 @@ const runJobTool = async (
   const call = await jobToolCall(kindState, input, api, callContext);
   const { jobs } = call;
 
-  if (action === "status") return statusReply(kindState, call, name);
+  if (action === "status") {
+    return statusReply(kindState, call, name);
+  }
 
-  if (name === undefined) return call.reply(`${action} needs a name.`);
+  if (name === undefined) {
+    return call.reply(`${action} needs a name.`);
+  }
   const existing = Object.hasOwn(jobs, name) ? jobs[name] : undefined;
 
-  if (action !== "start" && !existing)
-    return call.reply(`No ${kindState.label} named ${name}.`);
+  if (action !== "start") {
+    if (!existing) {
+      return call.reply(`No ${kindState.label} named ${name}.`);
+    }
 
-  if (action === "stop") return stopJob(kindState, call, existing!, name);
+    if (action === "stop") {
+      return stopJob(kindState, call, existing, name);
+    }
+  }
 
-  if (message === undefined) return call.reply(`${action} needs a message.`);
+  if (message === undefined) {
+    return call.reply(`${action} needs a message.`);
+  }
 
   return sendJobTool(kindState, input, args, call, action, name, message);
 };
@@ -1535,11 +1609,15 @@ const answerQuestion = (
     const state = await tx.doc(kindState.Jobs, chatId);
     const record = state.jobs[answer.name];
 
-    if (!record) return false;
+    if (!record) {
+      return false;
+    }
     const question = await tx.doc(kindState.Question, record.conversationId);
     const pending = question.pending;
 
-    if (pending?.id !== answer.questionId) return false;
+    if (pending?.id !== answer.questionId) {
+      return false;
+    }
     question.pending = null;
     await queueDelivery(
       kindState,
@@ -1561,8 +1639,10 @@ const answerQuestion = (
     return true;
   }, BACKGROUND_CONTEXT);
 
-export function mergeTurnWork(found: TurnWork[]): TurnWork | undefined {
-  if (!found.length) return undefined;
+export function mergeTurnWork(found: Array<TurnWork>): TurnWork | undefined {
+  if (!found.length) {
+    return undefined;
+  }
   const error = found.find((work) => work.error)?.error;
 
   return {

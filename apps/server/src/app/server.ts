@@ -6,8 +6,10 @@ import {
   realpathSync,
   rmSync,
 } from "node:fs";
+import { Predicate } from "effect";
 import { basename, dirname, resolve } from "node:path";
-import { type BunWebSocketData, websocket } from "@hono/bun";
+import { websocket } from "@hono/bun";
+import type { BunWebSocketData } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
 import { accountDir, accountsDir } from "./data-dir";
 import { DataDirLocked, lockDataDir } from "./data-lock";
@@ -19,18 +21,16 @@ import {
 } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
 import { removeLegacyGroupChats } from "./group-chat-upgrade";
-import {
-  emulateDirectoriesOverlap,
-  type EmulateProfile,
-} from "../providers/emulate-profile";
+import { emulateDirectoriesOverlap } from "../providers/emulate-profile";
+import type { EmulateProfile } from "../providers/emulate-profile";
 import { validateEmulateBaseUrl } from "../providers/emulate";
 import { webUIRoutes } from "./web-ui";
 import {
   CLIENT_DOCUMENT_PATH,
   clientDocument,
   clientDocumentBody,
-  type ClientDocument,
 } from "../integrations/mcp-oauth";
+import type { ClientDocument } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
 import { devWorkspaceEnv } from "./dev-workspaces";
@@ -43,6 +43,7 @@ import {
   VOICE_GATEWAY_TOKEN_HEADER,
   voiceGatewayRefusal,
 } from "../voice-gateway/voice-gateway-api";
+import { logError, logInfo } from "../shared/process-log";
 
 const TENANT_PREFIXES = ["/v1/", `${VIEWER_PREFIX}/`, "/api/auth/"];
 
@@ -59,7 +60,9 @@ function hostedResponse(
   path: string,
   oauthClient: ClientDocument | undefined,
 ): Response | undefined {
-  if (path === "/health") return Response.json({ status: "ok", apiVersion: 1 });
+  if (path === "/health") {
+    return Response.json({ status: "ok", apiVersion: 1 });
+  }
 
   if (path === "/openapi.json") {
     openAPI ??= JSON.stringify(openAPIDocument());
@@ -69,12 +72,13 @@ function hostedResponse(
     });
   }
 
-  if (path === CLIENT_DOCUMENT_PATH)
+  if (path === CLIENT_DOCUMENT_PATH) {
     return oauthClient
       ? Response.json(clientDocumentBody(oauthClient), {
           headers: { "Cache-Control": "public, max-age=3600" },
         })
       : new Response("Not found", { status: 404 });
+  }
 
   return undefined;
 }
@@ -82,9 +86,11 @@ function hostedResponse(
 function untrustedOrigin(
   request: Request,
   requestOrigin: string | null,
-  trusted: readonly string[],
+  trusted: ReadonlyArray<string>,
 ) {
-  if (request.headers.get("sec-fetch-site") === "cross-site") return true;
+  if (request.headers.get("sec-fetch-site") === "cross-site") {
+    return true;
+  }
 
   return !!requestOrigin && !trusted.includes(requestOrigin);
 }
@@ -110,10 +116,11 @@ function publicOrigin(publicUrl: string) {
     url.search ||
     url.hash ||
     url.pathname !== "/"
-  )
+  ) {
     throw new Error(
       "CRUMBLE_PUBLIC_URL must be an https origin without a path, query, or fragment",
     );
+  }
 
   return url;
 }
@@ -127,11 +134,13 @@ async function closeTenants(tenants: Iterable<Promise<Tenant>>) {
     ),
   );
 
-  const failed = results.flatMap((result): unknown[] =>
+  const failed = results.flatMap((result): Array<unknown> =>
     result.status === "rejected" ? [result.reason] : [],
   );
 
-  if (failed.length) throw new AggregateError(failed, "Tenant shutdown failed");
+  if (failed.length) {
+    throw new AggregateError(failed, "Tenant shutdown failed");
+  }
 }
 
 type ServerOptions = {
@@ -165,10 +174,11 @@ function listenSettings(options: ServerOptions) {
     const ordinary = canonicalPath(resolve(root, "data"));
     const actual = canonicalPath(dataDir);
 
-    if (emulateDirectoriesOverlap(actual, ordinary))
+    if (emulateDirectoriesOverlap(actual, ordinary)) {
       throw new Error(
         "Emulate cannot use or overlap the ordinary data directory",
       );
+    }
 
     return {
       dataDir,
@@ -194,9 +204,26 @@ type ServerState = {
   identity?: Accounts;
   admin?: ReturnType<typeof adminAPI>;
   closed: boolean;
-  trustedOrigins: string[];
+  trustedOrigins: Array<string>;
   ready?: Promise<void>;
 };
+
+// Accounts and the admin API are connected before the server accepts requests.
+function connectedAccounts(state: ServerState): Accounts {
+  if (!state.identity) {
+    throw new Error("Accounts are not connected");
+  }
+
+  return state.identity;
+}
+
+function connectedAdmin(state: ServerState): ReturnType<typeof adminAPI> {
+  if (!state.admin) {
+    throw new Error("The admin API is not connected");
+  }
+
+  return state.admin;
+}
 
 async function restoreTenants(
   dataDir: string,
@@ -205,16 +232,21 @@ async function restoreTenants(
 ) {
   const usersDir = accountsDir(dataDir);
 
-  if (!existsSync(usersDir)) return;
+  if (!existsSync(usersDir)) {
+    return;
+  }
 
   const accountsToRestore = readdirSync(usersDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && accounts.hasUser(entry.name))
     .map((entry) => entry.name);
 
-  for (const id of accountsToRestore)
+  for (const id of accountsToRestore) {
     await removeLegacyGroupChats(accountDir(dataDir, id));
+  }
 
-  for (const id of accountsToRestore) await tenant(id);
+  for (const id of accountsToRestore) {
+    await tenant(id);
+  }
 }
 
 const outdatedWorkspaces = async (tenants: Map<string, Promise<Tenant>>) =>
@@ -277,7 +309,7 @@ function tenantPool(pool: {
     },
     restore: (accounts: Accounts) => restoreTenants(dataDir, accounts, tenant),
     /** Only an account that is running has streams to tell; this never starts one. */
-    announcePins: (userId: string, pins: string[]) => {
+    announcePins: (userId: string, pins: Array<string>) => {
       void tenants
         .get(userId)
         ?.then((context) => context.announcePins(pins))
@@ -311,7 +343,7 @@ async function accountResponse(
   bunServer: Bun.Server<unknown>,
   path: string,
 ) {
-  const session = await state.identity!.auth.api.getSession({
+  const session = await connectedAccounts(state).auth.api.getSession({
     headers: request.headers,
   });
 
@@ -319,16 +351,22 @@ async function accountResponse(
   // goes to the account it names. A session keeps it within the session's account.
   const owner = session ? undefined : viewerPathOwner(path);
 
-  if (owner && state.identity!.hasUser(owner) && !state.closed)
+  if (owner && connectedAccounts(state).hasUser(owner) && !state.closed) {
     return forward(pool, request, bunServer, owner);
+  }
 
-  if (!session)
+  if (!session) {
     return Response.json({ error: "Sign in required" }, { status: 401 });
+  }
 
-  if (state.closed) return closing();
+  if (state.closed) {
+    return closing();
+  }
   const response = await forward(pool, request, bunServer, session.user.id);
 
-  if (response) response.headers.set("Cache-Control", "no-store");
+  if (response) {
+    response.headers.set("Cache-Control", "no-store");
+  }
 
   return response;
 }
@@ -361,20 +399,25 @@ export async function voiceGatewayResponse(
   const token = BEARER.exec(request.headers.get("authorization") ?? "")?.[1];
   const account = token && credentialAccount(token);
 
-  if (!token || !account || !host.hasUser(account))
+  if (!token || !account || !host.hasUser(account)) {
     return voiceGatewayRefusal();
+  }
 
   request.headers.set(VOICE_GATEWAY_TOKEN_HEADER, token);
   const response = await host.forward(account);
 
-  if (response) response.headers.set("Cache-Control", "no-store");
+  if (response) {
+    response.headers.set("Cache-Control", "no-store");
+  }
 
   return response;
 }
 
 async function adminResponse(state: ServerState, request: Request) {
-  if (state.closed) return closing();
-  const response = await state.admin!.fetch(request);
+  if (state.closed) {
+    return closing();
+  }
+  const response = await connectedAdmin(state).fetch(request);
 
   response.headers.set("Cache-Control", "no-store");
 
@@ -388,14 +431,17 @@ function apiResponse(
   bunServer: Bun.Server<unknown>,
   path: string,
 ) {
-  if (path.startsWith(VOICE_GATEWAY_PREFIX))
+  if (path.startsWith(VOICE_GATEWAY_PREFIX)) {
     return voiceGatewayResponse(request, {
       closed: state.closed,
-      hasUser: (userId) => state.identity!.hasUser(userId),
+      hasUser: (userId) => connectedAccounts(state).hasUser(userId),
       forward: (userId) => forward(pool, request, bunServer, userId),
     });
+  }
 
-  if (path.startsWith("/v1/admin/")) return adminResponse(state, request);
+  if (path.startsWith("/v1/admin/")) {
+    return adminResponse(state, request);
+  }
 
   return accountResponse(state, pool, request, bunServer, path);
 }
@@ -412,31 +458,40 @@ const requestHandler =
     const path = new URL(request.url).pathname;
     const hosted = hostedResponse(path, oauthClient);
 
-    if (hosted) return hosted;
+    if (hosted) {
+      return hosted;
+    }
 
-    if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
+    if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix))) {
       return new Response("Not found", { status: 404 });
+    }
     const requestOrigin = request.headers.get("origin");
 
-    if (untrustedOrigin(request, requestOrigin, state.trustedOrigins))
+    if (untrustedOrigin(request, requestOrigin, state.trustedOrigins)) {
       return Response.json({ error: "Untrusted origin" }, { status: 403 });
+    }
 
     // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
-    if (path.startsWith("/api/auth/admin/"))
+    if (path.startsWith("/api/auth/admin/")) {
       return new Response("Not found", { status: 404 });
+    }
 
-    if (path.startsWith("/api/auth/"))
-      return state.identity!.auth.handler(request);
+    if (path.startsWith("/api/auth/")) {
+      return connectedAccounts(state).auth.handler(request);
+    }
 
     const novnc = await novncResponse(path);
 
-    if (novnc) return novnc;
+    if (novnc) {
+      return novnc;
+    }
 
-    if (needsOriginForWrite(request, requestOrigin))
+    if (needsOriginForWrite(request, requestOrigin)) {
       return Response.json(
         { error: "Origin is required for cookie-authenticated writes" },
         { status: 403 },
       );
+    }
 
     return apiResponse(state, pool, request, bunServer, path);
   };
@@ -495,13 +550,15 @@ export async function startServer(options: ServerOptions = {}) {
     dataDir,
     oauthClient,
     options,
-    serverSettings: () => state.identity!.settings.get(),
+    serverSettings: () => connectedAccounts(state).settings.get(),
   });
 
   let server: ReturnType<typeof Bun.serve> | undefined;
 
   const close = async () => {
-    if (state.closed) return;
+    if (state.closed) {
+      return;
+    }
     state.closed = true;
 
     try {
@@ -526,7 +583,7 @@ export async function startServer(options: ServerOptions = {}) {
     state.ready = connectAccounts(state, pool, dataDir, origin);
     await state.ready;
 
-    return { server, auth: state.identity!.auth, close };
+    return { server, auth: connectedAccounts(state).auth, close };
   } catch (error) {
     await close();
     throw error;
@@ -534,8 +591,8 @@ export async function startServer(options: ServerOptions = {}) {
 }
 
 function exitIfLocked(error: Error): never {
-  if (error instanceof DataDirLocked) {
-    console.error(error.message);
+  if (Predicate.isError(error) && error.name === DataDirLocked.name) {
+    logError(error.message);
     process.exit(1);
   }
 
@@ -549,19 +606,20 @@ if (import.meta.main) {
       : {},
   ).catch(exitIfLocked);
 
-  console.log(`Crumble server listening on ${running.server.url}`);
-  console.log("Open it to create an account or sign in.");
+  logInfo(`Crumble server listening on ${running.server.url}`);
+  logInfo("Open it to create an account or sign in.");
 
-  if (!process.env[MASTER_KEY_VARIABLE])
-    console.log(
+  if (!process.env[MASTER_KEY_VARIABLE]) {
+    logInfo(
       `${MASTER_KEY_VARIABLE} is unset: account encryption keys are stored next to the data they protect.`,
     );
+  }
 
   const close = async () => {
     await running.close();
     process.exit(0);
   };
 
-  process.once("SIGINT", close);
-  process.once("SIGTERM", close);
+  process.once("SIGINT", () => void close());
+  process.once("SIGTERM", () => void close());
 }

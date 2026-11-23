@@ -39,7 +39,9 @@ function actorLabel(change: Change, botName: string | null) {
 }
 
 const targetLabel = (change: Change) => {
-  if (change.target === "skill") return "a skill";
+  if (change.target === "skill") {
+    return "a skill";
+  }
 
   return change.agentId ? "a memory" : "a shared memory";
 };
@@ -51,9 +53,13 @@ export function changeSummary(change: Change, botName: string | null) {
 export function changeTitle(change: Change) {
   const state = change.after ?? change.before;
 
-  if (!state) return change.targetId;
+  if (!state) {
+    return change.targetId;
+  }
 
-  if ("content" in state) return state.content.split("\n")[0] ?? "";
+  if ("content" in state) {
+    return state.content.split("\n")[0] ?? "";
+  }
 
   return state.name;
 }

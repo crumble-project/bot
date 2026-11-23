@@ -16,7 +16,7 @@ export const relayEvents = sqliteTable(
     method: text("method").notNull(),
     query: text("query").notNull(),
     headers: text("headers", { mode: "json" })
-      .$type<[string, string][]>()
+      .$type<Array<[string, string]>>()
       .notNull(),
     body: text("body").notNull(),
     storedAt: text("stored_at").notNull(),

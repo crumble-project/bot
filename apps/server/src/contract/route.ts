@@ -1,9 +1,5 @@
-import {
-  createRoute,
-  z,
-  type RouteConfig,
-  type RouteHandler,
-} from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
+import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Effect } from "effect";
 import type { Env } from "hono";
 

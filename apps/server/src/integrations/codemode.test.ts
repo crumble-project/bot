@@ -212,6 +212,7 @@ test("code mode receives structured schedule and coordination results", async ()
 
   const schedules = standaloneBotSchedules(store.runtime, async () => ({
     id: "exec-1",
+    status: "running",
   }));
 
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });

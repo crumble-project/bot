@@ -6,31 +6,25 @@ import {
   validTimezone,
 } from "../contract/cron";
 import { BOT_TOOL } from "../contract/tools";
-import {
-  scheduleInput,
-  type Schedule,
-  type ScheduleInput,
-} from "../contract/schedules";
+import { scheduleInput } from "../contract/schedules";
+import type { Schedule, ScheduleInput } from "../contract/schedules";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { startTicking } from "../shared/ticker";
 import { BotWorkspaces } from "../workspaces/workspace";
-import {
-  Automations,
-  automationOn,
-  retryLedger,
-  type AutomationStarted,
-} from "./automations";
+import { Automations, automationOn, retryLedger } from "./automations";
+import type { AutomationStarted } from "./automations";
 import { ScheduleRepository } from "./schedule-repository";
 import {
   Forbidden,
   InvalidInput,
   NotFound,
   Conflict,
-  type AppError,
   errorText,
 } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 
 const mergeScheduleInput = (
   existing: ScheduleInput,
@@ -48,25 +42,34 @@ const mergeScheduleInput = (
 const nextRun = (cron: string, timezone: string, from: Date) =>
   nextOccurrence(cron, timezone, from).toISOString();
 
-const parsed = (input: ScheduleInput) =>
-  Effect.try({
-    try: () => mergeScheduleInput(scheduleInput.parse(input), {}),
-    // SAFETY: scheduleInput.parse and mergeScheduleInput throw only ZodError.
-    catch: (error) => error as z.ZodError,
-  });
+/**
+ * The schedule as the schema reads it. A schema failure stays a `ZodError`, for each caller to word; anything else
+ * that throws here is a defect rather than a bad schedule.
+ */
+const parsed = (input: ScheduleInput) => {
+  const result = scheduleInput.safeParse(input);
+
+  return result.success
+    ? Effect.succeed(mergeScheduleInput(result.data, {}))
+    : Effect.fail(result.error);
+};
 
 const firstRun = (value: ScheduleInput, now: Date) =>
   Effect.try({
     try: () => {
-      if (!validTimezone(value.timezone))
+      if (!validTimezone(value.timezone)) {
         throw new Error(`Invalid timezone: ${value.timezone}`);
+      }
 
-      if (!value.cron) return value.runAt;
+      if (!value.cron) {
+        return value.runAt;
+      }
 
-      if (hasBareWeekdayStep(value.cron))
+      if (hasBareWeekdayStep(value.cron)) {
         throw new Error(
           `Weekday steps need * or a range, like 1-5/2: ${value.cron}`,
         );
+      }
 
       return nextRun(value.cron, value.timezone, now);
     },
@@ -77,6 +80,11 @@ const firstRun = (value: ScheduleInput, now: Date) =>
   });
 
 /** Persistent schedule coordinator. A dispatch that succeeds means the work was durably admitted. */
+const logDispatchError = (scheduleId: string, cause: unknown) =>
+  Effect.logError(
+    `Schedule dispatch failed (${scheduleId}): ${errorText(cause)}`,
+  );
+
 export class Scheduler extends Context.Service<
   Scheduler,
   {
@@ -123,36 +131,43 @@ export class Scheduler extends Context.Service<
       ) {
         const acting = yield* agents.get(by ?? agentId);
 
-        if (!acting) return yield* new NotFound({ message: "Agent not found" });
+        if (!acting) {
+          return yield* new NotFound({ message: "Agent not found" });
+        }
 
-        if (!acting.tools.includes(BOT_TOOL.coding))
+        if (!acting.tools.includes(BOT_TOOL.coding)) {
           return yield* new Forbidden({
             message: "Script automations need coding jobs",
           });
+        }
 
         if (
           (by && agentId !== by) ||
           (createdByAgentId && createdByAgentId !== agentId)
-        )
+        ) {
           return yield* new Forbidden({
             message: "You can only give yourself a script automation",
           });
+        }
 
-        if (workspaces === undefined)
+        if (workspaces === undefined) {
           return yield* new Conflict({
             message: "This server has no workspaces",
           });
+        }
       });
 
       const known = Effect.fnUntraced(function* (value: ScheduleInput) {
-        if (!(yield* agents.get(value.agentId)))
+        if (!(yield* agents.get(value.agentId))) {
           return yield* new NotFound({ message: "Agent not found" });
+        }
 
         if (
           value.eventSourceId &&
           !(yield* events.getSource(value.eventSourceId))
-        )
+        ) {
           return yield* new NotFound({ message: "Event source not found" });
+        }
       });
 
       const create = Effect.fn("Scheduler.create")(function* (
@@ -161,7 +176,9 @@ export class Scheduler extends Context.Service<
       ) {
         const value = yield* parsed(input);
 
-        if (value.kind === "script") yield* scriptPolicy(value.agentId, by);
+        if (value.kind === "script") {
+          yield* scriptPolicy(value.agentId, by);
+        }
 
         const nextRunAt = yield* firstRun(
           value,
@@ -182,14 +199,16 @@ export class Scheduler extends Context.Service<
       ) {
         const old = yield* schedules.get(id);
 
-        if (!old)
+        if (!old) {
           return yield* Effect.fail(
             new NotFound({ message: "Schedule not found" }),
           );
+        }
         const value = yield* parsed(mergeScheduleInput(old, input));
 
-        if (value.kind === "script")
+        if (value.kind === "script") {
           yield* scriptPolicy(value.agentId, by, old.createdByAgentId);
+        }
 
         const first = yield* firstRun(
           value,
@@ -209,35 +228,35 @@ export class Scheduler extends Context.Service<
           finished ? null : first,
         );
 
-        if (!updated) return null;
+        if (!updated) {
+          return null;
+        }
         retries.forget(id);
 
         return updated;
       });
 
-      const logDispatchError = (scheduleId: string, cause: unknown) =>
-        Effect.logError(
-          `Schedule dispatch failed (${scheduleId}): ${errorText(cause)}`,
-        );
-
       const runNow = Effect.fn("Scheduler.runNow")(function* (id: string) {
         const schedule = yield* schedules.get(id);
 
-        if (!schedule)
+        if (!schedule) {
           return yield* Effect.fail(
             new NotFound({ message: "Schedule not found" }),
           );
+        }
         const agent = yield* agents.get(schedule.agentId);
 
-        if (!agent)
+        if (!agent) {
           return yield* Effect.fail(
             new NotFound({ message: "Agent not found" }),
           );
+        }
 
-        if (!automationOn(schedule, agent))
+        if (!automationOn(schedule, agent)) {
           return yield* Effect.fail(
             new Conflict({ message: "Schedule or agent is disabled" }),
           );
+        }
 
         const due = new Date(yield* Clock.currentTimeMillis).toISOString();
 
@@ -274,7 +293,9 @@ export class Scheduler extends Context.Service<
       ) {
         const latest = yield* schedules.get(schedule.id);
 
-        if (!latest) return;
+        if (!latest) {
+          return;
+        }
 
         yield* schedules.updateNextRunAt(
           schedule.id,
@@ -289,27 +310,38 @@ export class Scheduler extends Context.Service<
         if (
           !schedule.nextRunAt ||
           !automationOn(schedule, yield* agents.get(schedule.agentId))
-        )
+        ) {
           return;
+        }
         const due = new Date(schedule.nextRunAt);
 
-        if (Number.isNaN(due.valueOf()) || due > now) return;
-
-        if (retries.waiting(schedule.id, now.valueOf())) return;
-
-        if (!(yield* dispatchOnce(schedule, due.toISOString(), now.valueOf())))
+        if (Number.isNaN(due.valueOf()) || due > now) {
           return;
+        }
+
+        if (retries.waiting(schedule.id, now.valueOf())) {
+          return;
+        }
+
+        if (
+          !(yield* dispatchOnce(schedule, due.toISOString(), now.valueOf()))
+        ) {
+          return;
+        }
 
         yield* advancing(schedule, now);
       });
 
       const pass = Effect.fnUntraced(function* (now: Date) {
-        for (const schedule of yield* schedules.list())
+        for (const schedule of yield* schedules.list()) {
           yield* passOne(schedule, now);
+        }
       });
 
       const tick = Effect.fn("Scheduler.tick")(function* (now?: Date) {
-        if (current) return yield* Deferred.await(current);
+        if (current) {
+          return yield* Deferred.await(current);
+        }
 
         const done = yield* Deferred.make<void>();
         current = done;
@@ -354,7 +386,7 @@ export type SchedulerAccess = Access<
 
 export const schedulerAccess = (runtime: Runner<Scheduler>): SchedulerAccess =>
   accessOf(
-    runtime.runSync(Scheduler.use(Effect.succeed)),
+    runtime.runSync(Effect.flatMap(Scheduler, Effect.succeed)),
     runtime,
     SYNC_SCHEDULER,
   );

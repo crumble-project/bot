@@ -20,13 +20,8 @@ import {
   Page,
 } from "@/components/page";
 import { call, queryClient, send } from "@/lib/api";
-import {
-  eventRelayQuery,
-  eventSourcePath,
-  eventSourcesQuery,
-  type EventSource,
-  type RelayStatus,
-} from "./api";
+import { eventRelayQuery, eventSourcePath, eventSourcesQuery } from "./api";
+import type { EventSource, RelayStatus } from "./api";
 import { PluginSettingRows } from "@/features/plugin-settings/plugin-settings";
 import { MAX_EVENT_SOURCE_NAME_CHARS } from "@crumble/server/contract/event-sources";
 
@@ -64,7 +59,7 @@ function RelayUrlRow({ relay }: { relay: RelayStatus }) {
 
   const save = useMutation({
     mutationFn: (next: string | null) =>
-      call<"updateEventRelay">("/v1/event-relay", "PUT", { url: next }),
+      call("updateEventRelay", "/v1/event-relay", "PUT", { url: next }),
     onSuccess: (next) => {
       queryClient.setQueryData(eventRelayQuery.queryKey, next);
       setUrl(next.url ?? "");
@@ -195,7 +190,7 @@ function SourceAddressField({ address }: { address: string }) {
         <CopyButton text={address} />
       </div>
       <FieldDescription>
-        Shown once. Paste it into the provider's webhook settings.
+        Shown once. Paste it into the provider&apos;s webhook settings.
       </FieldDescription>
     </Field>
   );
@@ -206,13 +201,13 @@ function AddSourceSheet({ onClose }: { onClose: () => void }) {
 
   const create = useMutation({
     mutationFn: (value: string) =>
-      call<"createEventSource">("/v1/event-sources", "POST", { name: value }),
+      call("createEventSource", "/v1/event-sources", "POST", { name: value }),
     onSuccess: refresh,
   });
 
   const created = create.data;
 
-  if (created)
+  if (created) {
     return (
       <EditorSheet
         title={`${created.name} address`}
@@ -224,6 +219,7 @@ function AddSourceSheet({ onClose }: { onClose: () => void }) {
         <SourceAddressField address={created.address} />
       </EditorSheet>
     );
+  }
 
   return (
     <EditorSheet

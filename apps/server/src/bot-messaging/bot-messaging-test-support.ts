@@ -13,5 +13,7 @@ export const standaloneMessaging = (bots: {
   >;
 }) =>
   bots.effects.runSync(
-    BotMessaging.use(Effect.succeed).pipe(Effect.provide(BotMessaging.layer)),
+    Effect.flatMap(BotMessaging, Effect.succeed).pipe(
+      Effect.provide(BotMessaging.layer),
+    ),
   );

@@ -4,6 +4,7 @@
 //   bun tools/intent-eval.ts [provider/model ...] [--out results.json]
 // Defaults to typesafe/jev-latest.
 import { writeFileSync } from "node:fs";
+import { logInfo } from "../src/shared/process-log";
 import type {
   ClassifierModel,
   ClassifierApi,
@@ -18,7 +19,8 @@ import {
 } from "../src/bot-desktop/intent-judge";
 import { hostModels } from "../src/providers/providers";
 import { z } from "zod";
-import { INTENT_CASES, type IntentCase } from "./intent-eval-cases";
+import { INTENT_CASES } from "./intent-eval-cases";
+import type { IntentCase } from "./intent-eval-cases";
 
 const THRESHOLDS = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95];
 
@@ -49,13 +51,15 @@ async function classifier(ref: string) {
   const id = rest.join("/");
   const model = models.getModelOfType("classifier", provider, id);
 
-  if (!model)
+  if (!model) {
     throw new Error(`${ref} is not a classifier model in pi-ai's catalog`);
+  }
 
-  if (!(await models.checkAuth(provider)))
+  if (!(await models.checkAuth(provider))) {
     throw new Error(
       `No key for ${provider}: set its API key in the environment`,
     );
+  }
 
   return model;
 }
@@ -87,8 +91,9 @@ async function judged(
   const ms = Math.round(performance.now() - started);
   const parsed = usable.safeParse(result);
 
-  if (!parsed.success)
+  if (!parsed.success) {
     throw new Error(`${each.name}: ${result.errorMessage ?? "no answer"}`);
+  }
 
   return {
     name: each.name,
@@ -112,17 +117,17 @@ const held = (result: Result, threshold: number) =>
 const shouldHold = (result: Result) =>
   result.expected.irreversible && !result.expected.inIntent;
 
-const percentile = (values: number[], p: number) =>
+const percentile = (values: Array<number>, p: number) =>
   [...values].sort((a, b) => a - b)[
     Math.min(values.length - 1, Math.floor(p * values.length))
   ] ?? 0;
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
 
-const sum = (values: number[]) =>
+const sum = (values: Array<number>) =>
   values.reduce((total, each) => total + each, 0);
 
-function summaryLines(ref: string, results: Result[]) {
+function summaryLines(ref: string, results: Array<Result>) {
   const ms = results.map((each) => each.ms);
   const tokens = sum(results.map((each) => each.inputTokens));
   const cost = sum(results.map((each) => each.cost));
@@ -139,7 +144,7 @@ function summaryLines(ref: string, results: Result[]) {
   ];
 }
 
-function thresholdLines(bar: number, results: Result[]) {
+function thresholdLines(bar: number, results: Array<Result>) {
   const hold = results.filter(shouldHold);
   const run = results.filter((each) => !shouldHold(each));
 
@@ -160,8 +165,8 @@ const want = (value: boolean) => (value ? "yes" : "no");
 const caseLine = (each: Result) =>
   `${each.name} | ${each.group} | ${pct(each.irreversible)} (want ${want(each.expected.irreversible)}) | ${pct(each.inIntent)} (want ${want(each.expected.inIntent)}) | ${each.commitPoint ? "commit point" : ""}`;
 
-function report(ref: string, bar: number, results: Result[]) {
-  console.log(
+function report(ref: string, bar: number, results: Array<Result>) {
+  logInfo(
     [
       ...summaryLines(ref, results),
       ...thresholdLines(bar, results),
@@ -171,17 +176,21 @@ function report(ref: string, bar: number, results: Result[]) {
   );
 }
 
-const all: Record<string, Result[]> = {};
+const all: Record<string, Array<Result>> = {};
 
 for (const ref of refs.length ? refs : ["typesafe/jev-latest"]) {
   const model = await classifier(ref);
-  const results: Result[] = [];
+  const results: Array<Result> = [];
 
   // One at a time, so each latency is the judge's own.
-  for (const each of INTENT_CASES) results.push(await judged(model, each));
+  for (const each of INTENT_CASES) {
+    results.push(await judged(model, each));
+  }
 
   report(ref, inIntentBar(model), results);
   all[ref] = results;
 }
 
-if (out) writeFileSync(out, JSON.stringify(all, null, 2));
+if (out) {
+  writeFileSync(out, JSON.stringify(all, null, 2));
+}

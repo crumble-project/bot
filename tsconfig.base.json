@@ -34,5 +34,5 @@
     // Third-party declarations fail their own checks under these flags
     "skipLibCheck": true
   },
-  "exclude": ["tools/oxlint/anti-slop/**", "node_modules", ]
+  "exclude": ["node_modules"]
 }

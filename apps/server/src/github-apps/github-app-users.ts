@@ -137,7 +137,9 @@ export class GitHubAppUsers extends Context.Service<
       const readAuthorization = Effect.fnUntraced(function* (appId: string) {
         const found = yield* app(appId);
 
-        if (!found) return;
+        if (!found) {
+          return;
+        }
 
         const signedIn = yield* row(appId);
         const raw = yield* serverSecrets.get(authorizationKey(appId));
@@ -149,11 +151,12 @@ export class GitHubAppUsers extends Context.Service<
                 authorizationState.parse(JSON.parse(raw)),
               );
 
-        if (raw === undefined)
+        if (raw === undefined) {
           yield* serverSecrets.set(
             authorizationKey(appId),
             JSON.stringify(identity),
           );
+        }
 
         return { app: found, signedIn, identity };
       });
@@ -195,17 +198,19 @@ export class GitHubAppUsers extends Context.Service<
       ) {
         const captured = yield* readAuthorization(appId).pipe(atomic(db));
 
-        if (!captured)
+        if (!captured) {
           return yield* new NotFound({ message: "GitHub App not found" });
+        }
 
         const found = captured.app;
 
         if (
           !(yield* secrets.status(githubAppClientSecretKey(appId))).configured
-        )
+        ) {
           return yield* new Conflict({
             message: `Add ${found.name}'s client secret first`,
           });
+        }
 
         const state = randomBytes(24).toString("hex");
         const verifier = randomBytes(32).toString("base64url");
@@ -215,10 +220,11 @@ export class GitHubAppUsers extends Context.Service<
           if (
             !current ||
             !sameAuthorization(current.identity, captured.identity)
-          )
+          ) {
             return yield* new Conflict({
               message: "This GitHub sign-in is stale; start again",
             });
+          }
 
           yield* pendingStates.put(STATE_FLOW, state, {
             appId,
@@ -255,7 +261,9 @@ export class GitHubAppUsers extends Context.Service<
 
           yield* pendingStates.drop(STATE_FLOW, input.state);
 
-          if (!pending) return yield* staleSignIn();
+          if (!pending) {
+            return yield* staleSignIn();
+          }
 
           const current = yield* readAuthorization(pending.appId);
 
@@ -264,8 +272,9 @@ export class GitHubAppUsers extends Context.Service<
             owner: pending.owner || null,
           };
 
-          if (!current || !sameAuthorization(current.identity, expected))
+          if (!current || !sameAuthorization(current.identity, expected)) {
             return yield* staleSignIn();
+          }
 
           return { pending, found: current.app, expected };
         }).pipe(atomic(db));
@@ -273,10 +282,11 @@ export class GitHubAppUsers extends Context.Service<
         const { pending, found, expected } = admitted;
         const secret = yield* clientSecretOf(found.id);
 
-        if (!found || !secret)
+        if (!found || !secret) {
           return yield* new InvalidInput({
             message: "The GitHub App was removed or lost its client secret",
           });
+        }
 
         const answer = yield* githubOAuth(
           {
@@ -288,10 +298,11 @@ export class GitHubAppUsers extends Context.Service<
           tokenAnswer,
         );
 
-        if ("error" in answer)
+        if ("error" in answer) {
           return yield* new InvalidInput({
             message: `GitHub refused the sign-in: ${answer.error_description ?? answer.error}`,
           });
+        }
 
         const owner = yield* github("/user", githubUser, {
           token: answer.access_token,
@@ -300,8 +311,9 @@ export class GitHubAppUsers extends Context.Service<
         yield* Effect.gen(function* () {
           const current = yield* readAuthorization(found.id);
 
-          if (!current || !sameAuthorization(current.identity, expected))
+          if (!current || !sameAuthorization(current.identity, expected)) {
             return yield* staleSignIn();
+          }
 
           const values = yield* valuesOf(answer, {
             login: owner.login,
@@ -337,7 +349,9 @@ export class GitHubAppUsers extends Context.Service<
         const captured = yield* Effect.gen(function* () {
           const current = yield* readAuthorization(appId);
 
-          if (!current) return;
+          if (!current) {
+            return;
+          }
 
           yield* serverSecrets.set(
             authorizationKey(appId),
@@ -355,7 +369,7 @@ export class GitHubAppUsers extends Context.Service<
         }).pipe(atomic(db));
 
         // Remote revocation may outlive a new sign-in; all local deletion already committed.
-        if (captured?.signedIn && secret)
+        if (captured?.signedIn && secret) {
           yield* revokeGitHubGrant(
             {
               clientId: captured.app.clientId,
@@ -363,12 +377,14 @@ export class GitHubAppUsers extends Context.Service<
             },
             box.decrypt(captured.signedIn.token),
           );
+        }
       });
 
       const setClientSecret = Effect.fn("GitHubAppUsers.setClientSecret")(
         function* (appId: string, clientSecret: SecretInput) {
-          if (!(yield* app(appId)))
+          if (!(yield* app(appId))) {
             return yield* new NotFound({ message: "GitHub App not found" });
+          }
 
           yield* secrets.save(githubAppClientSecretKey(appId), clientSecret);
         },
@@ -395,21 +411,25 @@ export class GitHubAppUsers extends Context.Service<
         // Another request may have refreshed while this one waited for the lock.
         const { captured, now, token } = yield* tokenSnapshot(found.id);
 
-        if (token) return token;
+        if (token) {
+          return token;
+        }
 
         const signedIn = captured?.signedIn;
 
-        if (!captured || !signedIn || !captured.identity.owner)
+        if (!captured || !signedIn || !captured.identity.owner) {
           return yield* new GitHubUnavailable({
             message: "the owner signed out of GitHub",
           });
+        }
 
         const secret = yield* clientSecretOf(found.id);
 
-        if (!secret || signedIn.refreshExpiresAt <= now)
+        if (!secret || signedIn.refreshExpiresAt <= now) {
           return yield* new GitHubUnavailable({
             message: `sign in to GitHub through ${found.name} again`,
           });
+        }
 
         const answer = yield* githubOAuth(
           {
@@ -421,10 +441,11 @@ export class GitHubAppUsers extends Context.Service<
           tokenAnswer,
         );
 
-        if ("error" in answer)
+        if ("error" in answer) {
           return yield* new GitHubUnavailable({
             message: `sign in to GitHub through ${found.name} again (${answer.error})`,
           });
+        }
 
         yield* Effect.gen(function* () {
           const current = yield* readAuthorization(found.id);
@@ -432,10 +453,11 @@ export class GitHubAppUsers extends Context.Service<
           if (
             !current?.signedIn ||
             !sameAuthorization(current.identity, captured.identity)
-          )
+          ) {
             return yield* new GitHubUnavailable({
               message: "the owner authorization changed; try again",
             });
+          }
 
           const values = yield* valuesOf(answer, signedIn);
           yield* db
@@ -453,7 +475,9 @@ export class GitHubAppUsers extends Context.Service<
       ) {
         const { token: cached } = yield* tokenSnapshot(found.id);
 
-        if (cached) return cached;
+        if (cached) {
+          return cached;
+        }
 
         return yield* refreshing.withPermit(refresh(found));
       });

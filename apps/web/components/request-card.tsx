@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from "react";
-import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import type { UseQueryOptions } from "@tanstack/react-query";
 import type { TablerIcon } from "@tabler/icons-react";
 
 export function SettledCard({
@@ -35,7 +36,7 @@ export function SettledCard({
  * until the list can be trusted, which `conclusive` data can be at once; null after that.
  */
 export function useFreshRequest<D>(
-  query: UseQueryOptions<D, Error, D, string[]>,
+  query: UseQueryOptions<D, Error, D, Array<string>>,
   conclusive: (data: D) => boolean,
 ) {
   const state = useQuery({ ...query, refetchOnMount: "always" });

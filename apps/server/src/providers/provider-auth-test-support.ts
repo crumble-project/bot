@@ -2,7 +2,8 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import type { Runner } from "../shared/runner";
 import type { SettingsRepository } from "../shared/settings-repository";
 import type { ProviderContribution } from "../plugins/plugins";
-import { ProviderSignIns, type ProviderSignInsAccess } from "./provider-auth";
+import { ProviderSignIns } from "./provider-auth";
+import type { ProviderSignInsAccess } from "./provider-auth";
 import type { ProviderCredentials } from "./provider-credentials";
 import { ProviderModels, hostModels } from "./providers";
 
@@ -10,7 +11,7 @@ type StandaloneSignInServices = ProviderCredentials | SettingsRepository;
 
 export function standaloneSignIns(
   core: Runner<StandaloneSignInServices>,
-  contributions: readonly ProviderContribution[],
+  contributions: ReadonlyArray<ProviderContribution>,
 ): ProviderSignInsAccess {
   const context = core.runSync(Effect.context<StandaloneSignInServices>());
 
@@ -19,5 +20,5 @@ export function standaloneSignIns(
       Layer.provide(ProviderModels.layer(hostModels, contributions)),
       Layer.provide(Layer.succeedContext(context)),
     ),
-  ).runSync(ProviderSignIns.use(Effect.succeed));
+  ).runSync(Effect.flatMap(ProviderSignIns, Effect.succeed));
 }

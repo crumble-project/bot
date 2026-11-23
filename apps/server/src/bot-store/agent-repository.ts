@@ -1,13 +1,10 @@
 import { asc, eq, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import {
-  agentInput,
-  modelRef,
-  type Agent,
-  type AgentInput,
-} from "../contract/agents";
+import { agentInput, modelRef } from "../contract/agents";
+import type { Agent, AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
 import { AgentSkills } from "./agent-skills";
 import { agents } from "./schema";
@@ -21,11 +18,28 @@ export type AgentPatch = Partial<
   Omit<AgentInput, "id" | "createdAt" | "updatedAt">
 >;
 
+const columns = (input: AgentPatch & AgentInput) => ({
+  name: input.name,
+  description: input.description,
+  instructions: input.instructions,
+  provider: input.provider,
+  model: input.model,
+  webSearchProvider: input.webSearchProvider ?? null,
+  enabled: input.enabled,
+  tools: JSON.stringify(input.tools),
+  sharedSkills: JSON.stringify(input.sharedSkills ?? []),
+  mcpServers: JSON.stringify(input.mcpServers),
+  inference: JSON.stringify(input.inference ?? {}),
+  desktopModel: input.desktopModel ? JSON.stringify(input.desktopModel) : null,
+  reviewModel: input.reviewModel ? JSON.stringify(input.reviewModel) : null,
+  review: input.review ? JSON.stringify(input.review) : null,
+});
+
 export class AgentRepository extends Context.Service<
   AgentRepository,
   {
     /** Oldest first. */
-    readonly list: Effect.Effect<Agent[]>;
+    readonly list: Effect.Effect<Array<Agent>>;
     readonly get: (agentId: string) => Effect.Effect<Agent | null>;
     readonly create: (
       input: AgentInput,
@@ -49,7 +63,7 @@ export class AgentRepository extends Context.Service<
       const agentOf = Effect.fnUntraced(function* (
         row: typeof agents.$inferSelect,
       ) {
-        const tools: string[] = [
+        const tools: Array<string> = [
           ...new Set([
             ...STANDARD_TOOLS,
             ...stringList.parse(JSON.parse(row.tools)),
@@ -117,27 +131,6 @@ export class AgentRepository extends Context.Service<
         return row ? yield* agentOf(row) : null;
       }, Effect.orDie);
 
-      const columns = (input: AgentPatch & AgentInput) => ({
-        name: input.name,
-        description: input.description,
-        instructions: input.instructions,
-        provider: input.provider,
-        model: input.model,
-        webSearchProvider: input.webSearchProvider ?? null,
-        enabled: input.enabled,
-        tools: JSON.stringify(input.tools),
-        sharedSkills: JSON.stringify(input.sharedSkills ?? []),
-        mcpServers: JSON.stringify(input.mcpServers),
-        inference: JSON.stringify(input.inference ?? {}),
-        desktopModel: input.desktopModel
-          ? JSON.stringify(input.desktopModel)
-          : null,
-        reviewModel: input.reviewModel
-          ? JSON.stringify(input.reviewModel)
-          : null,
-        review: input.review ? JSON.stringify(input.review) : null,
-      });
-
       const create = Effect.fn("AgentRepository.create")(function* (
         input: AgentInput,
         agentId: string = crypto.randomUUID(),
@@ -157,7 +150,7 @@ export class AgentRepository extends Context.Service<
         });
         yield* skillLibrary.replace(agentId, input.skills);
 
-        return (yield* get(agentId))!;
+        return required(yield* get(agentId), "The agent was not stored");
       }, Effect.orDie);
 
       const update = Effect.fn("AgentRepository.update")(function* (
@@ -166,7 +159,9 @@ export class AgentRepository extends Context.Service<
       ) {
         const old = yield* get(agentId);
 
-        if (!old) return null;
+        if (!old) {
+          return null;
+        }
 
         yield* db
           .update(agents)
@@ -179,7 +174,9 @@ export class AgentRepository extends Context.Service<
           })
           .where(eq(agents.id, agentId));
 
-        if (patch.skills) yield* skillLibrary.replace(agentId, patch.skills);
+        if (patch.skills) {
+          yield* skillLibrary.replace(agentId, patch.skills);
+        }
 
         return yield* get(agentId);
       }, Effect.orDie);

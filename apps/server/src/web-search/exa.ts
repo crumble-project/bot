@@ -7,9 +7,8 @@ import {
   VENDOR_TIMEOUT,
   WebExtractionError,
   WebSearchError,
-  type WebSearchProvider,
-  type WebSearchQuery,
 } from "./provider";
+import type { WebSearchProvider, WebSearchQuery } from "./provider";
 import type { WebSearchResult } from "../contract/web-search";
 
 const response = Schema.Struct({
@@ -35,7 +34,9 @@ const request = Effect.fnUntraced(
           signal,
         });
 
-        if (!res.ok) throw new Error(`Exa returned HTTP ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`Exa returned HTTP ${res.status}`);
+        }
 
         const data: unknown = await res.json();
 
@@ -82,7 +83,9 @@ const keyedSearch = (key: string, query: WebSearchQuery) =>
           excerpt: item.highlights?.join("\n") ?? item.text ?? "",
         };
 
-        if (item.publishedDate) result.published = item.publishedDate;
+        if (item.publishedDate) {
+          result.published = item.publishedDate;
+        }
 
         return result;
       }),

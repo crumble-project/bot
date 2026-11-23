@@ -1,18 +1,20 @@
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
-import { type ReactNode, act } from "react";
+import { act } from "react";
+import type { ReactNode } from "react";
 import type { Message } from "@/features/chat/api";
 import type { CardChat } from "@/features/chat/message-card";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
 import type { CallRequest } from "./api";
+import { requestPath } from "@/test/request-path";
 
 const LIST = "/v1/agents/bot/call-requests";
 
 const REQUEST = `${LIST}/r1`;
 
-const opened: string[] = [];
+const opened: Array<string> = [];
 
 const chat: CardChat = {
   botId: "bot",
@@ -60,6 +62,17 @@ const ended = (
   endedAt: "2026-11-10T10:03:00.000Z",
 });
 
+const notice = (requestId: string, content: string): Message => ({
+  id: "n:1:0",
+  entryId: "n:1",
+  role: "user",
+  kind: "crumble.message",
+  content,
+  replyReferences: [],
+  requestId,
+  origin: { kind: "call" },
+});
+
 const toolResult: Message = {
   id: "t:1:0",
   entryId: "t:1",
@@ -72,7 +85,7 @@ const toolResult: Message = {
 
 type Page = {
   container: HTMLElement;
-  sent: string[];
+  sent: Array<string>;
   button: (label: string) => HTMLButtonElement | undefined;
   shows: (text: string) => Promise<void>;
 };
@@ -99,22 +112,27 @@ async function renderCard(
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   };
 
-  for (const [key, value] of Object.entries(values))
+  for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
 
-  const sent: string[] = [];
+  const sent: Array<string> = [];
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        const path = input instanceof Request ? input.url : input.toString();
+        const path = requestPath(input);
         const method = init?.method ?? "GET";
 
-        if (method !== "GET") sent.push(`${method} ${path}`);
+        if (method !== "GET") {
+          sent.push(`${method} ${path}`);
+        }
 
         const response = respond(method, path);
 
-        if (response) return response;
+        if (response) {
+          return response;
+        }
 
         throw new Error(`Unexpected request: ${method} ${path}`);
       },
@@ -154,8 +172,11 @@ async function renderCard(
     fetch.mockRestore();
 
     for (const key of Object.keys(values)) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();
@@ -165,13 +186,16 @@ async function renderCard(
 test("a pending call request shows the call and the opening's checklist, and a refused approval keeps the buttons", async () => {
   await renderCard(
     (method, path) => {
-      if (method === "GET" && path === LIST) return Response.json([pending]);
+      if (method === "GET" && path === LIST) {
+        return Response.json([pending]);
+      }
 
-      if (method === "POST" && path === `${REQUEST}/approve`)
+      if (method === "POST" && path === `${REQUEST}/approve`) {
         return Response.json(
           { error: "The voice gateway isn't connected." },
           { status: 409 },
         );
+      }
 
       return null;
     },
@@ -206,7 +230,9 @@ test("approving shows the call as calling, and declining settles the card", asyn
 
   await renderCard(
     (method, path) => {
-      if (method === "GET" && path === LIST) return Response.json([state]);
+      if (method === "GET" && path === LIST) {
+        return Response.json([state]);
+      }
 
       if (method === "POST" && path === `${REQUEST}/approve`) {
         state = calling;
@@ -231,7 +257,9 @@ test("approving shows the call as calling, and declining settles the card", asyn
 
   await renderCard(
     (method, path) => {
-      if (method === "GET" && path === LIST) return Response.json([state]);
+      if (method === "GET" && path === LIST) {
+        return Response.json([state]);
+      }
 
       if (method === "POST" && path === `${REQUEST}/decline`) {
         state = { ...pending, status: "declined" };
@@ -253,7 +281,7 @@ test("approving shows the call as calling, and declining settles the card", asyn
 });
 
 test("an ended call shows its outcome from the list, and a failed one its error", async () => {
-  const cases: [CallRequest, string][] = [
+  const cases: Array<[CallRequest, string]> = [
     [ended("unanswered"), "Not answered"],
     [ended("busy"), "Busy"],
     [
@@ -262,18 +290,20 @@ test("an ended call shows its outcome from the list, and a failed one its error"
     ],
   ];
 
-  for (const [request, outcome] of cases)
+  for (const [request, outcome] of cases) {
     await renderCard(
       (method, path) =>
         method === "GET" && path === LIST ? Response.json([request]) : null,
       async ({ container, button, shows }) => {
         await shows(outcome);
 
-        if (request.error)
+        if (request.error) {
           expect(container.textContent).toContain(request.error);
+        }
         expect(button("Approve")).toBeUndefined();
       },
     );
+  }
 });
 
 test("a placed call's card opens the call beside the chat", async () => {
@@ -292,17 +322,6 @@ test("a placed call's card opens the call beside the chat", async () => {
 });
 
 test("an outside call's end notice is one card with how the call went, and an owner call's notice keeps its marker", async () => {
-  const notice = (requestId: string, content: string): Message => ({
-    id: "n:1:0",
-    entryId: "n:1",
-    role: "user",
-    kind: "crumble.message",
-    content,
-    replyReferences: [],
-    requestId,
-    origin: { kind: "call" },
-  });
-
   const { CallNotice } = await import("./call-request-card");
 
   for (const [message, expected] of [
@@ -317,7 +336,7 @@ test("an outside call's end notice is one card with how the call went, and an ow
       notice("voice-call:other:ended", "Call ended after 4 minutes."),
       "the marker",
     ],
-  ] as const)
+  ] as const) {
     await renderCard(
       (method, path) =>
         method === "GET" && path === LIST
@@ -327,13 +346,16 @@ test("an outside call's end notice is one card with how the call went, and an ow
         await shows(expected === "the marker" ? "the marker" : "Answered");
         expect(container.textContent).toBe(expected);
 
-        if (expected === "the marker") return;
+        if (expected === "the marker") {
+          return;
+        }
         opened.length = 0;
         await act(async () => container.querySelector("button")!.click());
         expect(opened).toStrictEqual(["r1"]);
       },
       <CallNotice message={message} chat={chat} fallback="the marker" />,
     );
+  }
 });
 
 test("the call panel shows the goal, the opening, and what was said in order, labeled with the bot and the callee", async () => {
@@ -341,14 +363,27 @@ test("the call panel shows the goal, the opening, and what was said in order, la
 
   const transcript = {
     messages: [
-      { id: "c:1:0", entryId: "c:1", role: "user", content: "Trattoria Roma." },
+      {
+        id: "c:1:0",
+        entryId: "c:1",
+        role: "user",
+        content: "Trattoria Roma.",
+        replyReferences: [],
+      },
       {
         id: "c:2:0",
         entryId: "c:2",
         role: "assistant",
         content: "A table for two on Friday at seven, please.",
+        replyReferences: [],
       },
-      { id: "c:3:0", entryId: "c:3", role: "user", content: "That works." },
+      {
+        id: "c:3:0",
+        entryId: "c:3",
+        role: "user",
+        content: "That works.",
+        replyReferences: [],
+      },
     ],
     hasMore: false,
     oldestEntryId: "c:1",
@@ -368,15 +403,20 @@ test("the call panel shows the goal, the opening, and what was said in order, la
       { messages: [], hasMore: false, oldestEntryId: null },
       [`Ada${pending.opening}`, "No transcript."],
     ],
-  ] as const)
+  ] as const) {
     await renderCard(
       (method, path) => {
-        if (method !== "GET") return null;
+        if (method !== "GET") {
+          return null;
+        }
 
-        if (path === LIST) return Response.json([ended("answered")]);
+        if (path === LIST) {
+          return Response.json([ended("answered")]);
+        }
 
-        if (path === `${REQUEST}/transcript?limit=200`)
+        if (path === `${REQUEST}/transcript?limit=200`) {
           return Response.json(page);
+        }
 
         return null;
       },
@@ -393,4 +433,5 @@ test("the call panel shows the goal, the opening, and what was said in order, la
       },
       <CallPanel botId="bot" botName="Ada" requestId="r1" onClose={() => {}} />,
     );
+  }
 });

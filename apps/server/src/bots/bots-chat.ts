@@ -1,4 +1,5 @@
 import { pi } from "../shared/app-errors";
+import { required } from "../shared/required";
 import { Effect, Semaphore } from "effect";
 import type { CallEventData } from "../transcript/entries";
 import type { BotMessageEvent } from "../transcript/transcript";
@@ -35,10 +36,16 @@ export const botsChat = (context: BotsContext, deps: ChatDeps) => {
         const owner = yield* agent(agentId);
         const existing = yield* conversations.chatOf(agentId);
 
-        if (existing)
-          return existing.archived
-            ? (yield* conversations.setArchived(existing.id, false))!
-            : existing;
+        if (existing) {
+          if (!existing.archived) {
+            return existing;
+          }
+
+          return required(
+            yield* conversations.setArchived(existing.id, false),
+            "The chat conversation was not restored",
+          );
+        }
 
         return yield* conversations.create(
           { agentId, title: owner.name, chat: true },

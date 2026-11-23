@@ -53,9 +53,13 @@ type SaveState = {
 };
 
 function saveStatus(dirty: boolean, save: SaveState) {
-  if (save.isPending) return "Saving…";
+  if (save.isPending) {
+    return "Saving…";
+  }
 
-  if (dirty) return "Unsaved changes";
+  if (dirty) {
+    return "Unsaved changes";
+  }
 
   return save.isSuccess ? "Saved" : "";
 }
@@ -100,7 +104,9 @@ export function QueryState({
   pending: boolean;
   error: Error | null;
 }) {
-  if (error) return <FieldError>{error.message}</FieldError>;
+  if (error) {
+    return <FieldError>{error.message}</FieldError>;
+  }
 
   return pending ? <Skeleton className="h-64 w-full rounded-xl" /> : null;
 }

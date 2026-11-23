@@ -5,9 +5,9 @@ export const CRUMBLE_MCP_SERVER = "crumble";
 
 export const CRUMBLE_TOOL_PREFIX = `mcp__${CRUMBLE_MCP_SERVER}__`;
 
-const OFF = ["0", "false", "no", "off"];
+const OFF = new Set(["0", "false", "no", "off"]);
 
-export const isOff = (value: string) => OFF.includes(value.toLowerCase());
+export const isOff = (value: string) => OFF.has(value.toLowerCase());
 
 /**
  * Every Claude Code process Crumble starts: no tools of its own, no settings, skills, or MCP servers from the machine,

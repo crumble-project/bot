@@ -28,7 +28,7 @@ export const modelsQuery = (provider: string) =>
   queryOptions({
     queryKey: [...modelsKey, provider],
     queryFn: ({ signal }) =>
-      api<"models">(`/v1/models?provider=${encodeURIComponent(provider)}`, {
+      api("models", `/v1/models?provider=${encodeURIComponent(provider)}`, {
         signal,
       }),
     staleTime: 5 * 60_000,
@@ -36,12 +36,12 @@ export const modelsQuery = (provider: string) =>
 
 export const providersQuery = queryOptions({
   queryKey: ["providers"],
-  queryFn: ({ signal }) => api<"providers">("/v1/providers", { signal }),
+  queryFn: ({ signal }) => api("providers", "/v1/providers", { signal }),
 });
 
 export const usageQuery = queryOptions({
   queryKey: ["usage"],
-  queryFn: ({ signal }) => api<"usage">("/v1/usage", { signal }),
+  queryFn: ({ signal }) => api("usage", "/v1/usage", { signal }),
 });
 
 export async function invalidateProviders() {
@@ -59,7 +59,7 @@ export const signInQuery = (id: string) =>
   queryOptions({
     queryKey: ["provider-sign-in", id],
     queryFn: ({ signal }) =>
-      api<"getProviderLogin">(providerSignInPath(id), { signal }),
+      api("getProviderLogin", providerSignInPath(id), { signal }),
     // Sign-ins advance on the server, so poll until they end.
     refetchInterval: (query) =>
       query.state.data?.status === "pending" ? 1000 : false,
@@ -67,11 +67,11 @@ export const signInQuery = (id: string) =>
 
 export const judgeModelQuery = queryOptions({
   queryKey: ["judge-model"],
-  queryFn: ({ signal }) => api<"getJudgeModel">("/v1/judge-model", { signal }),
+  queryFn: ({ signal }) => api("getJudgeModel", "/v1/judge-model", { signal }),
 });
 
 export const visionModelQuery = queryOptions({
   queryKey: ["vision-model"],
   queryFn: ({ signal }) =>
-    api<"getVisionModel">("/v1/vision-model", { signal }),
+    api("getVisionModel", "/v1/vision-model", { signal }),
 });

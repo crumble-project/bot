@@ -1,7 +1,8 @@
 import { Effect, Layer } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotWorkspaces } from "../workspaces/workspace";
-import { DesktopControl, type ControlState } from "./desktop-control";
+import { DesktopControl } from "./desktop-control";
+import type { ControlState } from "./desktop-control";
 
 export const desktopKeepAwake = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -10,11 +11,13 @@ export const desktopKeepAwake = Layer.effectDiscard(
     const awake = new Map<string, () => void>();
 
     const holdAwake = (agentId: string, state: ControlState) => {
-      if (!machines) return;
+      if (!machines) {
+        return;
+      }
 
-      if (state.holder === "owner" && !awake.has(agentId))
+      if (state.holder === "owner" && !awake.has(agentId)) {
         awake.set(agentId, machines.keepAwake(agentId));
-      else if (state.holder === "bot") {
+      } else if (state.holder === "bot") {
         awake.get(agentId)?.();
         awake.delete(agentId);
       }
@@ -25,7 +28,8 @@ export const desktopKeepAwake = Layer.effectDiscard(
       (stop) => Effect.sync(stop),
     );
 
-    for (const agent of yield* (yield* AgentRepository).list)
+    for (const agent of yield* (yield* AgentRepository).list) {
       holdAwake(agent.id, yield* control.get(agent.id));
+    }
   }),
 );

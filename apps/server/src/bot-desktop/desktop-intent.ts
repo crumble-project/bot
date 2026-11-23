@@ -9,13 +9,10 @@ import { HELD_ACTION_ENTRY } from "../transcript/entries";
 import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import type { IntentGate } from "./computer-use-intent";
 import type { HeldActionsAccess } from "./held-actions";
-import {
-  checkIntent,
-  describeAction,
-  type IntentVerdict,
-  type Judge,
-} from "./intent-check";
-import { judgeModel, judgeWith, type JudgeModelRef } from "./intent-judge";
+import { checkIntent, describeAction } from "./intent-check";
+import type { IntentVerdict, Judge } from "./intent-check";
+import { judgeModel, judgeWith } from "./intent-judge";
+import type { JudgeModelRef } from "./intent-judge";
 import type { JobRequest } from "../jobs/owner-request";
 
 export type DesktopIntent = {
@@ -44,10 +41,13 @@ function holdReason(verdict: IntentVerdict, model: string | undefined) {
   const { answer, commitPoint, judgeError } = verdict;
   const floor = commitPoint ? "It looks like a commit point." : "";
 
-  if (judgeError)
+  if (judgeError) {
     return `${floor} The judge (${model}) failed: ${judgeError}`.trim();
+  }
 
-  if (!answer) return `${floor} No judge model is available.`.trim();
+  if (!answer) {
+    return `${floor} No judge model is available.`.trim();
+  }
 
   return `${floor} ${model} rated it irreversible at ${percent(answer.irreversible)} and asked for at ${percent(answer.inIntent)}.`.trim();
 }
@@ -56,8 +56,9 @@ function refusal(
   action: string,
   decision: Awaited<ReturnType<HeldActionsAccess["until"]>>,
 ) {
-  if (decision.status === "declined")
+  if (decision.status === "declined") {
     return `REFUSED: the owner declined: ${action}.${decision.reason ? ` Their reason: ${decision.reason}` : ""} Don't retry it; report what you did and what is left.`;
+  }
 
   return `REFUSED: ${action} was waiting for the owner's approval, and the wait ended without an answer. Report what you did and what is left.`;
 }
@@ -114,10 +115,16 @@ export const desktopIntentGate =
     const usage = verdict.answer?.usage;
     const spent = usage ? { usage } : {};
 
-    if (!verdict.held) return spent;
+    if (!verdict.held) {
+      return spent;
+    }
 
     const words = describeAction(action);
-    const job = request.job!;
+    const job = request.job;
+
+    if (!job) {
+      throw new Error("A held desktop action needs an owner request job");
+    }
 
     const held = await intent.held.hold({
       agentId,

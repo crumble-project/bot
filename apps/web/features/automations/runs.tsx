@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { type UseQueryResult, useQueries } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react";
 import {
@@ -26,12 +27,8 @@ import {
 import { BotAvatar } from "@/components/bot-avatar";
 import type { Bot } from "@/features/bots/api";
 import { cn } from "@/lib/utils";
-import {
-  type Execution,
-  type Schedule,
-  type ScriptRun,
-  scriptRunsQuery,
-} from "./api";
+import { scriptRunsQuery } from "./api";
+import type { Execution, Schedule, ScriptRun } from "./api";
 import { Heading, TableFrame } from "@/components/table-frame";
 
 const SCRIPT_STATUS = {
@@ -91,7 +88,10 @@ const EXECUTION_STATUS = {
 
 const RUNS_SHOWN = 100;
 
-function useRunEntries(schedules: Schedule[], executions: Execution[]) {
+function useRunEntries(
+  schedules: Array<Schedule>,
+  executions: Array<Execution>,
+) {
   const byId = new Map(schedules.map((schedule) => [schedule.id, schedule]));
   const scripts = schedules.filter((schedule) => schedule.kind === "script");
 
@@ -99,7 +99,7 @@ function useRunEntries(schedules: Schedule[], executions: Execution[]) {
     queries: scripts.map((schedule) => scriptRunsQuery(schedule.id)),
   });
 
-  const prompts = executions.flatMap((execution): RunEntry[] =>
+  const prompts = executions.flatMap((execution): Array<RunEntry> =>
     execution.scheduleId
       ? [
           {
@@ -140,13 +140,14 @@ function useRunEntries(schedules: Schedule[], executions: Execution[]) {
 }
 
 function RunStatus({ status }: { status: RunEntry["status"] }) {
-  if (status.running)
+  if (status.running) {
     return (
       <span className="flex items-center gap-1.5">
         <Spinner className="text-muted-foreground" />
         {status.label}
       </span>
     );
+  }
 
   const Icon = status.failed ? IconCircleXFilled : IconCircleCheckFilled;
 
@@ -263,21 +264,26 @@ export function RunsBody({
   schedules,
   executions,
 }: {
-  bots: Bot[];
-  schedules: Schedule[];
-  executions: UseQueryResult<Execution[]>;
+  bots: Array<Bot>;
+  schedules: Array<Schedule>;
+  executions: UseQueryResult<Array<Execution>>;
 }) {
   const navigate = useNavigate();
   const entries = useRunEntries(schedules, executions.data ?? []);
   const byId = new Map(bots.map((bot) => [bot.id, bot]));
   const [output, setOutput] = useState<RunEntry | null>(null);
 
-  if (executions.isPending) return <Skeleton className="h-40 rounded-xl" />;
+  if (executions.isPending) {
+    return <Skeleton className="h-40 rounded-xl" />;
+  }
 
-  if (executions.isError)
+  if (executions.isError) {
     return <ErrorAlert>{executions.error.message}</ErrorAlert>;
+  }
 
-  if (!entries.length) return <NoRuns />;
+  if (!entries.length) {
+    return <NoRuns />;
+  }
 
   return (
     <>
@@ -289,14 +295,18 @@ export function RunsBody({
               key={entry.id}
               entry={entry}
               bot={byId.get(entry.agentId)}
-              onOpen={() =>
-                entry.script
-                  ? setOutput(entry)
-                  : navigate({
-                      to: "/bots/$botId",
-                      params: { botId: entry.agentId },
-                    })
-              }
+              onOpen={() => {
+                if (entry.script) {
+                  setOutput(entry);
+
+                  return;
+                }
+
+                void navigate({
+                  to: "/bots/$botId",
+                  params: { botId: entry.agentId },
+                });
+              }}
             />
           ))}
         </TableBody>

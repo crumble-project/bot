@@ -25,7 +25,7 @@ export class EventConsumers extends Context.Service<
 export class EventRepository extends Context.Service<
   EventRepository,
   {
-    readonly listSources: Effect.Effect<EventSource[]>;
+    readonly listSources: Effect.Effect<Array<EventSource>>;
     readonly getSource: (id: string) => Effect.Effect<EventSource | null>;
     readonly addSource: (source: EventSource) => Effect.Effect<void>;
     readonly removeSource: (id: string) => Effect.Effect<boolean>;
@@ -93,7 +93,9 @@ export class EventRepository extends Context.Service<
               .onConflictDoNothing()
               .returning({ id: relayEvents.id });
 
-            if (rows.length === 0) return { stored: false, runs: 0 };
+            if (rows.length === 0) {
+              return { stored: false, runs: 0 };
+            }
 
             return { stored: true, runs: yield* consumers.stored(event, now) };
           }),
@@ -108,7 +110,9 @@ export class EventRepository extends Context.Service<
           .from(relayEvents)
           .where(eq(relayEvents.id, id));
 
-        if (!row) return null;
+        if (!row) {
+          return null;
+        }
         const { storedAt: _, ...event } = row;
 
         return event;
@@ -117,7 +121,9 @@ export class EventRepository extends Context.Service<
       const eventWithSource = Effect.fnUntraced(function* (id: string) {
         const record = yield* getEvent(id);
 
-        if (!record) return null;
+        if (!record) {
+          return null;
+        }
         const source = yield* getSource(record.sourceId);
 
         return { record, sourceName: source?.name ?? DELETED_SOURCE };

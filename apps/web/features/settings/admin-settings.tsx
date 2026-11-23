@@ -34,12 +34,12 @@ type Invite = z.infer<typeof invite>;
 
 const usersQuery = queryOptions({
   queryKey: ["admin", "users"],
-  queryFn: () => api<"adminUsers">("/v1/admin/users"),
+  queryFn: () => api("adminUsers", "/v1/admin/users"),
 });
 
 const invitesQuery = queryOptions({
   queryKey: ["admin", "invites"],
-  queryFn: () => api<"invites">("/v1/admin/invites"),
+  queryFn: () => api("invites", "/v1/admin/invites"),
 });
 
 const userPath = (id: string) =>
@@ -171,7 +171,7 @@ function Users() {
   const [inviting, setInviting] = useState(false);
 
   const createInvite = useMutation({
-    mutationFn: () => call<"createInvite">("/v1/admin/invites", "POST"),
+    mutationFn: () => call("createInvite", "/v1/admin/invites", "POST"),
     onSuccess: invalidateAdmin,
   });
 

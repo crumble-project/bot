@@ -12,17 +12,20 @@ const url = new URL(emulator.url);
 
 url.hostname = "127.0.0.1";
 
-console.log(JSON.stringify({ type: "ready", url: url.origin }));
+process.stdout.write(`${JSON.stringify({ type: "ready", url: url.origin })}\n`);
 
 let closing = false;
 
 const close = async () => {
-  if (closing) return;
+  if (closing) {
+    return;
+  }
+
   closing = true;
   await emulator.close();
   process.exit(0);
 };
 
-process.once("SIGINT", close);
+process.once("SIGINT", () => void close());
 
-process.once("SIGTERM", close);
+process.once("SIGTERM", () => void close());

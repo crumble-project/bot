@@ -72,7 +72,7 @@ export const activeExecution = (execution: Pick<Execution, "status">) =>
 export type CredentialTarget = { host: string; path: string };
 
 /** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
-export const hostMatches = (hosts: readonly string[], host: string) =>
+export const hostMatches = (hosts: ReadonlyArray<string>, host: string) =>
   hosts.some((pattern) =>
     pattern.startsWith("*.")
       ? host.endsWith(pattern.slice(1))

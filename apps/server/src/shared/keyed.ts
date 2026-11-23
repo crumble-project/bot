@@ -13,11 +13,15 @@ export const keyedListeners = <T = void>() => {
       return () => {
         set.delete(callback);
 
-        if (!set.size) listeners.delete(key);
+        if (!set.size) {
+          listeners.delete(key);
+        }
       };
     },
     notify: (key: string, value: T) => {
-      for (const listener of listeners.get(key) ?? []) listener(value);
+      for (const listener of listeners.get(key) ?? []) {
+        listener(value);
+      }
     },
   };
 };

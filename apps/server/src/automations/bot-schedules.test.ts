@@ -6,7 +6,10 @@ import { Forbidden } from "../shared/errors";
 import { Effect } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
 import { scheduleExtension } from "./bot-schedules";
-import { standaloneBotSchedules } from "./scheduler-test-support";
+import {
+  recordedDispatch,
+  standaloneBotSchedules,
+} from "./scheduler-test-support";
 import { Store } from "../../test/support/store";
 import { EventRepository } from "../event-sources/event-repository";
 
@@ -60,7 +63,7 @@ function setup(backend?: Workspaces) {
 
   const { service, schedules, scheduler } = standaloneBotSchedules(
     store.runtime,
-    async () => ({ id: "exec-1" }),
+    async () => ({ id: "exec-1", status: "running" }),
     undefined,
     backend,
   );
@@ -214,6 +217,8 @@ describe("bot schedules", () => {
       store.runtime,
       async (...args) => {
         calls.push(args);
+
+        return recordedDispatch;
       },
     );
 
@@ -289,7 +294,7 @@ describe("bot schedules", () => {
     expect(ran).toEqual({
       admitted: true,
       executionId: "exec-1",
-      status: null,
+      status: "running",
     });
     store.close();
   });

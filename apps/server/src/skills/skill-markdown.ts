@@ -5,8 +5,9 @@ function unquote(value: string) {
     trimmed.length >= 2 &&
     ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
       (trimmed.startsWith("'") && trimmed.endsWith("'")))
-  )
+  ) {
     return trimmed.slice(1, -1);
+  }
 
   return trimmed;
 }
@@ -15,7 +16,7 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const BLOCK_SCALAR = /^[|>][+-]?$/;
 
-function blockValue(lines: string[], start: number) {
+function blockValue(lines: Array<string>, start: number) {
   const rest = lines.slice(start);
   const end = rest.findIndex((line) => line.trim() && !/^\s/.test(line));
 
@@ -25,20 +26,26 @@ function blockValue(lines: string[], start: number) {
     .join(" ");
 }
 
-function frontmatterFields(lines: string[]) {
+function frontmatterFields(lines: Array<string>) {
   const fields = new Map<string, string>();
 
   for (const [index, line] of lines.entries()) {
     const field = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
 
-    if (!field) continue;
+    if (!field) {
+      continue;
+    }
     const raw = (field[2] ?? "").trim();
 
     const value = BLOCK_SCALAR.test(raw)
       ? blockValue(lines, index + 1)
       : unquote(raw);
 
-    if (value) fields.set(field[1]!, value);
+    const name = field[1];
+
+    if (value && name) {
+      fields.set(name, value);
+    }
   }
 
   return fields;
@@ -47,15 +54,18 @@ function frontmatterFields(lines: string[]) {
 export function parseSkillMarkdown(source: string) {
   const trimmed = source.trim();
 
-  if (!trimmed.startsWith("---\n") && !trimmed.startsWith("---\r\n"))
+  if (!trimmed.startsWith("---\n") && !trimmed.startsWith("---\r\n")) {
     return { fields: new Map<string, string>(), body: trimmed };
+  }
 
   const match = trimmed.match(FRONTMATTER);
 
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
 
   return {
-    fields: frontmatterFields(match[1]!.split(/\r?\n/)),
+    fields: frontmatterFields((match[1] ?? "").split(/\r?\n/)),
     body: trimmed.slice(match[0].length).trim(),
   };
 }

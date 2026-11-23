@@ -12,8 +12,9 @@ export const botsLookup = (context: BotsContext) => {
   const agent = Effect.fn("Bots.agent")(function* (id: string) {
     const found = yield* agents.get(id);
 
-    if (!found)
+    if (!found) {
       return yield* Effect.fail(new NotFound({ message: "Agent not found" }));
+    }
 
     return found;
   });
@@ -21,10 +22,11 @@ export const botsLookup = (context: BotsContext) => {
   const conversation = Effect.fn("Bots.conversation")(function* (id: string) {
     const found = yield* conversations.get(id);
 
-    if (!found || found.archived)
+    if (!found || found.archived) {
       return yield* Effect.fail(
         new NotFound({ message: "Conversation not found" }),
       );
+    }
 
     return { conversation: found, agent: yield* agent(found.agentId) };
   });

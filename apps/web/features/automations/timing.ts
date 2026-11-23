@@ -23,7 +23,9 @@ export function wallClock(date: Date, zone: string) {
 export function fromWallClock(local: string, zone: string) {
   const guess = new Date(`${local}:00Z`);
 
-  if (Number.isNaN(guess.getTime())) return null;
+  if (Number.isNaN(guess.getTime())) {
+    return null;
+  }
 
   let instant = guess.getTime();
 
@@ -49,7 +51,9 @@ export const finished = (schedule: Schedule) =>
 export type Status = "active" | "paused" | "completed";
 
 export const statusOf = (schedule: Schedule): Status => {
-  if (finished(schedule)) return "completed";
+  if (finished(schedule)) {
+    return "completed";
+  }
 
   return schedule.enabled ? "active" : "paused";
 };
@@ -62,15 +66,19 @@ const RANK = { active: 0, paused: 1, completed: 2 } satisfies Record<
 const nextTime = (schedule: Schedule) =>
   schedule.nextRunAt ? Date.parse(schedule.nextRunAt) : Infinity;
 
-export function listed(schedules: Schedule[]) {
+export function listed(schedules: Array<Schedule>) {
   return schedules
     .filter((schedule) => schedule.kind === "script" || !finished(schedule))
     .sort((a, b) => {
       const rank = RANK[statusOf(a)] - RANK[statusOf(b)];
 
-      if (rank) return rank;
+      if (rank) {
+        return rank;
+      }
 
-      if (nextTime(a) === nextTime(b)) return a.name.localeCompare(b.name);
+      if (nextTime(a) === nextTime(b)) {
+        return a.name.localeCompare(b.name);
+      }
 
       return nextTime(a) < nextTime(b) ? -1 : 1;
     });

@@ -25,7 +25,9 @@ export type MemoryRecord = {
 export type MemoryContext = ChangeContext;
 
 export type MemoryStore = {
-  listMemory: (agentId: string) => MemoryRecord[] | Promise<MemoryRecord[]>;
+  listMemory: (
+    agentId: string,
+  ) => Array<MemoryRecord> | Promise<Array<MemoryRecord>>;
   createMemory: (
     agentId: string,
     content: string,
@@ -53,8 +55,9 @@ type MemoryArgs = {
 };
 
 function assertMemoryEnabled(agent: Agent | null | undefined) {
-  if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.memory))
+  if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.memory)) {
     throw new Error("Memory access is disabled for this bot");
+  }
 }
 
 function createMemoryAction(
@@ -63,7 +66,9 @@ function createMemoryAction(
   args: MemoryArgs,
   context: MemoryContext,
 ) {
-  if (!args.content?.trim()) throw new Error("Memory content is required");
+  if (!args.content?.trim()) {
+    throw new Error("Memory content is required");
+  }
 
   return store.createMemory(
     agentId,
@@ -79,8 +84,9 @@ function updateMemoryAction(
   args: MemoryArgs,
   context: MemoryContext,
 ) {
-  if (!args.id || !args.content?.trim())
+  if (!args.id || !args.content?.trim()) {
     throw new Error("Memory ID and content are required");
+  }
 
   return store.updateMemory(agentId, args.id, args.content, context);
 }
@@ -91,7 +97,9 @@ async function deleteMemoryAction(
   args: MemoryArgs,
   context: MemoryContext,
 ) {
-  if (!args.id) throw new Error("Memory ID is required");
+  if (!args.id) {
+    throw new Error("Memory ID is required");
+  }
   await store.deleteMemory(agentId, args.id, context);
 
   return { deleted: true as const };
@@ -102,14 +110,18 @@ async function runMemoryAction(
   agentId: string,
   args: MemoryArgs,
   context: MemoryContext,
-): Promise<MemoryRecord[] | MemoryRecord | { deleted: true }> {
-  if (args.action === "list") return store.listMemory(agentId);
+): Promise<Array<MemoryRecord> | MemoryRecord | { deleted: true }> {
+  if (args.action === "list") {
+    return store.listMemory(agentId);
+  }
 
-  if (args.action === "create")
+  if (args.action === "create") {
     return createMemoryAction(store, agentId, args, context);
+  }
 
-  if (args.action === "update")
+  if (args.action === "update") {
     return updateMemoryAction(store, agentId, args, context);
+  }
 
   return deleteMemoryAction(store, agentId, args, context);
 }

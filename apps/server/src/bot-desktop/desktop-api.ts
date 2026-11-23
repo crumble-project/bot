@@ -1,16 +1,13 @@
-import { Effect } from "effect";
+import { types } from "node:util";
+import { Effect, Predicate } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
 import type { WSContext, WSEvents, WSMessageReceive } from "hono/ws";
-import { routes, type contractApp } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
+import type { contractApp } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { ControlState, DesktopControlAccess } from "./desktop-control";
-import {
-  bridgeDesktop,
-  VIEWER_PREFIX,
-  viewerPage,
-  type Viewer,
-  type ViewerTickets,
-} from "./desktop-viewer";
+import { bridgeDesktop, VIEWER_PREFIX, viewerPage } from "./desktop-viewer";
+import type { Viewer, ViewerTickets } from "./desktop-viewer";
 import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
@@ -40,12 +37,21 @@ const UNAVAILABLE = "The bot desktop is unavailable";
 
 const closeReason = (error: DesktopOpenError) => closeReasons[error._tag];
 
+const isBlobLike = (value: WSMessageReceive): value is Blob =>
+  Predicate.isObject(value) && Predicate.isFunction(value["arrayBuffer"]);
+
 const bytesOf = async (data: WSMessageReceive) => {
-  if (data instanceof Uint8Array) return data;
+  if (Predicate.isUint8Array(data)) {
+    return data;
+  }
 
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (types.isAnyArrayBuffer(data)) {
+    return new Uint8Array(data);
+  }
 
-  if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
+  if (isBlobLike(data)) {
+    return new Uint8Array(await data.arrayBuffer());
+  }
 
   return;
 };
@@ -67,8 +73,9 @@ function desktopAccess({ service, workspaces }: DesktopRouteOptions) {
   const desktopAgent = (id: string) => {
     const agent = service.agent(id);
 
-    if (!hasBotDesktop(agent))
+    if (!hasBotDesktop(agent)) {
       throw new Conflict({ message: "This bot has no bot desktop" });
+    }
 
     return agent;
   };
@@ -132,7 +139,7 @@ function registerViewerLinkRoute(
     const { passive = false } = c.req.valid("query");
     const { ticket, expiresAt } = tickets.issue(agent.id, passive);
 
-    if (!passive && workspaces)
+    if (!passive && workspaces) {
       run.runFork(
         workspaces
           .startDesktop(agent.id)
@@ -146,6 +153,7 @@ function registerViewerLinkRoute(
             ),
           ),
       );
+    }
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
@@ -155,14 +163,21 @@ function viewerSocket(
   { run, workspaces, control }: DesktopRouteOptions,
   { agentId, passive }: Pick<Viewer, "agentId" | "passive">,
 ): WSEvents {
-  const pending: Uint8Array[] = [];
+  const pending: Array<Uint8Array> = [];
   let bridge: ReturnType<typeof bridgeDesktop> | undefined;
   let closed = false;
 
   return {
     onOpen: (_event, ws: WSContext) => {
+      if (!workspaces) {
+        ws.close(1011, UNAVAILABLE);
+
+        return;
+      }
       const attach = (stream: DesktopStream) => {
-        if (closed) return void stream.close();
+        if (closed) {
+          return void stream.close();
+        }
 
         bridge = bridgeDesktop({
           stream,
@@ -173,14 +188,16 @@ function viewerSocket(
           close: () => ws.close(),
         });
 
-        for (const data of pending.splice(0)) bridge.receive(data);
+        for (const data of pending.splice(0)) {
+          bridge.receive(data);
+        }
       };
 
       const fail = (reason: string) =>
         Effect.sync(() => ws.close(1011, reason));
 
       run.runFork(
-        workspaces!.openDesktop(agentId, { passive }).pipe(
+        workspaces.openDesktop(agentId, { passive }).pipe(
           Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
           Effect.tapCause((cause) =>
             Effect.logError("Opening a bot desktop failed", agentId, cause),
@@ -190,13 +207,18 @@ function viewerSocket(
         ),
       );
     },
-    onMessage: async (event) => {
-      const data = await bytesOf(event.data);
+    onMessage: (event) => {
+      void bytesOf(event.data).then((data) => {
+        if (!data) {
+          return;
+        }
 
-      if (!data) return;
-
-      if (bridge) bridge.receive(data);
-      else pending.push(data);
+        if (bridge) {
+          bridge.receive(data);
+        } else {
+          pending.push(data);
+        }
+      });
     },
     onClose: () => {
       closed = true;
@@ -212,7 +234,9 @@ function registerViewerRoutes(options: DesktopRouteOptions) {
   app.get(`${VIEWER_PREFIX}/:ticket`, (c) => {
     const ticket = c.req.param("ticket");
 
-    if (!tickets.peek(ticket)) return c.notFound();
+    if (!tickets.peek(ticket)) {
+      return c.notFound();
+    }
 
     return c.html(viewerPage(ticket), 200, { "Cache-Control": "no-store" });
   });
@@ -223,7 +247,9 @@ function registerViewerRoutes(options: DesktopRouteOptions) {
       // Spent here, before the upgrade: a link opens one connection.
       const viewer = tickets.redeem(c.req.param("ticket"));
 
-      if (!viewer || !workspaces) return c.notFound();
+      if (!viewer || !workspaces) {
+        return c.notFound();
+      }
 
       viewers.set(c.req.raw, viewer);
 

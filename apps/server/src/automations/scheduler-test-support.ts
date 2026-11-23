@@ -1,15 +1,18 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { AgentRepository } from "../bot-store/agent-repository";
 import type { EventRepository } from "../event-sources/event-repository";
-import type { Execution } from "../shared/domain";
 import type { Runner } from "../shared/runner";
-import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
+import { BotWorkspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
 import { Automations } from "./automations";
-import { BotSchedules, type ScheduleDraft } from "./bot-schedules";
+import { BotSchedules } from "./bot-schedules";
+import type { ScheduleDraft } from "./bot-schedules";
 import type { ScheduleRepository } from "./schedule-repository";
-import { Scheduler, schedulerAccess, type SchedulerAccess } from "./scheduler";
+import { Scheduler, schedulerAccess } from "./scheduler";
+import type { SchedulerAccess } from "./scheduler";
 import { ScriptRuns } from "./script-runs";
 import { AutomationDispatch } from "./automation-dispatch";
+import type { DispatchedExecution } from "./automation-dispatch";
 
 type Core = Runner<ScheduleRepository | AgentRepository | EventRepository>;
 
@@ -18,7 +21,16 @@ export type StandaloneDispatch = (
   prompt: string,
   requestId: string,
   scheduleId: string,
-) => Promise<Partial<Execution> | void>;
+) => Promise<DispatchedExecution>;
+
+/**
+ * What a dispatcher reports when a test records the call without modelling an execution: the scheduler copies the id
+ * and status into its answer, and tests that assert on their own recording ignore both.
+ */
+export const recordedDispatch = {
+  id: "dispatch",
+  status: "running",
+} as const satisfies DispatchedExecution;
 
 const standaloneDependencies = (
   core: Core,
@@ -39,14 +51,7 @@ const standaloneDependencies = (
           AutomationDispatch,
           (agentId, prompt, requestId, scheduleId) =>
             Effect.tryPromise({
-              // SAFETY: test dispatchers return an Execution or nothing the scheduler reads.
-              try: async () =>
-                (await dispatch(
-                  agentId,
-                  prompt,
-                  requestId,
-                  scheduleId,
-                )) as Execution,
+              try: () => dispatch(agentId, prompt, requestId, scheduleId),
               catch: (error) => error,
             }),
         ),
@@ -80,7 +85,7 @@ export function standaloneScheduler(
 
   return {
     ...schedulerAccess(runtime),
-    service: runtime.runSync(Scheduler.use(Effect.succeed)),
+    service: runtime.runSync(Effect.flatMap(Scheduler, Effect.succeed)),
     stop: () => runtime.dispose(),
   };
 }
@@ -100,7 +105,7 @@ export function standaloneBotSchedules(
     ),
   );
 
-  const service = runtime.runSync(BotSchedules.use(Effect.succeed));
+  const service = runtime.runSync(Effect.flatMap(BotSchedules, Effect.succeed));
 
   return {
     service,

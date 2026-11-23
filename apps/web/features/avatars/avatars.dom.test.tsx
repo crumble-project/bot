@@ -1,8 +1,8 @@
+import { agentFixture } from "@/test/agent-fixture";
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { queryClient } from "@/lib/api";
 import { waitFor, waitForIdle } from "@/test/wait-for";
@@ -61,13 +61,7 @@ test("editing is locked until a pending save answers", async () => {
       async (_input: RequestInfo | URL, init?: RequestInit) =>
         init?.method === "PATCH"
           ? answer.promise
-          : Response.json([
-              {
-                id: "bot",
-                name: "Bot",
-                avatar: defaultAvatarDefinition("bot"),
-              },
-            ]),
+          : Response.json([agentFixture({ id: "bot", name: "Bot" })]),
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
@@ -128,8 +122,11 @@ test("editing is locked until a pending save answers", async () => {
     fetch.mockRestore();
 
     for (const key of GLOBALS) {
-      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
-      else Reflect.deleteProperty(globalThis, key);
+      if (globals[key]) {
+        Object.defineProperty(globalThis, key, globals[key]);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
     }
 
     window.close();

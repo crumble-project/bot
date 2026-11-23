@@ -1,15 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  type PasswordManager,
-  type PasswordManagerId,
-  type SecretStatus,
-  passwordManagersQuery,
-} from "./api";
+import { passwordManagersQuery } from "./api";
+import type { PasswordManager, PasswordManagerId, SecretStatus } from "./api";
 
 type SecretSourceDraft =
   | { kind: "value"; value: string }
@@ -34,7 +31,7 @@ const referenceOf = (draft: SecretSourceDraft) =>
       }
     : null;
 
-export function useConnectedPasswordManagers(): PasswordManager[] {
+export function useConnectedPasswordManagers(): Array<PasswordManager> {
   return (useQuery(passwordManagersQuery).data ?? []).filter(
     (manager) => manager.connected,
   );
@@ -48,7 +45,9 @@ const secretInputOf = (
   reference: NonNullable<ReturnType<typeof referenceOf>> | null,
   draft: SecretSourceDraft,
 ): SecretInput | null => {
-  if (reference) return { reference };
+  if (reference) {
+    return { reference };
+  }
 
   return draft.kind === "value" && draft.value ? { value: draft.value } : null;
 };
@@ -101,7 +100,7 @@ type SecretSourceFieldProps = {
   label: string;
   value: SecretSourceDraft;
   onChange: (next: SecretSourceDraft) => void;
-  connected: PasswordManager[];
+  connected: Array<PasswordManager>;
   valuePlaceholder?: string | undefined;
   valueDescription?: ReactNode;
   concealed?: boolean;

@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { THEMES, type Theme } from "@crumble/server/contract/user-preferences";
+import { THEMES } from "@crumble/server/contract/user-preferences";
+import type { Theme } from "@crumble/server/contract/user-preferences";
 import { authClient } from "@/lib/auth-client";
 
 /** Also read by the inline script in index.html, which applies the theme before first paint. */
@@ -28,8 +29,9 @@ export const isDark = () =>
 export function setThemeColor(color = THEME_COLOR) {
   for (const meta of document.querySelectorAll<HTMLMetaElement>(
     'meta[name="theme-color"]',
-  ))
+  )) {
     meta.content = isDark() ? color.dark : color.light;
+  }
 }
 
 function apply() {
@@ -44,7 +46,9 @@ function apply() {
 }
 
 function adopt(theme: Theme) {
-  if (theme === current) return;
+  if (theme === current) {
+    return;
+  }
 
   current = theme;
   localStorage.setItem(STORAGE_KEY, theme);
@@ -52,7 +56,9 @@ function adopt(theme: Theme) {
 }
 
 systemDark.addEventListener("change", () => {
-  if (current === "system") apply();
+  if (current === "system") {
+    apply();
+  }
 });
 
 apply();
@@ -76,6 +82,8 @@ export function useAccountTheme() {
   const theme = session.data?.user.theme;
 
   useEffect(() => {
-    if (isTheme(theme)) adopt(theme);
+    if (isTheme(theme)) {
+      adopt(theme);
+    }
   }, [theme]);
 }

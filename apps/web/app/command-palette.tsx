@@ -14,7 +14,8 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { useSidebar } from "@/components/ui/sidebar";
-import { type Bot, botsQuery } from "@/features/bots/api";
+import { botsQuery } from "@/features/bots/api";
+import type { Bot } from "@/features/bots/api";
 import { setTheme, useTheme } from "@/lib/theme";
 import { BotAvatar } from "@/components/bot-avatar";
 import { settingsSections } from "@/features/settings/sections";
@@ -22,7 +23,7 @@ import { useIsAdmin } from "@/lib/auth-client";
 import { THEME_OPTIONS, PAGES } from "./navigation";
 
 // Chat items keep their id as the value so equal names stay distinct; match them by name only.
-const filter = (value: string, search: string, keywords?: string[]) =>
+const filter = (value: string, search: string, keywords?: Array<string>) =>
   keywords?.length
     ? defaultFilter(keywords.join(" "), search)
     : defaultFilter(value, search);
@@ -40,7 +41,9 @@ function usePaletteShortcut(onToggle: () => void) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
+      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) {
+        return;
+      }
 
       event.preventDefault();
       toggle();
@@ -52,10 +55,18 @@ function usePaletteShortcut(onToggle: () => void) {
   }, []);
 }
 
-function BotCommands({ bots, run }: { bots: Bot[] | undefined; run: Run }) {
+function BotCommands({
+  bots,
+  run,
+}: {
+  bots: Array<Bot> | undefined;
+  run: Run;
+}) {
   const navigate = useNavigate();
 
-  if (!bots?.length) return null;
+  if (!bots?.length) {
+    return null;
+  }
 
   return (
     <CommandGroup heading="Bots">

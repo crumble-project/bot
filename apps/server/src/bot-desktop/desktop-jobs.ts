@@ -1,28 +1,15 @@
-import {
-  defineExtension,
-  type PromptSection,
-} from "@earendil-works/pi-durable";
+import { defineExtension } from "@earendil-works/pi-durable";
+import type { PromptSection } from "@earendil-works/pi-durable";
 import { computerUseTool } from "./computer-use";
 import type { DesktopFills } from "./computer-use-login";
 import type { DesktopControlAccess } from "./desktop-control";
-import {
-  desktopIntentGate,
-  gateCallOf,
-  type DesktopIntent,
-} from "./desktop-intent";
+import { desktopIntentGate, gateCallOf } from "./desktop-intent";
+import type { DesktopIntent } from "./desktop-intent";
 import type { Agent } from "../contract/agents";
-import {
-  jobLoginSection,
-  loginExtension,
-  loginFill,
-  type LoginsAccess,
-} from "../logins/logins";
-import {
-  defineJobKind,
-  modelRef,
-  type JobExtensions,
-  type JobKind,
-} from "../jobs/jobs";
+import { jobLoginSection, loginExtension, loginFill } from "../logins/logins";
+import type { LoginsAccess } from "../logins/logins";
+import { defineJobKind, modelRef } from "../jobs/jobs";
+import type { JobExtensions, JobKind } from "../jobs/jobs";
 import { JOB_KINDS } from "../shared/job-kinds";
 import type { CrumblePlugin } from "../plugins/plugins";
 import type { Workspaces } from "../workspaces/workspace";

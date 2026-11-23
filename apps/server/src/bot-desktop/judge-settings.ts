@@ -1,26 +1,24 @@
-import { isModelType, type AnyModel, type Models } from "@earendil-works/pi-ai";
+import { isModelType } from "@earendil-works/pi-ai";
+import type { AnyModel, Models } from "@earendil-works/pi-ai";
 import { Effect } from "effect";
 import type { Env } from "hono";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { judgeModelInput } from "../contract/agents";
+import { fallingBackTo } from "../shared/fallback-schema";
 import { InvalidInput } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
-import {
-  judgeChoices,
-  judgeModel,
-  sameRef,
-  type JudgeModelRef,
-} from "./intent-judge";
+import { judgeChoices, judgeModel, sameRef } from "./intent-judge";
+import type { JudgeModelRef } from "./intent-judge";
 
 const JUDGE_MODEL = "desktop:judge-model";
 
-const stored = judgeModelInput.shape.judgeModel
-  .unwrap()
-  .optional()
-  .catch(undefined);
+const stored = fallingBackTo(
+  judgeModelInput.shape.judgeModel.unwrap().optional(),
+  undefined,
+);
 
-export const chosenJudge = SettingsRepository.use((r) =>
+export const chosenJudge = Effect.flatMap(SettingsRepository, (r) =>
   r.get(JUDGE_MODEL),
 ).pipe(Effect.map((value): JudgeModelRef | undefined => stored.parse(value)));
 
@@ -63,12 +61,13 @@ export function registerJudgeModelRoutes(options: {
     const { judgeModel: chosen } = c.req.valid("json");
     const choices = yield* Effect.promise(() => judgeChoices(models));
 
-    if (chosen && !choices.some((model) => sameRef(model, chosen)))
+    if (chosen && !choices.some((model) => sameRef(model, chosen))) {
       return yield* Effect.fail(
         new InvalidInput({
           message: `${chosen.provider}/${chosen.model} is not a classifier model your provider keys reach`,
         }),
       );
+    }
 
     yield* SettingsRepository.use((r) =>
       chosen ? r.set(JUDGE_MODEL, chosen) : r.delete(JUDGE_MODEL),

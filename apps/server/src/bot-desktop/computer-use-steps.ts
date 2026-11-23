@@ -13,14 +13,15 @@ import {
   messageOf,
   ourNames,
   refusalOf,
-  type DriverArgs,
-  type Window,
 } from "./computer-use-driver";
-import { textResult, type ComputerUseState } from "./computer-use-state";
+import type { DriverArgs, Window } from "./computer-use-driver";
+import { textResult } from "./computer-use-state";
+import { fallingBackTo } from "../shared/fallback-schema";
+import type { ComputerUseState } from "./computer-use-state";
 
 const stepsReply = z.object({
-  steps: z
-    .array(
+  steps: fallingBackTo(
+    z.array(
       z.object({
         index: z.number(),
         tool: loose(z.string()),
@@ -30,9 +31,10 @@ const stepsReply = z.object({
         message: loose(z.string()),
         target: loose(z.object({ element: loose(z.string()) })),
       }),
-    )
-    .catch([]),
-  failed_step: z.number().nullish().catch(undefined),
+    ),
+    [],
+  ),
+  failed_step: fallingBackTo(z.number().nullish(), undefined),
   total: loose(z.number()),
   observation: loose(z.object({ state: loose(driverReply) })),
 });
@@ -102,16 +104,20 @@ const STEP_FORMS = new Map<string, StepBuilder>([
   ],
 ]);
 
-export const STEP_ACTION_NAMES: string[] = [...STEP_FORMS.keys()];
+export const STEP_ACTION_NAMES: Array<string> = [...STEP_FORMS.keys()];
 
 function stepCall(step: StepArgs): Built {
   const build = STEP_FORMS.get(step.action);
 
-  if (!build) return { invalid: `unknown step action ${step.action}` };
+  if (!build) {
+    return { invalid: `unknown step action ${step.action}` };
+  }
 
   const built = build(step, targetOf(step));
 
-  if ("invalid" in built) return built;
+  if ("invalid" in built) {
+    return built;
+  }
 
   return {
     step: {
@@ -122,14 +128,17 @@ function stepCall(step: StepArgs): Built {
   };
 }
 
-function stepCalls(steps: StepArgs[]): { steps: DriverArgs[] } | Invalid {
-  const calls: DriverArgs[] = [];
+function stepCalls(
+  steps: Array<StepArgs>,
+): { steps: Array<DriverArgs> } | Invalid {
+  const calls: Array<DriverArgs> = [];
 
   for (const [index, step] of steps.entries()) {
     const call = stepCall(step);
 
-    if ("invalid" in call)
+    if ("invalid" in call) {
       return { invalid: `step ${index + 1}: ${call.invalid}` };
+    }
 
     calls.push(call.step);
   }
@@ -142,7 +151,9 @@ type StepsReply = z.infer<typeof stepsReply>;
 const stepLine = (step: StepsReply["steps"][number]) => {
   const what = [step.tool, step.target?.element].filter(Boolean).join(" ");
 
-  if (step.ok) return `${step.index + 1} ${what}: ok`;
+  if (step.ok) {
+    return `${step.index + 1} ${what}: ok`;
+  }
 
   const why = [step.code, step.phase].filter(Boolean).join(", ");
 
@@ -160,7 +171,9 @@ function observedText(
 ) {
   const observed = result.observation?.state;
 
-  if (!observed?.snapshot_id) return [];
+  if (!observed?.snapshot_id) {
+    return [];
+  }
 
   const since = observed.since_status === "diff" ? observed.since : undefined;
 
@@ -197,9 +210,13 @@ export async function runSteps(
 ): Promise<ComputerUseResult> {
   const calls = stepCalls(args.steps ?? []);
 
-  if ("invalid" in calls) return textResult(calls.invalid, true);
+  if ("invalid" in calls) {
+    return textResult(calls.invalid, true);
+  }
 
-  if (!calls.steps.length) return textResult("steps needs steps", true);
+  if (!calls.steps.length) {
+    return textResult("steps needs steps", true);
+  }
 
   const { reply } = await driverCall(
     state,
@@ -216,11 +233,12 @@ export async function runSteps(
 
   const result = stepsReply.parse(reply);
 
-  if (!result.steps.length && refusalOf(reply))
+  if (!result.steps.length && refusalOf(reply)) {
     return textResult(
       `REFUSED: ${ourNames(messageOf(reply) ?? "steps failed")}`,
       true,
     );
+  }
 
   return report(state, result, args, target);
 }

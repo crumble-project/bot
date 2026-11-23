@@ -7,12 +7,11 @@ import {
   GUEST_SIGN_PATH,
   signingHelper,
 } from "./commit-signing";
-import {
-  credentialAuthoritiesAccess,
-  type CredentialAuthorities,
-} from "./credential-authority";
+import { credentialAuthoritiesAccess } from "./credential-authority";
+import type { CredentialAuthorities } from "./credential-authority";
 import { credentialProxy } from "./credential-proxy";
-import { credentialsAccess, type Credentials } from "./credentials";
+import { credentialsAccess } from "./credentials";
+import type { Credentials } from "./credentials";
 import { CredentialSource } from "./minted-credentials";
 
 const either = (
@@ -31,7 +30,7 @@ export const credentialInterception = (
 ) => {
   const credentials = credentialsAccess(run);
   const authorities = credentialAuthoritiesAccess(run);
-  const source = run.runSync(CredentialSource.use(Effect.succeed));
+  const source = run.runSync(Effect.flatMap(CredentialSource, Effect.succeed));
 
   return {
     guest: async (agentId: string) => ({

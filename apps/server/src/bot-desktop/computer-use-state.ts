@@ -75,7 +75,9 @@ export const currentPage = (state: ComputerUseState) =>
 
 /** A page's host without its port, as logins name hosts. Undefined for a URL without one. */
 export function pageHost(url: string | undefined) {
-  if (!url || !URL.canParse(url)) return;
+  if (!url || !URL.canParse(url)) {
+    return;
+  }
 
   return new URL(url).hostname || undefined;
 }
@@ -91,19 +93,25 @@ export const textResult = (
 export function scrubText(state: ComputerUseState, text: string) {
   const labels = new Map<string, string>();
 
-  for (const [value, label] of state.filled)
-    for (const form of [value, JSON.stringify(value).slice(1, -1)])
-      if (form) labels.set(form, label);
+  for (const [value, label] of state.filled) {
+    for (const form of [value, JSON.stringify(value).slice(1, -1)]) {
+      if (form) {
+        labels.set(form, label);
+      }
+    }
+  }
 
-  if (!labels.size) return text;
+  if (!labels.size) {
+    return text;
+  }
 
   const pattern = new RegExp(
     [...labels.keys()]
       .sort((a, b) => b.length - a.length)
-      .map((form) => form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .map((form) => form.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`))
       .join("|"),
     "g",
   );
 
-  return text.replace(pattern, (form) => labels.get(form) ?? form);
+  return text.replaceAll(pattern, (form) => labels.get(form) ?? form);
 }

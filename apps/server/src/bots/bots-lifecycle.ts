@@ -27,18 +27,22 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
     );
 
     // Cancelled before the runtime stops, so the aborted wait doesn't record the runs as failed first.
-    for (const execution of running)
+    for (const execution of running) {
       yield* record(execution, { status: "cancelled" });
+    }
 
     yield* pi(() => runtime.abort(owner, conversationId));
     yield* changed(conversationId);
 
-    for (const execution of running) yield* settled(execution.id);
+    for (const execution of running) {
+      yield* settled(execution.id);
+    }
   });
 
   const stopAgent = Effect.fn("Bots.stopAgent")(function* (agentId: string) {
-    for (const each of yield* conversations.list(agentId))
+    for (const each of yield* conversations.list(agentId)) {
       yield* abort(each.id);
+    }
   });
 
   const abortChat = (agentId: string) =>
@@ -54,10 +58,11 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
   });
 
   const recover = Effect.gen(function* () {
-    for (const execution of yield* executions.active())
+    for (const execution of yield* executions.active()) {
       yield* admit(execution).pipe(
         logged("Execution recovery failed", execution.id),
       );
+    }
   });
 
   const deleteAgent = Effect.fn("Bots.deleteAgent")(function* (id: string) {

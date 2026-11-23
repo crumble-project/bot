@@ -48,9 +48,13 @@ export type AttachmentInfo = {
 export function attachmentKind(
   mimeType: string,
 ): AttachmentInfo["kind"] | null {
-  if (IMAGE_TYPES.has(mimeType)) return "image";
+  if (IMAGE_TYPES.has(mimeType)) {
+    return "image";
+  }
 
-  if (mimeType.startsWith("text/") || TEXT_TYPES.has(mimeType)) return "text";
+  if (mimeType.startsWith("text/") || TEXT_TYPES.has(mimeType)) {
+    return "text";
+  }
 
   return null;
 }

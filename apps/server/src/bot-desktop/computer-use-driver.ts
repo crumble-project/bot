@@ -6,11 +6,8 @@ import {
   DESKTOP_ENV_FILE,
 } from "../../workspace-image/guest";
 import type { DesktopShell } from "./computer-use";
-import {
-  forgetScreen,
-  scrubText,
-  type ComputerUseState,
-} from "./computer-use-state";
+import { forgetScreen, scrubText } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
 // cua-driver ends idle sessions; a call on an ended one is rejected with this message.
@@ -84,7 +81,7 @@ type DriverValue =
   | string
   | number
   | boolean
-  | DriverValue[]
+  | Array<DriverValue>
   | { [key: string]: DriverValue };
 
 export type DriverArgs = Record<string, DriverValue>;
@@ -94,7 +91,9 @@ function parseReply(state: ComputerUseState, output: string): DriverReply {
   try {
     const parsed = driverReply.safeParse(JSON.parse(output));
 
-    if (parsed.success) return parsed.data;
+    if (parsed.success) {
+      return parsed.data;
+    }
   } catch {
     // Not JSON: cua-driver printed an error.
   }
@@ -111,13 +110,15 @@ function parseReply(state: ComputerUseState, output: string): DriverReply {
 
 // Chromium names container panels with U+FFFC placeholders and gives every node showContextMenu: tokens, no meaning.
 export const compactTree = (tree: string) =>
-  tree.replace(/￼+/g, "").replace(/,showContextMenu|showContextMenu,?/g, "");
+  tree
+    .replaceAll(/￼+/g, "")
+    .replaceAll(/,showContextMenu|showContextMenu,?/g, "");
 
 // cua-driver's hints sometimes name its own tools (run_steps, get_window_state); keep only advice that fits ours.
 export const ourNames = (text: string) =>
   text
-    .replace(/get_window_state/g, "capture")
-    .replace(/get_browser_state/g, "read");
+    .replaceAll("get_window_state", "capture")
+    .replaceAll("get_browser_state", "read");
 
 export const cleanHint = (hint = "") =>
   ourNames(hint.replace(/\s*Three single actions in a row:.*$/s, "")).trim();
@@ -165,7 +166,9 @@ export async function sh(
     context,
   );
 
-  if (!result.ok) throw result.error;
+  if (!result.ok) {
+    throw result.error;
+  }
 
   return output;
 }
@@ -179,7 +182,9 @@ export async function driverCall(
 ) {
   const first = await callDriver(state, tool, args, context, screenshot);
 
-  if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) return first;
+  if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) {
+    return first;
+  }
 
   await callDriver(state, "start_session", {}, context, false);
   forgetScreen(state);
@@ -212,7 +217,9 @@ async function callDriver(
     ),
   );
 
-  if (!screenshot) return { reply };
+  if (!screenshot) {
+    return { reply };
+  }
 
   try {
     const converted = await state.shell.exec(
@@ -221,7 +228,9 @@ async function callDriver(
       context,
     );
 
-    if (!converted.ok || converted.value.exitCode !== 0) return { reply };
+    if (!converted.ok || converted.value.exitCode !== 0) {
+      return { reply };
+    }
 
     const image = await state.shell.readBinaryFile(jpg, context);
 
@@ -239,8 +248,9 @@ const DESKTOP_CHROME = new Set(DESKTOP_CHROME_APPS);
 export async function listWindows(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_windows", {}, context);
 
-  if (!reply.windows && refusalOf(reply))
+  if (!reply.windows && refusalOf(reply)) {
     throw new Error(messageOf(reply) ?? codeOf(reply) ?? "list_windows failed");
+  }
 
   return (reply.windows ?? []).filter(
     (each) => !DESKTOP_CHROME.has(each.app_name.toLowerCase()),
@@ -257,7 +267,9 @@ export async function targetWindow(
   if (windowId !== undefined) {
     const found = list.find((each) => each.window_id === windowId);
 
-    if (!found) throw new Error(`no window ${windowId}; call list_windows`);
+    if (!found) {
+      throw new Error(`no window ${windowId}; call list_windows`);
+    }
 
     return found;
   }
@@ -270,7 +282,9 @@ export async function targetWindow(
 
   const found = list.find((each) => each.window_id === active) ?? list[0];
 
-  if (!found) throw new Error("no windows are open");
+  if (!found) {
+    throw new Error("no windows are open");
+  }
 
   return found;
 }

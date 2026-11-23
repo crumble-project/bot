@@ -2,13 +2,19 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import fs, { open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Context, Data, Effect, Layer, Semaphore } from "effect";
+import { Context, Data, Effect, Layer, Predicate, Semaphore } from "effect";
 import { NotFound } from "../shared/errors";
 import { LibraryRepository } from "./library-repository";
 
 export class FileTooLarge extends Data.TaggedError("FileTooLarge")<{
   limit: number;
 }> {}
+
+/** A `FileTooLarge` thrown inside a stream, recognised by its tag rather than by `instanceof`. */
+const isFileTooLarge = (value: unknown): value is FileTooLarge =>
+  Predicate.isTagged(value, "FileTooLarge") &&
+  Predicate.hasProperty(value, "limit") &&
+  Predicate.isNumber(value.limit);
 
 export class FileStore extends Context.Service<
   FileStore,
@@ -45,8 +51,9 @@ export class FileStore extends Context.Service<
         const lock = Semaphore.makeUnsafe(1);
 
         const pathOf = (hash: string) => {
-          if (!/^[a-f0-9]{64}$/.test(hash))
+          if (!/^[a-f0-9]{64}$/.test(hash)) {
             throw new Error("Invalid file hash");
+          }
 
           return join(directory, hash);
         };
@@ -78,12 +85,18 @@ export class FileStore extends Context.Service<
                       while (true) {
                         const chunk = await reader.read();
 
-                        if (signal.aborted) throw signal.reason;
+                        if (signal.aborted) {
+                          throw signal.reason;
+                        }
 
-                        if (chunk.done) break;
+                        if (chunk.done) {
+                          break;
+                        }
                         size += chunk.value.byteLength;
 
-                        if (size > limit) throw new FileTooLarge({ limit });
+                        if (size > limit) {
+                          throw new FileTooLarge({ limit });
+                        }
                         digest.update(chunk.value);
                         let offset = 0;
 
@@ -109,7 +122,9 @@ export class FileStore extends Context.Service<
                   }
                 })()),
               catch: (cause) => {
-                if (cause instanceof FileTooLarge) return cause;
+                if (isFileTooLarge(cause)) {
+                  return cause;
+                }
                 throw cause;
               },
             }).pipe(
@@ -117,7 +132,9 @@ export class FileStore extends Context.Service<
                 Effect.promise(async () => {
                   try {
                     await pending;
-                  } catch {}
+                  } catch {
+                    // The read already failed; this only waits for it to settle.
+                  }
                 }),
               ),
             );
@@ -145,8 +162,9 @@ export class FileStore extends Context.Service<
         const bytes = Effect.fn("FileStore.bytes")(function* (hash: string) {
           const file = Bun.file(pathOf(hash));
 
-          if (!(yield* Effect.promise(() => file.exists())))
+          if (!(yield* Effect.promise(() => file.exists()))) {
             return yield* new NotFound({ message: "File not found" });
+          }
 
           return file.stream();
         });
@@ -160,7 +178,9 @@ export class FileStore extends Context.Service<
 
         const removeUnreferenced = Effect.fn("FileStore.removeUnreferenced")(
           function* (hash: string) {
-            if (yield* repository.referenced(hash)) return;
+            if (yield* repository.referenced(hash)) {
+              return;
+            }
             yield* Effect.promise(() =>
               Promise.all([
                 fs.rm(pathOf(hash), { force: true }),

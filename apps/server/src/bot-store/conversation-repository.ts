@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { nowIso } from "../shared/time";
 import { conversations } from "./schema";
 
@@ -31,7 +32,7 @@ export class ConversationRepository extends Context.Service<
     readonly list: (
       agentId?: string,
       includeArchived?: boolean,
-    ) => Effect.Effect<Conversation[]>;
+    ) => Effect.Effect<Array<Conversation>>;
     readonly get: (
       conversationId: string,
     ) => Effect.Effect<Conversation | null>;
@@ -112,12 +113,17 @@ export class ConversationRepository extends Context.Service<
           updatedAt: at,
         });
 
-        return (yield* get(conversationId))!;
+        return required(
+          yield* get(conversationId),
+          "The conversation was not stored",
+        );
       }, Effect.orDie);
 
       const setArchived = Effect.fn("ConversationRepository.setArchived")(
         function* (conversationId: string, archived: boolean) {
-          if (!(yield* get(conversationId))) return null;
+          if (!(yield* get(conversationId))) {
+            return null;
+          }
 
           yield* db
             .update(conversations)

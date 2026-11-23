@@ -2,11 +2,118 @@
  * Bundled into the chart sandbox, never imported by the server. It exposes the authoring API to rewritten imports and
  * flattens compiled scenes into the primitive list clients draw. The server validates what it emits (`chartLayout`).
  */
-import * as core from "@tanstack/charts";
+import {
+  areaX,
+  areaY,
+  arrow,
+  bandX,
+  bandY,
+  barX,
+  barY,
+  binTimeX,
+  binTimeY,
+  binX,
+  binXY,
+  binY,
+  boxRows,
+  boxX,
+  boxY,
+  cell,
+  colorGradientLegend,
+  colorLegend,
+  colorLegendItems,
+  compositeMark,
+  createChartAdapter,
+  createChartRendererAdapter,
+  createChartRuntime,
+  createChartScene,
+  createDotLayout,
+  createMark,
+  crosshair,
+  cumulative,
+  d3AreaXCurve,
+  d3Curve,
+  defaultChartTheme,
+  defineChart,
+  delta,
+  deviation,
+  differenceX,
+  differenceY,
+  dodgeX,
+  dodgeY,
+  dot,
+  facet,
+  facetChart,
+  findNearestPoint,
+  first,
+  focusedSceneNodes,
+  fold,
+  frame,
+  group,
+  groupBy,
+  hexagon,
+  isResponsiveChartDefinition,
+  last,
+  lineX,
+  lineY,
+  linearRegressionRowsX,
+  linearRegressionRowsY,
+  linearRegressionX,
+  linearRegressionY,
+  link,
+  median,
+  mosaicX,
+  mosaicY,
+  mountChart,
+  normalize,
+  quantile,
+  rank,
+  ratio,
+  rect,
+  renderChartSvg,
+  resolveChartAdapterLayout,
+  resolveFocusPresentation,
+  resolveFocusScene,
+  ridgelineX,
+  ridgelineY,
+  rollingWindow,
+  ruleX,
+  ruleY,
+  select,
+  stack,
+  stackRowsX,
+  stackRowsY,
+  text,
+  tickX,
+  tickY,
+  variance,
+  vector,
+  viewportInteractionPoints,
+  violinX,
+  violinY,
+  waffleX,
+  waffleY,
+  waterfall,
+  whenFocused,
+} from "@tanstack/charts";
 import { sunburst } from "@tanstack/charts/hierarchy/sunburst";
 import { treemap } from "@tanstack/charts/hierarchy/treemap";
 import { sankeyDiagram } from "@tanstack/charts/network/sankey";
-import * as polar from "@tanstack/charts/polar";
+import {
+  angleGrid,
+  focusGroupAngle,
+  pie,
+  polar,
+  radialArc,
+  radialArea,
+  radialBarAngle,
+  radialBarRadius,
+  radialDot,
+  radialGrid,
+  radialLine,
+  radialRule,
+  radialText,
+} from "@tanstack/charts/polar";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scaleOrdinal } from "@tanstack/charts/scales/ordinal";
@@ -66,9 +173,117 @@ const theme = {
   ),
 };
 
+/**
+ * The authoring API a chart may import: every value the bundled modules export, plus the compact scales and the
+ * tooltip. Naming each entry keeps the sandbox surface deliberate; a new export to offer is imported and added here.
+ */
 const charts = {
-  ...core,
-  ...polar,
+  areaX,
+  areaY,
+  arrow,
+  bandX,
+  bandY,
+  barX,
+  barY,
+  binTimeX,
+  binTimeY,
+  binX,
+  binXY,
+  binY,
+  boxRows,
+  boxX,
+  boxY,
+  cell,
+  colorGradientLegend,
+  colorLegend,
+  colorLegendItems,
+  compositeMark,
+  createChartAdapter,
+  createChartRendererAdapter,
+  createChartRuntime,
+  createChartScene,
+  createDotLayout,
+  createMark,
+  crosshair,
+  cumulative,
+  d3AreaXCurve,
+  d3Curve,
+  defaultChartTheme,
+  defineChart,
+  delta,
+  deviation,
+  differenceX,
+  differenceY,
+  dodgeX,
+  dodgeY,
+  dot,
+  facet,
+  facetChart,
+  findNearestPoint,
+  first,
+  focusedSceneNodes,
+  fold,
+  frame,
+  group,
+  groupBy,
+  hexagon,
+  isResponsiveChartDefinition,
+  last,
+  lineX,
+  lineY,
+  linearRegressionRowsX,
+  linearRegressionRowsY,
+  linearRegressionX,
+  linearRegressionY,
+  link,
+  median,
+  mosaicX,
+  mosaicY,
+  mountChart,
+  normalize,
+  quantile,
+  rank,
+  ratio,
+  rect,
+  renderChartSvg,
+  resolveChartAdapterLayout,
+  resolveFocusPresentation,
+  resolveFocusScene,
+  ridgelineX,
+  ridgelineY,
+  rollingWindow,
+  ruleX,
+  ruleY,
+  select,
+  stack,
+  stackRowsX,
+  stackRowsY,
+  text,
+  tickX,
+  tickY,
+  variance,
+  vector,
+  viewportInteractionPoints,
+  violinX,
+  violinY,
+  waffleX,
+  waffleY,
+  waterfall,
+  whenFocused,
+  angleGrid,
+  focusGroupAngle,
+  pie,
+  polar,
+  radialArc,
+  radialArea,
+  radialBarAngle,
+  radialBarRadius,
+  radialDot,
+  radialGrid,
+  radialLine,
+  radialRule,
+  radialText,
+
   treemap,
   sunburst,
   sankeyDiagram,
@@ -101,15 +316,21 @@ const dashOf = (
   strokeDasharray: SceneStyle["strokeDasharray"],
   parent: Paint["dash"],
 ): Paint["dash"] => {
-  if (strokeDasharray === undefined) return parent;
+  if (strokeDasharray === undefined) {
+    return parent;
+  }
 
-  if (strokeDasharray === "none") return undefined;
+  if (strokeDasharray === "none") {
+    return undefined;
+  }
 
   return strokeDasharray.split(/[\s,]+/).map(Number);
 };
 
 function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
-  if (!style) return parent;
+  if (!style) {
+    return parent;
+  }
 
   // SVG paint inherits into children; group opacity composites, which multiplying approximates for chart marks.
   return {
@@ -125,8 +346,8 @@ function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
   };
 }
 
-function pathCommands(d: string, dx: number, dy: number): Command[] {
-  const commands: Command[] = [];
+function pathCommands(d: string, dx: number, dy: number): Array<Command> {
+  const commands: Array<Command> = [];
 
   svgpath(d)
     .abs()
@@ -134,7 +355,6 @@ function pathCommands(d: string, dx: number, dy: number): Command[] {
     .unarc()
     .translate(dx, dy)
     .iterate((segment, _index, x, y) => {
-      // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- abs(), unshort(), and unarc() leave only the cases below.
       switch (segment[0]) {
         case "M":
         case "L":
@@ -182,18 +402,20 @@ function pathCommands(d: string, dx: number, dy: number): Command[] {
 }
 
 function ring(
-  points: readonly (readonly [number, number])[],
+  points: ReadonlyArray<readonly [number, number]>,
   dx: number,
   dy: number,
   closed: boolean,
-): Command[] {
-  const commands: Command[] = points.map(([x, y], index) => [
+): Array<Command> {
+  const commands: Array<Command> = points.map(([x, y], index) => [
     index === 0 ? "M" : "L",
     round(x + dx),
     round(y + dy),
   ]);
 
-  if (closed && commands.length) commands.push(["Z"]);
+  if (closed && commands.length) {
+    commands.push(["Z"]);
+  }
 
   return commands;
 }
@@ -203,8 +425,8 @@ function roundedRect(
   y: number,
   width: number,
   height: number,
-  radii: readonly number[],
-): Command[] {
+  radii: ReadonlyArray<number>,
+): Array<Command> {
   const limit = Math.min(width, height) / 2;
 
   const [tl = 0, tr = 0, br = 0, bl = 0] = radii.map((radius) =>
@@ -292,13 +514,14 @@ function polylinePrimitive(
   };
 }
 
-function areaCommands(node: NodeOf<"area">, place: Placement): Command[] {
+function areaCommands(node: NodeOf<"area">, place: Placement): Array<Command> {
   const { dx, dy } = place;
 
-  if (node.polygons)
+  if (node.polygons) {
     return node.polygons.flatMap((polygon) =>
       polygon.flatMap((rings) => ring(rings, dx, dy, true)),
     );
+  }
 
   return node.path
     ? pathCommands(node.path, dx, dy)
@@ -349,7 +572,7 @@ function rectPrimitive(
   const { dx, dy, clip } = place;
   const radii = unevenCorners(node);
 
-  if (radii)
+  if (radii) {
     return {
       kind: "path",
       commands: roundedRect(
@@ -362,6 +585,7 @@ function rectPrimitive(
       ...paint,
       clip,
     };
+  }
 
   return {
     kind: "rect",
@@ -400,7 +624,9 @@ function textPrimitive(
 function primitive(node: SceneNode, place: Placement): Primitive | undefined {
   const paint = inherit(place.paint, node.style);
 
-  if (paint.opacity === 0) return undefined;
+  if (paint.opacity === 0) {
+    return undefined;
+  }
 
   switch (node.kind) {
     case "rule":
@@ -420,17 +646,21 @@ function primitive(node: SceneNode, place: Placement): Primitive | undefined {
   }
 }
 
-function flatten(node: SceneNode, place: Placement, out: Primitive[]) {
+function flatten(node: SceneNode, place: Placement, out: Array<Primitive>) {
   if (node.kind !== "group") {
     const drawn = primitive(node, place);
 
-    if (drawn) out.push(drawn);
+    if (drawn) {
+      out.push(drawn);
+    }
 
     return;
   }
 
   // Focus layers paint only for the focused point; clients draw their own hover marker instead.
-  if (node.focus || node.className?.includes("focus-layer")) return;
+  if (node.focus || node.className?.includes("focus-layer")) {
+    return;
+  }
   const dx = place.dx + (node.translateX ?? 0);
   const dy = place.dy + (node.translateY ?? 0);
 
@@ -445,7 +675,9 @@ function flatten(node: SceneNode, place: Placement, out: Primitive[]) {
 
   const next = { dx, dy, clip, paint: inherit(place.paint, node.style) };
 
-  for (const child of node.children) flatten(child, next, out);
+  for (const child of node.children) {
+    flatten(child, next, out);
+  }
 }
 
 function tooltipContent(
@@ -455,7 +687,9 @@ function tooltipContent(
 ) {
   const content = createChartTooltipContent([point], scene, false, options);
 
-  if (!(content instanceof Object)) return content;
+  if (typeof content !== "object" || content === null) {
+    return content;
+  }
 
   return {
     ...content,
@@ -474,20 +708,21 @@ function tooltipOptions(
 
 function compile(
   definition: ChartDefinition | undefined,
-  widths: number[],
+  widths: Array<number>,
   height: number,
-): ChartLayoutInput[] {
-  if (!definition)
+): Array<ChartLayoutInput> {
+  if (!definition) {
     throw new Error("Export the chart: export default defineChart({...}).");
-  const runtime = core.createChartRuntime({ defaultTheme: theme });
+  }
+  const runtime = createChartRuntime({ defaultTheme: theme });
   const options = tooltipOptions(definition);
 
-  const layouts: ChartLayoutInput[] = [];
-  const errors: unknown[] = [];
+  const layouts: Array<ChartLayoutInput> = [];
+  const errors: Array<unknown> = [];
 
   try {
     // A width the library cannot lay out is dropped; clients scale another layout to fit.
-    for (const width of widths)
+    for (const width of widths) {
       try {
         layouts.push(
           layout(runtime.render(definition, { width, height }), options),
@@ -495,11 +730,14 @@ function compile(
       } catch (error) {
         errors.push(error);
       }
+    }
   } finally {
     runtime.destroy();
   }
 
-  if (!layouts.length) throw errors[0];
+  if (!layouts.length) {
+    throw errors[0];
+  }
 
   return layouts;
 }
@@ -508,10 +746,11 @@ function layout(
   scene: ChartScene,
   options: ChartTooltipOptions | undefined,
 ): ChartLayoutInput {
-  const nodes: Primitive[] = [];
+  const nodes: Array<Primitive> = [];
 
-  for (const node of scene.nodes)
+  for (const node of scene.nodes) {
     flatten(node, { dx: 0, dy: 0, paint: {} }, nodes);
+  }
 
   return {
     width: scene.width,
@@ -526,13 +765,14 @@ function layout(
   };
 }
 
-function importNames(names: string[]) {
+function importNames(names: Array<string>) {
   const missing = names.filter((name) => !(name in charts));
 
-  if (missing.length)
+  if (missing.length) {
     throw new Error(
       `${missing.join(", ")} not available. Crumble charts bundle @tanstack/charts (root, polar, treemap, sunburst, sankey, compact scales, tooltip) and d3-scale (scaleUtc, scaleTime, scaleLog, scaleSqrt).`,
     );
+  }
 
   return charts;
 }

@@ -5,9 +5,8 @@ import {
   PasswordManagerUnreachable,
   PasswordManagerUnsupported,
   SecretUnreadable,
-  type PasswordManagerVendor,
-  type SecretRead,
 } from "./password-manager";
+import type { PasswordManagerVendor, SecretRead } from "./password-manager";
 
 const NAME = "Bitwarden";
 

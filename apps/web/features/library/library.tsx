@@ -1,4 +1,5 @@
-import { useRef, useState, type DragEvent, type RefObject } from "react";
+import { useRef, useState } from "react";
+import type { DragEvent, RefObject } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -23,8 +24,10 @@ import { ErrorAlert, Page } from "@/components/page";
 import { apiRaw, bodyOf, queryClient } from "@/lib/api";
 import { agentPath, botsQuery } from "@/features/bots/api";
 import { MAX_FILE_BYTES } from "@crumble/server/contract/limits";
-import { uploadFile, useFileDownload, type LibraryFile } from "./api";
-import { type FileActions, FileGrid, FileTable } from "./files-view";
+import { uploadFile, useFileDownload } from "./api";
+import type { LibraryFile } from "./api";
+import { FileGrid, FileTable } from "./files-view";
+import type { FileActions } from "./files-view";
 
 const PAGE_SIZE = 50;
 const VIEW_KEY = "library-view";
@@ -46,9 +49,9 @@ function useView() {
 
 function useUploads(path: string) {
   const [pending, setPending] = useState(0);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<Array<string>>([]);
 
-  const upload = (files: File[]) => {
+  const upload = (files: Array<File>) => {
     const accepted = files.filter((file) => file.size <= MAX_FILE_BYTES);
 
     setErrors(
@@ -127,7 +130,7 @@ function UploadButton({
   pickerRef: RefObject<HTMLInputElement | null>;
   pending: number;
   visible: boolean;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: Array<File>) => void;
 }) {
   return (
     <>
@@ -185,14 +188,15 @@ function LibraryFiles({
   actions,
   onUpload,
 }: {
-  files: LibraryFile[];
+  files: Array<LibraryFile>;
   loaded: boolean;
   view: View;
   actions: FileActions;
   onUpload: () => void;
 }) {
-  if (files.length === 0)
+  if (files.length === 0) {
     return loaded ? <LibraryEmpty onUpload={onUpload} /> : null;
+  }
 
   return view === "grid" ? (
     <FileGrid files={files} actions={actions} />
@@ -201,34 +205,44 @@ function LibraryFiles({
   );
 }
 
-function useDropZone(onDrop: (files: File[]) => void) {
+const hasFiles = (event: DragEvent) =>
+  event.dataTransfer.types.includes("Files");
+
+function useDropZone(onDrop: (files: Array<File>) => void) {
   const depth = useRef(0);
   const [over, setOver] = useState(false);
-
-  const hasFiles = (event: DragEvent) =>
-    event.dataTransfer.types.includes("Files");
 
   return {
     over,
     handlers: {
       onDragEnter: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
+        if (!hasFiles(event)) {
+          return;
+        }
 
         depth.current += 1;
         setOver(true);
       },
       onDragLeave: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
+        if (!hasFiles(event)) {
+          return;
+        }
 
         depth.current -= 1;
 
-        if (depth.current === 0) setOver(false);
+        if (depth.current === 0) {
+          setOver(false);
+        }
       },
       onDragOver: (event: DragEvent) => {
-        if (hasFiles(event)) event.preventDefault();
+        if (hasFiles(event)) {
+          event.preventDefault();
+        }
       },
       onDrop: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
+        if (!hasFiles(event)) {
+          return;
+        }
 
         event.preventDefault();
         depth.current = 0;
@@ -249,11 +263,13 @@ function useLibraryFiles(id: string, path: string) {
     queryFn: async ({ pageParam, signal }) => {
       const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
 
-      if (pageParam) query.set("before", pageParam);
+      if (pageParam) {
+        query.set("before", pageParam);
+      }
 
       const response = await apiRaw(`${path}?${query}`, { signal });
 
-      return bodyOf<"listFiles">(response);
+      return bodyOf("listFiles", response);
     },
     getNextPageParam: (page) =>
       page.length === PAGE_SIZE ? page.at(-1)?.id : undefined,

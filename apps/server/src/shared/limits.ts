@@ -1,8 +1,8 @@
 // Contract `maxLength`s and tool schemas read these: a new value is a wire change.
 
-export const MAX_MESSAGE_CHARS = 32000;
-export const MAX_MEMORY_CHARS = 32000;
-export const MAX_INSTRUCTIONS_CHARS = 32000;
+export const MAX_MESSAGE_CHARS = 32_000;
+export const MAX_MEMORY_CHARS = 32_000;
+export const MAX_INSTRUCTIONS_CHARS = 32_000;
 export const MESSAGE_PREVIEW_CHARS = 240;
 
 export const MAX_BOT_NAME_CHARS = 80;
@@ -28,7 +28,7 @@ export const MAX_EVENT_SOURCE_ID_CHARS = 200;
 
 export const MAX_SKILL_NAME_CHARS = 100;
 export const MAX_SKILL_DESCRIPTION_CHARS = 300;
-export const MAX_SKILL_DOCUMENT_CHARS = 64000;
+export const MAX_SKILL_DOCUMENT_CHARS = 64_000;
 export const MAX_SKILL_DOCUMENTS = 20;
 export const MAX_SKILL_DOCUMENT_PATH_CHARS = 200;
 
@@ -37,7 +37,7 @@ export const MAX_SKILL_FILE_BYTES = 512 * 1024;
 export const MAX_CREDENTIAL_NAME_CHARS = 64;
 export const MAX_CREDENTIAL_HOST_CHARS = 253;
 export const MAX_CREDENTIAL_HOSTS = 20;
-export const MAX_SECRET_CHARS = 16000;
+export const MAX_SECRET_CHARS = 16_000;
 
 export const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;

@@ -9,11 +9,16 @@ type Conversation = { id: string };
 
 export const botPin = (id: string) => `agent:${id}`;
 
-const savedPins = pinnedConversations.catch([]);
+/** A stored list that is missing or invalid pins nothing. */
+const savedPins = (stored: unknown) => {
+  const parsed = pinnedConversations.safeParse(stored);
+
+  return parsed.success ? parsed.data : [];
+};
 
 export type Pins = {
   /** The pinned conversations that exist, first pin first. */
-  pinned: string[];
+  pinned: Array<string>;
   /** False until the bots load; until then every change is refused. */
   ready: boolean;
   isPinned: (key: string) => boolean;
@@ -28,11 +33,11 @@ export type Pins = {
  * list, one write at a time; afterwards the session's list takes over again,
  * which also rolls back a failed write.
  */
-export function usePins(bots: Conversation[] | undefined): Pins {
+export function usePins(bots: Array<Conversation> | undefined): Pins {
   const session = authClient.useSession();
-  const [wanted, setWanted] = useState<string[] | null>(null);
+  const [wanted, setWanted] = useState<Array<string> | null>(null);
 
-  const writes = useRef<{ next: string[] | null; running: boolean }>({
+  const writes = useRef<{ next: Array<string> | null; running: boolean }>({
     next: null,
     running: false,
   });
@@ -49,7 +54,7 @@ export function usePins(bots: Conversation[] | undefined): Pins {
   const existing = new Set((bots ?? []).map(({ id }) => botPin(id)));
 
   const pinned = (
-    wanted ?? savedPins.parse(session.data?.user.pinnedConversations)
+    wanted ?? savedPins(session.data?.user.pinnedConversations)
   ).filter((key) => existing.has(key));
 
   async function save() {
@@ -74,11 +79,13 @@ export function usePins(bots: Conversation[] | undefined): Pins {
     setWanted(null);
   }
 
-  function change(next: string[]) {
+  function change(next: Array<string>) {
     setWanted(next);
     writes.current.next = next;
 
-    if (!writes.current.running) void save();
+    if (!writes.current.running) {
+      void save();
+    }
   }
 
   const isPinned = (key: string) => pinned.includes(key);
@@ -92,14 +99,19 @@ export function usePins(bots: Conversation[] | undefined): Pins {
     isPinned,
     canPin,
     pin: (key) => {
-      if (canPin(key)) change([...pinned, key]);
+      if (canPin(key)) {
+        change([...pinned, key]);
+      }
     },
     unpin: (key) => {
-      if (ready && isPinned(key)) change(pinned.filter((each) => each !== key));
+      if (ready && isPinned(key)) {
+        change(pinned.filter((each) => each !== key));
+      }
     },
     move: (key, target) => {
-      if (!ready || key === target || !isPinned(key) || !isPinned(target))
+      if (!ready || key === target || !isPinned(key) || !isPinned(target)) {
         return;
+      }
 
       const next = pinned.filter((each) => each !== key);
       next.splice(pinned.indexOf(target), 0, key);

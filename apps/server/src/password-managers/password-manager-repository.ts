@@ -14,7 +14,7 @@ export class PasswordManagerRepository extends Context.Service<
   PasswordManagerRepository,
   {
     /** Metadata only: listing never decrypts a token. */
-    readonly list: Effect.Effect<PasswordManagerConnection[]>;
+    readonly list: Effect.Effect<Array<PasswordManagerConnection>>;
     readonly token: (
       id: PasswordManagerId,
     ) => Effect.Effect<Redacted.Redacted | undefined>;

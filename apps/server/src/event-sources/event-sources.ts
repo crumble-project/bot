@@ -1,13 +1,11 @@
 import { Context, Effect, Layer } from "effect";
-import { Conflict, NotFound, type AppError } from "../shared/errors";
+import { Conflict, NotFound } from "../shared/errors";
+import type { AppError } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
 import { nowIso } from "../shared/time";
 import { createSource, deleteSource } from "./doorstep-client";
-import {
-  EventConsumers,
-  EventRepository,
-  type EventSource,
-} from "./event-repository";
+import { EventConsumers, EventRepository } from "./event-repository";
+import type { EventSource } from "./event-repository";
 import type { RelayStatusResponse } from "../contract/event-sources";
 import { EventRelay, RELAY_URL_SETTING } from "./event-relay";
 
@@ -20,7 +18,7 @@ export class EventSources extends Context.Service<
     readonly setRelayUrl: (
       url: string | null,
     ) => Effect.Effect<RelayStatusResponse>;
-    readonly list: Effect.Effect<ListedEventSource[]>;
+    readonly list: Effect.Effect<Array<ListedEventSource>>;
     /** The address carries the source's secret; nothing stores it, so it is shown only now. */
     readonly create: (
       name: string,
@@ -39,8 +37,11 @@ export class EventSources extends Context.Service<
       const setRelayUrl = Effect.fn("EventSources.setRelayUrl")(function* (
         url: string | null,
       ) {
-        if (url) yield* settings.set(RELAY_URL_SETTING, url);
-        else yield* settings.delete(RELAY_URL_SETTING);
+        if (url) {
+          yield* settings.set(RELAY_URL_SETTING, url);
+        } else {
+          yield* settings.delete(RELAY_URL_SETTING);
+        }
         yield* relay.tick;
 
         return yield* relay.status;
@@ -64,14 +65,16 @@ export class EventSources extends Context.Service<
       });
 
       const remove = Effect.fn("EventSources.remove")(function* (id: string) {
-        if (!(yield* events.getSource(id)))
+        if (!(yield* events.getSource(id))) {
           return yield* new NotFound({ message: "Event source not found" });
+        }
         const usedBy = yield* consumers.usage(id);
 
-        if (usedBy > 0)
+        if (usedBy > 0) {
           return yield* new Conflict({
             message: `Used by ${usedBy} ${usedBy === 1 ? "automation" : "automations"}`,
           });
+        }
         yield* deleteSource(yield* relay.access, id);
         yield* events.removeSource(id);
       });

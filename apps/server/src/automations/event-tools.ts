@@ -22,8 +22,9 @@ export const readPayload = Effect.fnUntraced(function* (
 ) {
   const event = yield* events.getEvent(input.eventId);
 
-  if (!event || !(yield* runs.hasRunForAgent(event.id, agentId)))
+  if (!event || !(yield* runs.hasRunForAgent(event.id, agentId))) {
     return yield* new NotFound({ message: "Event not found" });
+  }
 
   return payloadPage(
     event,

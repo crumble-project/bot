@@ -24,7 +24,7 @@ export class ScriptRunRepository extends Context.Service<
     readonly list: (
       scheduleId: string,
       options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<ScriptRun[]>;
+    ) => Effect.Effect<Array<ScriptRun>>;
     readonly interruptRunning: (finishedAt: string) => Effect.Effect<void>;
     readonly prune: (beforeIso: string) => Effect.Effect<void>;
   }
@@ -74,7 +74,9 @@ export class ScriptRunRepository extends Context.Service<
               )
           : [];
 
-        if (options.before && !cursor) return [];
+        if (options.before && !cursor) {
+          return [];
+        }
 
         return yield* db
           .select()

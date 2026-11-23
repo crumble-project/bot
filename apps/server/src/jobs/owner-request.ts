@@ -16,8 +16,8 @@ export type OwnerMessage = {
 };
 
 export type JobRequest = {
-  ownerMessages: OwnerMessage[];
-  tasks: string[];
+  ownerMessages: Array<OwnerMessage>;
+  tasks: Array<string>;
   job?: { name: string; chatId: ConversationId };
 };
 
@@ -30,7 +30,9 @@ const ownerEntry = z.object({
 const SCAN_PAGE = 200;
 
 function ownerMessageOf(entry: EntryRecord): OwnerMessage | undefined {
-  if (entry.kind !== MESSAGE_ENTRY) return undefined;
+  if (entry.kind !== MESSAGE_ENTRY) {
+    return undefined;
+  }
 
   const data = ownerEntry.safeParse(entry.data).data;
   const from = data && requestSource(data.origin.kind);
@@ -56,7 +58,9 @@ async function* newestOwnerMessages(
     for (const entry of page.items) {
       const message = ownerMessageOf(entry);
 
-      if (message) yield message;
+      if (message) {
+        yield message;
+      }
     }
 
     cursor = page.next;
@@ -66,24 +70,31 @@ async function* newestOwnerMessages(
 export async function ownerMessages(
   tx: Pick<Tx, "scanEntries">,
   chatId: ConversationId,
-  cited: readonly string[],
-): Promise<{ messages: OwnerMessage[] } | { unknown: string[] }> {
+  cited: ReadonlyArray<string>,
+): Promise<{ messages: Array<OwnerMessage> } | { unknown: Array<string> }> {
   const wanted = new Set(cited);
-  const found: OwnerMessage[] = [];
+  const found: Array<OwnerMessage> = [];
   let latest: OwnerMessage | undefined;
 
   for await (const message of newestOwnerMessages(tx, chatId)) {
     latest ??= message;
 
-    if (wanted.delete(message.requestId)) found.unshift(message);
+    if (wanted.delete(message.requestId)) {
+      found.unshift(message);
+    }
 
-    if (!wanted.size) break;
+    if (!wanted.size) {
+      break;
+    }
   }
 
-  if (wanted.size > 0) return { unknown: [...wanted] };
+  if (wanted.size > 0) {
+    return { unknown: [...wanted] };
+  }
 
-  if (latest && !found.some((each) => each.requestId === latest.requestId))
+  if (latest && !found.some((each) => each.requestId === latest.requestId)) {
     found.push(latest);
+  }
 
   return { messages: found };
 }
@@ -91,18 +102,20 @@ export async function ownerMessages(
 export function addToRequest(
   request: JobRequest,
   job: NonNullable<JobRequest["job"]>,
-  messages: OwnerMessage[],
+  messages: Array<OwnerMessage>,
   task: string,
 ) {
   request.job = job;
 
-  for (const message of messages)
+  for (const message of messages) {
     if (
       !request.ownerMessages.some(
         (each) => each.requestId === message.requestId,
       )
-    )
+    ) {
       request.ownerMessages.push(message);
+    }
+  }
 
   request.tasks.push(task);
 }

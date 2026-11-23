@@ -1,5 +1,6 @@
 import { IconMessages, IconPhone } from "@tabler/icons-react";
-import { siDiscord, type SimpleIcon } from "simple-icons";
+import { siDiscord } from "simple-icons";
+import type { SimpleIcon } from "simple-icons";
 import { BrandLogo } from "@/components/brand-logo";
 
 const GATEWAYS = new Map<string, { label: string; icon: SimpleIcon }>([
@@ -14,7 +15,9 @@ export const gatewayOrigin = (id: string) =>
   id === VOICE ? "Spoken on a call" : `Sent from ${gatewayLabel(id)}`;
 
 export function GatewayIcon({ id }: { id: string }) {
-  if (id === VOICE) return <IconPhone className="size-4" />;
+  if (id === VOICE) {
+    return <IconPhone className="size-4" />;
+  }
 
   const icon = GATEWAYS.get(id)?.icon;
 

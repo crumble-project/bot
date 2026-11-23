@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { standaloneScheduler } from "./scheduler-test-support";
+import {
+  recordedDispatch,
+  standaloneScheduler,
+} from "./scheduler-test-support";
 import { ScriptRuns } from "./script-runs";
 import type { Schedule } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
@@ -106,7 +109,10 @@ describe("Scheduler", () => {
   test("converting a script requires a prompt and clears the old command", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
-    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
     const script = store.createSchedule(scriptInput(agent.id));
     expect(() => scheduler.update(script.id, { kind: "prompt" })).toThrow(
       "Prompt tasks need a prompt and no command",
@@ -132,6 +138,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_agent, prompt) => {
         prompts.push(prompt);
+
+        return recordedDispatch;
       },
       scripts.service,
     );
@@ -155,7 +163,7 @@ describe("Scheduler", () => {
 
     const scheduler = standaloneScheduler(
       store.runtime,
-      async () => undefined,
+      async () => recordedDispatch,
       scripts.service,
     );
 
@@ -181,7 +189,7 @@ describe("Scheduler", () => {
 
     const scheduler = standaloneScheduler(
       store.runtime,
-      async () => undefined,
+      async () => recordedDispatch,
       scripts.service,
     );
 
@@ -209,6 +217,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_agent, prompt) => {
         prompts.push(prompt);
+
+        return recordedDispatch;
       },
       scripts.service,
     );
@@ -251,6 +261,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_a, _p, requestId) => {
         calls.push(requestId);
+
+        return recordedDispatch;
       },
     );
 
@@ -287,6 +299,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_a, _p, requestId) => {
         calls.push(requestId);
+
+        return recordedDispatch;
       },
     );
 
@@ -335,6 +349,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_a, _p, requestId) => {
         calls.push(requestId);
+
+        return recordedDispatch;
       },
     );
 
@@ -368,7 +384,10 @@ describe("Scheduler", () => {
   test("rejects invalid timezone and cron expressions", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
-    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
     expect(() =>
       scheduler.create({
         agentId: agent.id,
@@ -407,7 +426,10 @@ describe("Scheduler", () => {
   test("rejects weekday steps without a range", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
-    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
 
     const create = (cron: string) =>
       scheduler.create({
@@ -451,6 +473,8 @@ describe("Scheduler", () => {
         calls.push(requestId);
 
         if (++attempts === 1) throw new Error("temporary");
+
+        return recordedDispatch;
       },
     );
 
@@ -491,6 +515,8 @@ describe("Scheduler", () => {
     const scheduler = standaloneScheduler(store.runtime, async () => {
       started.resolve();
       await release.promise;
+
+      return recordedDispatch;
     });
 
     const schedule = scheduler.create({
@@ -535,6 +561,8 @@ describe("Scheduler", () => {
       store.runtime,
       async (_a, _p, requestId) => {
         calls.push(requestId);
+
+        return recordedDispatch;
       },
     );
 
@@ -598,6 +626,8 @@ describe("event automations", () => {
       store.runtime,
       async (_a, _p, requestId) => {
         calls.push(requestId);
+
+        return recordedDispatch;
       },
     );
 
@@ -617,7 +647,10 @@ describe("event automations", () => {
   test("creating an event automation on an unknown source fails", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
-    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => recordedDispatch,
+    );
 
     expect(() =>
       scheduler.create(eventAutomation(agent.id, "missing")),

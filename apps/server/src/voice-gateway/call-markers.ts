@@ -6,7 +6,8 @@ import { CallRequests } from "./call-requests";
 import { endNotice } from "./call-notices";
 import { callEndedText } from "./call-text";
 import { markOutsideCall } from "./outside-calls";
-import { VoiceGateway, type VoiceCallChange } from "./voice-gateway";
+import { VoiceGateway } from "./voice-gateway";
+import type { VoiceCallChange } from "./voice-gateway";
 
 const mark = Effect.fnUntraced(function* (
   bots: Bots["Service"],
@@ -14,7 +15,7 @@ const mark = Effect.fnUntraced(function* (
 ) {
   const { callId, botId, direction, greeting } = change.call;
 
-  if (change.phase === "started")
+  if (change.phase === "started") {
     return yield* bots.recordCallEvent(
       botId,
       {
@@ -25,6 +26,7 @@ const mark = Effect.fnUntraced(function* (
       },
       voiceCallRequest(callId, "started"),
     );
+  }
 
   const text = callEndedText(
     change.reason,
@@ -49,9 +51,13 @@ export const callMarkers = Layer.effectDiscard(
 
     yield* gateway.handleCalls((change) =>
       Effect.gen(function* () {
-        if (yield* markOutsideCall({ bots, requests }, change)) return;
+        if (yield* markOutsideCall({ bots, requests }, change)) {
+          return;
+        }
 
-        if (change.phase !== "missed") yield* mark(bots, change);
+        if (change.phase !== "missed") {
+          yield* mark(bots, change);
+        }
       }).pipe(
         logged(
           "Voice call marker failed",

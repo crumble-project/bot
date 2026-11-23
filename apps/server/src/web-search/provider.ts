@@ -21,14 +21,14 @@ export const defaultProvider = (settings: SettingsRepository["Service"]) =>
     z.enum(WEB_SEARCH_PROVIDER_IDS).catch("mixed").parse(stored),
   );
 
-export const MAX_PAGE_CHARS = 20000;
+export const MAX_PAGE_CHARS = 20_000;
 
 export const VENDOR_TIMEOUT = "30 seconds";
 
 export type WebSearchQuery = {
   query: string;
   limit: number;
-  domains?: string[];
+  domains?: Array<string>;
   after?: string;
   before?: string;
 };
@@ -36,7 +36,7 @@ export type WebSearchQuery = {
 export type WebSearch = (
   query: WebSearchQuery,
   bot: string,
-) => Effect.Effect<WebSearchResult[], WebSearchError>;
+) => Effect.Effect<Array<WebSearchResult>, WebSearchError>;
 
 export type WebExtract = (
   url: string,

@@ -1,4 +1,5 @@
-import { type ReactNode, type Ref, useState } from "react";
+import { useState } from "react";
+import type { ReactNode, Ref } from "react";
 import type { ReplyReference } from "@crumble/server/contract/push";
 import { ReplyAttention } from "@/features/chat/reply-attention";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -7,17 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { SettledCard, useFreshRequest } from "@/components/request-card";
 import type { Message } from "@/features/chat/api";
-import { type CardChat, messageCard } from "@/features/chat/message-card";
+import { messageCard } from "@/features/chat/message-card";
+import type { CardChat } from "@/features/chat/message-card";
 import { toolDetailsOf } from "@/features/chat/tool-details";
 import { call, queryClient } from "@/lib/api";
 import { callRequestResponse } from "@crumble/server/contract/voice-gateway";
 import { REQUEST_CALL_TOOL_NAME } from "@crumble/server/contract/tools";
-import {
-  type CallRequest,
-  callRequestPath,
-  callRequestsQuery,
-  callStateOf,
-} from "./api";
+import { callRequestPath, callRequestsQuery, callStateOf } from "./api";
+import type { CallRequest } from "./api";
 
 const callRequestOf = (message: Message): CallRequest | null =>
   toolDetailsOf(message, callRequestResponse, REQUEST_CALL_TOOL_NAME);
@@ -30,10 +28,10 @@ function CallRequestCard({
 }: {
   request: CallRequest;
   botId: string;
-  references: readonly ReplyReference[];
+  references: ReadonlyArray<ReplyReference>;
   onOpen: (requestId: string) => void;
 }) {
-  const requestIn = (requests: CallRequest[]) =>
+  const requestIn = (requests: Array<CallRequest>) =>
     requests.find((item) => item.id === request.id);
 
   // Declined and ended requests stay so; a pending or calling one in the cache may have moved on.
@@ -57,7 +55,7 @@ function CallRequestCard({
     />
   );
 
-  if (reading || !live)
+  if (reading || !live) {
     return (
       <SettledCard
         icon={IconPhone}
@@ -65,16 +63,18 @@ function CallRequestCard({
         outcome={reading ?? "Unavailable"}
       />
     );
+  }
 
-  if (live.status === "pending")
+  if (live.status === "pending") {
     return (
       <>
         {attention}
         <CallRequestPending request={live} botId={botId} cardRef={setElement} />
       </>
     );
+  }
 
-  if (live.status === "declined")
+  if (live.status === "declined") {
     return (
       <>
         {attention}
@@ -86,6 +86,7 @@ function CallRequestCard({
         />
       </>
     );
+  }
 
   return (
     <>
@@ -105,16 +106,18 @@ function useDecideCallRequest(botId: string, requestId: string) {
   return useMutation({
     mutationFn: (decision: "approve" | "decline") =>
       decision === "approve"
-        ? call<"approveCallRequest">(
+        ? call(
+            "approveCallRequest",
             `${callRequestPath(botId, requestId)}/approve`,
             "POST",
           )
-        : call<"declineCallRequest">(
+        : call(
+            "declineCallRequest",
             `${callRequestPath(botId, requestId)}/decline`,
             "POST",
           ),
     onSuccess: (decided: CallRequest) =>
-      queryClient.setQueryData<CallRequest[]>(queryKey, (requests) =>
+      queryClient.setQueryData<Array<CallRequest>>(queryKey, (requests) =>
         requests?.map((item) => (item.id === decided.id ? decided : item)),
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
@@ -158,8 +161,8 @@ function CallRequestPending({
       <p className="text-sm whitespace-pre-wrap">{request.goal}</p>
       <div className="flex flex-col gap-1">
         <p className="text-xs text-muted-foreground">
-          Check that the opening says it's an AI assistant, whom it calls for,
-          that the call is transcribed, and why it calls.
+          Check that the opening says it&apos;s an AI assistant, whom it calls
+          for, that the call is transcribed, and why it calls.
         </p>
         <blockquote className="border-l-2 pl-2 text-sm whitespace-pre-wrap text-muted-foreground">
           {request.opening}
@@ -243,7 +246,7 @@ const ENDED_CALL = /^voice-call:([^:]+):ended$/u;
 const SWEPT_REQUEST = /^call-request:([^:]+)$/u;
 
 /** The call request an end notice belongs to; owner calls have none. */
-function noticeRequest(message: Message, requests: CallRequest[]) {
+function noticeRequest(message: Message, requests: Array<CallRequest>) {
   const callId = ENDED_CALL.exec(message.requestId ?? "")?.[1];
   const requestId = SWEPT_REQUEST.exec(message.requestId ?? "")?.[1];
 
@@ -275,7 +278,9 @@ function OutsideCallNotice({
   const requests = useQuery(callRequestsQuery(chat.botId));
   const request = noticeRequest(message, requests.data ?? []);
 
-  if (!request || request.status === "declined") return fallback;
+  if (!request || request.status === "declined") {
+    return fallback;
+  }
 
   return (
     <CallRequestPlaced

@@ -7,7 +7,9 @@ import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { HELD_ACTION_STATUSES, OWNER_MESSAGE_SOURCES } from "../shared/domain";
 import { keyedListeners } from "../shared/keyed";
-import { accessOf, type Access, type Runner } from "../shared/runner";
+import { fallingBackTo } from "../shared/fallback-schema";
+import { accessOf } from "../shared/runner";
+import type { Access, Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { heldActions } from "./schema";
 
@@ -19,7 +21,7 @@ export type HeldAction = {
   job: string;
   action: string;
   page: string | null;
-  ownerMessages: OwnerMessage[];
+  ownerMessages: Array<OwnerMessage>;
   reason: string;
   status: HeldActionStatus;
   declineReason: string | null;
@@ -47,7 +49,7 @@ const ownerMessage = z.object({
   from: z.enum(OWNER_MESSAGE_SOURCES),
 });
 
-const statusOf = z.enum(HELD_ACTION_STATUSES).catch("expired");
+const statusOf = fallingBackTo(z.enum(HELD_ACTION_STATUSES), "expired");
 
 const heldOf = (row: typeof heldActions.$inferSelect): HeldAction => ({
   id: row.id,
@@ -66,11 +68,27 @@ const heldOf = (row: typeof heldActions.$inferSelect): HeldAction => ({
   decidedAt: row.decidedAt,
 });
 
+const decisionOf = (
+  current: typeof heldActions.$inferSelect | undefined,
+): HoldDecision | undefined => {
+  if (!current || current.status === "pending") {
+    return undefined;
+  }
+
+  if (current.status === "approved") {
+    return { status: "approved" };
+  }
+
+  return current.status === "declined"
+    ? { status: "declined", reason: current.declineReason }
+    : { status: "expired" };
+};
+
 export class HeldActions extends Context.Service<
   HeldActions,
   {
     readonly hold: (input: HoldInput) => Effect.Effect<HeldAction>;
-    readonly list: (agentId: string) => Effect.Effect<HeldAction[]>;
+    readonly list: (agentId: string) => Effect.Effect<Array<HeldAction>>;
     readonly decide: (
       agentId: string,
       id: string,
@@ -191,20 +209,10 @@ export class HeldActions extends Context.Service<
           .returning({ id: heldActions.id })
           .pipe(Effect.orDie);
 
-        if (changed.length) listeners.notify(id, { status: "expired" });
+        if (changed.length) {
+          listeners.notify(id, { status: "expired" });
+        }
       });
-
-      const decisionOf = (
-        current: typeof heldActions.$inferSelect | undefined,
-      ): HoldDecision | undefined => {
-        if (!current || current.status === "pending") return undefined;
-
-        if (current.status === "approved") return { status: "approved" };
-
-        return current.status === "declined"
-          ? { status: "declined", reason: current.declineReason }
-          : { status: "expired" };
-      };
 
       const untilDecided = Effect.fn("HeldActions.untilDecided")(function* (
         id: string,
@@ -231,7 +239,9 @@ export class HeldActions extends Context.Service<
 
       const cardPosted = (action: HeldAction, surface: HeldActionSurface) =>
         Effect.sync(() => {
-          for (const listener of heldListeners) listener(action, surface);
+          for (const listener of heldListeners) {
+            listener(action, surface);
+          }
         });
 
       const onHeld = (
@@ -268,7 +278,7 @@ export type HeldActionsAccess = Omit<
 export function heldActionsAccess(
   runtime: Runner<HeldActions>,
 ): HeldActionsAccess {
-  const held = runtime.runSync(HeldActions.use(Effect.succeed));
+  const held = runtime.runSync(Effect.flatMap(HeldActions, Effect.succeed));
 
   return {
     ...accessOf(held, runtime, SYNC_HELD_ACTIONS),

@@ -6,7 +6,9 @@ const valid = '{"kind":"none"}\n';
 let closing = false;
 
 process.on("disconnect", () => {
-  if (!closing) process.exit(1);
+  if (!closing) {
+    process.exit(1);
+  }
 });
 
 function disconnect() {
@@ -18,8 +20,9 @@ try {
   await Bun.stdin.arrayBuffer();
 
   process.on("message", (message) => {
-    if (!z.object({ kind: z.literal("ack") }).safeParse(message).success)
+    if (!z.object({ kind: z.literal("ack") }).safeParse(message).success) {
       return;
+    }
 
     if (scenario === "stalled-exit") {
       process.send?.({ kind: "ack-received" });
@@ -38,9 +41,9 @@ try {
 
     for (let i = 0; i <= 1024; i++) {
       if (!process.stdout.write(chunk)) {
-        await new Promise<void>((resolve) =>
-          process.stdout.once("drain", resolve),
-        );
+        await new Promise<void>((resolve) => {
+          process.stdout.once("drain", resolve);
+        });
       }
     }
   } else {
@@ -57,7 +60,9 @@ try {
 
     const frame = output.get(scenario ?? "");
 
-    if (frame === undefined) throw new Error("Unknown protocol scenario");
+    if (frame === undefined) {
+      throw new Error("Unknown protocol scenario");
+    }
 
     await new Promise<void>((resolve, reject) => {
       process.stdout.write(frame, (error) =>

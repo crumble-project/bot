@@ -182,8 +182,9 @@ export function createAPI(
   token: string,
   options: ApiOptions,
 ) {
-  if (token.length < 32)
+  if (token.length < 32) {
     throw new Error("Server token must contain at least 32 characters");
+  }
   const app = contractApp();
 
   limitBodies(app);
@@ -197,7 +198,9 @@ export function createAPI(
     pathRegister(app, service.core),
   );
 
-  for (const routes of featureRoutes) routes(api);
+  for (const routes of featureRoutes) {
+    routes(api);
+  }
 
   return app;
 }

@@ -15,7 +15,9 @@ export type UsageRow = {
 };
 
 /** A usage document's models, then its tools, each with its tokens and cost. */
-export function usageRows(document: UsageDocument | undefined): UsageRow[] {
+export function usageRows(
+  document: UsageDocument | undefined,
+): Array<UsageRow> {
   const rows = (kind: UsageRow["kind"], bucket: Bucket) =>
     Object.entries(bucket ?? {}).map(([name, totals]) => ({
       kind,

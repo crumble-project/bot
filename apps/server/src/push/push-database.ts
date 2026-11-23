@@ -1,11 +1,8 @@
 import { join } from "node:path";
 import { Context, Layer } from "effect";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
-import {
-  migrationsFolder,
-  sqliteDatabase,
-  type SqliteDatabase,
-} from "../shared/database";
+import { migrationsFolder, sqliteDatabase } from "../shared/database";
+import type { SqliteDatabase } from "../shared/database";
 
 export class PushDatabase extends Context.Service<
   PushDatabase,

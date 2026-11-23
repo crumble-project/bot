@@ -18,20 +18,25 @@ export type OneTimeSecret = {
 
 /** RFC 4648 base32 without padding; undefined for any other character. */
 function base32(text: string) {
-  const bits: number[] = [];
+  const bits: Array<number> = [];
 
-  for (const char of text.replace(/[\s=]/g, "").toUpperCase()) {
+  for (const char of text.replaceAll(/[\s=]/g, "").toUpperCase()) {
     const index = BASE32.indexOf(char);
 
-    if (index < 0) return;
+    if (index < 0) {
+      return;
+    }
 
-    for (let bit = 4; bit >= 0; bit--) bits.push((index >> bit) & 1);
+    for (let bit = 4; bit >= 0; bit--) {
+      bits.push((index >> bit) & 1);
+    }
   }
 
   const bytes = [];
 
-  for (let at = 0; at + 8 <= bits.length; at += 8)
+  for (let at = 0; at + 8 <= bits.length; at += 8) {
     bytes.push(bits.slice(at, at + 8).reduce((byte, bit) => byte * 2 + bit, 0));
+  }
 
   return bytes.length ? Buffer.from(bytes) : undefined;
 }
@@ -58,7 +63,9 @@ function parametersOf(params: URLSearchParams) {
 }
 
 function fromUri(uri: URL): OneTimeSecret | undefined {
-  if (uri.protocol !== "otpauth:" || uri.hostname !== "totp") return undefined;
+  if (uri.protocol !== "otpauth:" || uri.hostname !== "totp") {
+    return undefined;
+  }
 
   const key = base32(uri.searchParams.get("secret") ?? "");
   const parameters = parametersOf(uri.searchParams);
@@ -69,8 +76,9 @@ function fromUri(uri: URL): OneTimeSecret | undefined {
 export function parseOneTimeSecret(text: string): OneTimeSecret | undefined {
   const trimmed = text.trim();
 
-  if (URL.canParse(trimmed) && trimmed.startsWith("otpauth:"))
+  if (URL.canParse(trimmed) && trimmed.startsWith("otpauth:")) {
     return fromUri(new URL(trimmed));
+  }
 
   const key = base32(trimmed);
 
@@ -85,8 +93,8 @@ export function oneTimeCode(secret: OneTimeSecret, atMs: number) {
   );
 
   const mac = createHmac(secret.algorithm, secret.key).update(counter).digest();
-  const offset = mac[mac.length - 1]! & 0x0f;
-  const binary = mac.readUInt32BE(offset) & 0x7fffffff;
+  const offset = (mac.at(-1) ?? 0) & 0x0f;
+  const binary = mac.readUInt32BE(offset) & 0x7f_ff_ff_ff;
 
   return String(binary % 10 ** secret.digits).padStart(secret.digits, "0");
 }

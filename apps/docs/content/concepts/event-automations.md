@@ -72,7 +72,7 @@ automation's prompt as your request, never the event.
 
 Bodies longer than 32 KiB are cut, and bodies that aren't UTF-8 text are left
 out. In both cases the bot reads the rest with its `event_payload` tool, a page
-at a time.
+at a time. Text pages report `encoding: "utf8"`; binary pages report `encoding: "base64"`.
 
 A script automation gets the event in a file instead. These environment
 variables are set for its command:

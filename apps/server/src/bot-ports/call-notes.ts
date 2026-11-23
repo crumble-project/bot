@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref, type Scope } from "effect";
+import { Context, Effect, Layer, Option, Ref } from "effect";
+import type { Scope } from "effect";
 
 export type CallLine = { speaker: "bot" | "callee"; text: string };
 
@@ -7,7 +8,7 @@ export type CallLine = { speaker: "bot" | "callee"; text: string };
  * `objected` none, as the callee objected to the call; `missed`: the call did not reach the callee.
  */
 export type OutsideCallNote = { callee: string; goal: string } & (
-  | { kind: "ended"; transcript: CallLine[] }
+  | { kind: "ended"; transcript: Array<CallLine> }
   | { kind: "objected" }
   | { kind: "missed" }
 );

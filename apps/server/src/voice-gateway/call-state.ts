@@ -1,4 +1,5 @@
-import { Clock, Effect, Semaphore, type Scope } from "effect";
+import { Clock, Effect, Semaphore } from "effect";
+import type { Scope } from "effect";
 import type { VoiceCallReport } from "../contract/voice-gateway";
 import { Conflict, NotFound } from "../shared/errors";
 import type { SettingsRepository } from "../shared/settings-repository";
@@ -34,11 +35,22 @@ const forgetOldest = <K>(
   inUse: (key: K) => boolean = () => false,
 ) => {
   for (const key of keyed.keys()) {
-    if (keyed.size <= limit) return;
+    if (keyed.size <= limit) {
+      return;
+    }
 
-    if (!inUse(key)) keyed.delete(key);
+    if (!inUse(key)) {
+      keyed.delete(key);
+    }
   }
 };
+
+const notActive = () =>
+  Effect.fail(
+    new Conflict({
+      message: "The outside call is not active on the line",
+    }),
+  );
 
 export const createCallState = Effect.fnUntraced(function* (
   settings: SettingsRepository["Service"],
@@ -58,23 +70,30 @@ export const createCallState = Effect.fnUntraced(function* (
   // A reloaded call waits for the voice gateway from the first tick on.
   let reloaded = active.size > 0;
   let unsaved = false;
-  const calls: VoiceCallChange[] = [];
+  const calls: Array<VoiceCallChange> = [];
   let handler: VoiceCallHandler | undefined;
   let announcing = false;
 
   // A handler that reaches this service again finds the loop running, so it never waits on itself.
   const announce = Effect.gen(function* () {
-    if (announcing) return;
+    if (announcing) {
+      return;
+    }
     announcing = true;
 
     yield* Effect.gen(function* () {
-      for (let next = calls.shift(); next; next = calls.shift())
-        if (handler) yield* handler(next);
+      for (let next = calls.shift(); next; next = calls.shift()) {
+        if (handler) {
+          yield* handler(next);
+        }
+      }
     }).pipe(Effect.ensuring(Effect.sync(() => (announcing = false))));
   });
 
   const save = Effect.suspend(() => {
-    if (!unsaved) return Effect.void;
+    if (!unsaved) {
+      return Effect.void;
+    }
     unsaved = false;
 
     return saveCalls(settings, active.values(), ended, outside.values());
@@ -107,7 +126,9 @@ export const createCallState = Effect.fnUntraced(function* (
   };
 
   const end = (call: VoiceCall, reason: VoiceCallEnd, now: number) => {
-    if (active.get(call.username) !== call) return;
+    if (active.get(call.username) !== call) {
+      return;
+    }
     active.delete(call.username);
     tombstone(call.callId);
     calls.push({
@@ -151,7 +172,9 @@ export const createCallState = Effect.fnUntraced(function* (
       Effect.sync(() => {
         const call = callOf(botId);
 
-        if (!call) return false;
+        if (!call) {
+          return false;
+        }
         call.hangUp = true;
         unsaved = true;
 
@@ -180,10 +203,13 @@ export const createCallState = Effect.fnUntraced(function* (
           hash,
         );
 
-        if (!found) return null;
+        if (!found) {
+          return null;
+        }
 
-        if (ended.has(callId))
+        if (ended.has(callId)) {
           return yield* new Conflict({ message: "The call ended" });
+        }
 
         return yield* use(found, active.get(username));
       }),
@@ -207,15 +233,17 @@ export const createCallState = Effect.fnUntraced(function* (
     const placed = pending.event(callId);
 
     // Only its start report while it rings makes an outside call active; it never becomes a call with the owner.
-    if (outside.has(callId) && !placed)
+    if (outside.has(callId) && !placed) {
       return Effect.fail(
         new Conflict({ message: "The outside call is not ringing" }),
       );
+    }
 
-    if (busy(username, callId, placed))
+    if (busy(username, callId, placed)) {
       return Effect.fail(
         new Conflict({ message: "Another call is active on the line" }),
       );
+    }
 
     pending.started(callId);
 
@@ -241,8 +269,9 @@ export const createCallState = Effect.fnUntraced(function* (
   const startCall = (username: string, callId: string, hash: string) =>
     onCallLine(username, callId, hash, (found, current) =>
       Effect.flatMap(Clock.currentTimeMillis, (now) => {
-        if (current?.callId !== callId)
+        if (current?.callId !== callId) {
           return begin(username, callId, found, now);
+        }
         current.confirmedAt = now;
         unsaved = true;
 
@@ -250,18 +279,13 @@ export const createCallState = Effect.fnUntraced(function* (
       }),
     );
 
-  const notActive = () =>
-    Effect.fail(
-      new Conflict({
-        message: "The outside call is not active on the line",
-      }),
-    );
-
   const speak = (username: string, callId: string, hash: string) =>
     onCallLine(username, callId, hash, (found, current) => {
       const ongoing = outside.get(callId) ?? null;
 
-      if (ongoing && current?.callId !== callId) return notActive();
+      if (ongoing && current?.callId !== callId) {
+        return notActive();
+      }
 
       if (current?.callId === callId && !current.spoken) {
         current.spoken = true;
@@ -288,13 +312,18 @@ export const createCallState = Effect.fnUntraced(function* (
           hash,
         );
 
-        if (!found) return null;
+        if (!found) {
+          return null;
+        }
         const ongoing = outsideOn(username);
 
-        if (callId === undefined) return { ...found, outside: ongoing };
+        if (callId === undefined) {
+          return { ...found, outside: ongoing };
+        }
 
-        if (outside.has(callId) && ongoing?.callId !== callId)
+        if (outside.has(callId) && ongoing?.callId !== callId) {
           return yield* notActive();
+        }
 
         return {
           ...found,
@@ -310,7 +339,7 @@ export const createCallState = Effect.fnUntraced(function* (
   ) => {
     const started = activeCall(callId);
 
-    if (started)
+    if (started) {
       end(
         started,
         started.hangUp && report.reason === "hungUp"
@@ -318,7 +347,9 @@ export const createCallState = Effect.fnUntraced(function* (
           : report.reason,
         now,
       );
-    else tombstone(callId);
+    } else {
+      tombstone(callId);
+    }
 
     pending.report(callId, report);
   };
@@ -326,7 +357,9 @@ export const createCallState = Effect.fnUntraced(function* (
   const reportCall = (callId: string, report: VoiceCallReport, hash: string) =>
     locked(
       Effect.gen(function* () {
-        if (!boundary.acceptsToken(hash)) return null;
+        if (!boundary.acceptsToken(hash)) {
+          return null;
+        }
 
         if (report.outcome === "ended") {
           reportEnded(callId, report, yield* Clock.currentTimeMillis);
@@ -334,8 +367,9 @@ export const createCallState = Effect.fnUntraced(function* (
           return true as const;
         }
 
-        if (!pending.report(callId, report) && !activeCall(callId))
+        if (!pending.report(callId, report) && !activeCall(callId)) {
           return yield* new NotFound({ message: "Unknown call" });
+        }
 
         return true as const;
       }),
@@ -348,7 +382,9 @@ export const createCallState = Effect.fnUntraced(function* (
     if (reloaded) {
       reloaded = false;
 
-      if (!live) goneAt = now;
+      if (!live) {
+        goneAt = now;
+      }
     }
 
     for (const call of active.values()) {
@@ -357,8 +393,9 @@ export const createCallState = Effect.fnUntraced(function* (
           now - live.openedAt >= RECONFIRM_WITHIN_MS
         : now - Math.max(goneAt ?? 0, call.confirmedAt) >= RECONNECT_WITHIN_MS;
 
-      if (unconfirmed || now - call.startedAt >= CALL_LASTS_MS)
+      if (unconfirmed || now - call.startedAt >= CALL_LASTS_MS) {
         end(call, "lost", now);
+      }
     }
   };
 
@@ -381,7 +418,9 @@ export const createCallState = Effect.fnUntraced(function* (
     const call = active.get(username);
 
     // The first sweep after a restart sees every line as new; a reloaded call stays with its bot.
-    if (call && call.botId !== botId) end(call, "lineChanged", now);
+    if (call && call.botId !== botId) {
+      end(call, "lineChanged", now);
+    }
 
     pending.reassign(username);
   };
@@ -390,7 +429,9 @@ export const createCallState = Effect.fnUntraced(function* (
     locked,
     reassign,
     endAll: (now: number) => {
-      for (const call of active.values()) end(call, "revoked", now);
+      for (const call of active.values()) {
+        end(call, "revoked", now);
+      }
     },
     revokePending: pending.revoke,
     connected: () => {

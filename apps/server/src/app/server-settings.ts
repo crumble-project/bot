@@ -54,6 +54,11 @@ const storedSettings = Schema.Array(
   Schema.Struct({ key: Schema.String, value: Schema.String }),
 );
 
+/** Each setting's own schema, so a stored value decodes to the type of the setting it belongs to. */
+const settingSchemas: {
+  readonly [K in keyof ServerSettings]: z.ZodType<ServerSettings[K]>;
+} = serverSettingsSchema.shape;
+
 /** One decode per key: a value stored by an older or newer server can't reset the settings beside it. */
 function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
   const stored = new Map(rows.map((row) => [row.key, row.value]));
@@ -61,13 +66,12 @@ function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
   const setting = <K extends keyof ServerSettings>(key: K) => {
     const raw = stored.get(key);
 
-    if (raw === undefined) return DEFAULT_SERVER_SETTINGS[key];
+    if (raw === undefined) {
+      return DEFAULT_SERVER_SETTINGS[key];
+    }
 
     try {
-      // SAFETY: the schema of the setting named `key` parses it.
-      return serverSettingsSchema.shape[key].parse(
-        JSON.parse(raw),
-      ) as ServerSettings[K];
+      return settingSchemas[key].parse(JSON.parse(raw));
     } catch {
       return UNREADABLE_SETTINGS[key];
     }
@@ -102,21 +106,24 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
       const next = serverSettingsSchema.parse({ ...current, ...patch });
 
       for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) continue;
+        if (value === undefined) {
+          continue;
+        }
         const where = [{ field: "key", value: key }];
         const encoded = JSON.stringify(value);
 
-        if (await adapter.findOne({ model: MODEL, where }))
+        if (await adapter.findOne({ model: MODEL, where })) {
           await adapter.update({
             model: MODEL,
             where,
             update: { value: encoded },
           });
-        else
+        } else {
           await adapter.create({
             model: MODEL,
             data: { key, value: encoded },
           });
+        }
       }
 
       current = next;

@@ -23,16 +23,26 @@ export function chartColor(value: string): string {
   const trimmed = value.trim();
   const variable = /^var\(\s*--[\w-]+\s*,\s*(.+)\)$/.exec(trimmed);
 
-  if (variable?.[1]) return chartColor(variable[1]);
+  if (variable?.[1]) {
+    return chartColor(variable[1]);
+  }
 
-  if (trimmed === "transparent") return "none";
+  if (trimmed === "transparent") {
+    return "none";
+  }
 
-  if (trimmed === "currentColor") return "foreground";
+  if (trimmed === "currentColor") {
+    return "foreground";
+  }
 
-  if (trimmed === "Canvas") return "background";
+  if (trimmed === "Canvas") {
+    return "background";
+  }
   const rgb = RGB.exec(trimmed);
 
-  if (!rgb) return trimmed;
+  if (!rgb) {
+    return trimmed;
+  }
 
   const alpha = rgb[4]?.endsWith("%")
     ? Number.parseFloat(rgb[4]) / 100

@@ -3,7 +3,8 @@ import { McpClient, StreamableHttpTransport } from "@earendil-works/pi-mcp";
 import { Effect, Schema } from "effect";
 import { z } from "zod";
 import type { WebSearchResult } from "../contract/web-search";
-import { VENDOR_TIMEOUT, type WebSearchQuery } from "./provider";
+import { VENDOR_TIMEOUT } from "./provider";
+import type { WebSearchQuery } from "./provider";
 
 export class VendorUnavailable extends Schema.TaggedError<VendorUnavailable>()(
   "VendorUnavailable",
@@ -43,7 +44,7 @@ const jinaResponse = z.object({
 });
 
 const unavailable = (name: string, cause: unknown) =>
-  cause instanceof VendorUnavailable
+  Schema.is(VendorUnavailable)(cause)
     ? cause
     : new VendorUnavailable({ message: `${name}: ${errorText(cause)}` });
 
@@ -64,7 +65,7 @@ const mcpCall = (
     objective: string;
     query?: string;
     numResults?: number;
-    search_queries?: string[];
+    search_queries?: Array<string>;
     session_id?: string;
   },
 ) =>
@@ -90,10 +91,11 @@ const mcpCall = (
                   ]),
                 });
 
-                if (!response.ok)
+                if (!response.ok) {
                   throw new VendorUnavailable({
                     message: `${name}: HTTP ${response.status}`,
                   });
+                }
 
                 return response;
               },
@@ -107,10 +109,11 @@ const mcpCall = (
         catch: (cause) => unavailable(name, cause),
       });
 
-      if (result.isError)
+      if (result.isError) {
         return yield* Effect.fail(
           new VendorUnavailable({ message: `${name}: MCP tool error` }),
         );
+      }
 
       return result;
     }),
@@ -137,7 +140,9 @@ export const exaSearch = (query: WebSearchQuery) =>
             .filter((block) => block.type === "text")
             .map((block) => block.text);
 
-          if (!blocks.length) throw new Error("unexpected response shape");
+          if (!blocks.length) {
+            throw new Error("unexpected response shape");
+          }
 
           return blocks
             .flatMap((text) => text.split(/\n---\s*\n(?=\s*Title:)/))
@@ -150,11 +155,14 @@ export const exaSearch = (query: WebSearchQuery) =>
                 .exec(block)?.[1]
                 ?.trim();
 
-              if (!title || !url || excerpt === undefined)
+              if (!title || !url || excerpt === undefined) {
                 throw new Error("unexpected response shape");
+              }
               const item: WebSearchResult = { title, url, excerpt };
 
-              if (published && published !== "N/A") item.published = published;
+              if (published && published !== "N/A") {
+                item.published = published;
+              }
 
               return item;
             });
@@ -173,7 +181,9 @@ export const parallelSearch = (query: WebSearchQuery, sessionId?: string) =>
         search_queries: [query.query],
       };
 
-      if (sessionId !== undefined) args.session_id = sessionId;
+      if (sessionId !== undefined) {
+        args.session_id = sessionId;
+      }
 
       const result = yield* mcpCall(
         "Parallel",
@@ -186,8 +196,9 @@ export const parallelSearch = (query: WebSearchQuery, sessionId?: string) =>
         try: () => {
           const text = result.content.find((block) => block.type === "text");
 
-          if (!text || text.type !== "text")
+          if (!text || text.type !== "text") {
             throw new Error("unexpected response shape");
+          }
           const response = parallelResponse.parse(JSON.parse(text.text));
 
           const results = response.results.map((item) => {
@@ -197,7 +208,9 @@ export const parallelSearch = (query: WebSearchQuery, sessionId?: string) =>
               excerpt: item.excerpts.join("\n\n"),
             };
 
-            if (item.publish_date) mapped.published = item.publish_date;
+            if (item.publish_date) {
+              mapped.published = item.publish_date;
+            }
 
             return mapped;
           });
@@ -231,12 +244,13 @@ const fetchJson = <T>(
         catch: (cause) => unavailable(name, cause),
       });
 
-      if (!response.ok)
+      if (!response.ok) {
         return yield* Effect.fail(
           new VendorUnavailable({
             message: `${name}: HTTP ${response.status}`,
           }),
         );
+      }
 
       return yield* Effect.tryPromise({
         try: async () => schema.parse(await response.json()),
@@ -277,7 +291,9 @@ export const tavilySearch = (query: WebSearchQuery) =>
           excerpt: item.content,
         };
 
-        if (item.published_date) mapped.published = item.published_date;
+        if (item.published_date) {
+          mapped.published = item.published_date;
+        }
 
         return mapped;
       });
@@ -295,10 +311,11 @@ export const jinaExtract = (url: string) =>
         jinaResponse,
       );
 
-      if (data.httpStatus && data.httpStatus >= 400)
+      if (data.httpStatus && data.httpStatus >= 400) {
         return yield* Effect.fail(
           new VendorUnavailable({ message: `Jina: HTTP ${data.httpStatus}` }),
         );
+      }
 
       return { url: data.url, title: data.title, text: data.content };
     }),

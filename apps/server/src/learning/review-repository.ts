@@ -28,7 +28,7 @@ export class ReviewRepository extends Context.Service<
       rounds: number,
     ) => Effect.Effect<void>;
     /** Reviews in flight; a server restart drops them instead of resuming. */
-    readonly listPending: Effect.Effect<PendingReview[]>;
+    readonly listPending: Effect.Effect<Array<PendingReview>>;
     readonly addPending: (
       executionId: string,
       agentId: string,

@@ -21,7 +21,7 @@ export const githubAppPath = (id: string) =>
 export const githubAppsQuery = queryOptions({
   queryKey: ["github-apps"],
   queryFn: async ({ signal }) =>
-    (await api<"githubApps">("/v1/github-apps", { signal })).apps,
+    (await api("githubApps", "/v1/github-apps", { signal })).apps,
 });
 
 export const githubAccountPath = (id: string) =>
@@ -30,7 +30,7 @@ export const githubAccountPath = (id: string) =>
 export const githubAccountsQuery = queryOptions({
   queryKey: ["github-accounts"],
   queryFn: async ({ signal }) =>
-    (await api<"githubAccounts">("/v1/github-accounts", { signal })).accounts,
+    (await api("githubAccounts", "/v1/github-accounts", { signal })).accounts,
 });
 
 /** A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too. */

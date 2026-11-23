@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { mcpServers } from "./schema";
 
 export type MCPServer = {
@@ -33,7 +34,7 @@ const serverOf = (row: typeof mcpServers.$inferSelect): MCPServer => ({
 export class McpServerRepository extends Context.Service<
   McpServerRepository,
   {
-    readonly list: Effect.Effect<MCPServer[]>;
+    readonly list: Effect.Effect<Array<MCPServer>>;
     readonly get: (serverId: string) => Effect.Effect<MCPServer | null>;
     readonly usable: (
       agentId: string,
@@ -101,7 +102,7 @@ export class McpServerRepository extends Context.Service<
           oauthClientId: input.oauthClientId ?? null,
         });
 
-        return (yield* get(serverId))!;
+        return required(yield* get(serverId), "The MCP server was not stored");
       }, Effect.orDie);
 
       const update = Effect.fn("McpServerRepository.update")(function* (
@@ -110,7 +111,9 @@ export class McpServerRepository extends Context.Service<
       ) {
         const server = yield* get(serverId);
 
-        if (!server) return null;
+        if (!server) {
+          return null;
+        }
         const next = { ...server, ...patch };
 
         yield* db

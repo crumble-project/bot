@@ -1,5 +1,34 @@
 import { expect, spyOn, test } from "bun:test";
-import { apiBlob, follow } from "./api";
+import { apiBlob, bodyOf, follow } from "./api";
+
+test("JSON responses are validated against their route's success schema", async () => {
+  await expect(
+    bodyOf("health", Response.json({ status: "ok", apiVersion: 1 })),
+  ).resolves.toEqual({ status: "ok", apiVersion: 1 });
+  await expect(
+    bodyOf("health", Response.json({ status: "ok", apiVersion: "1" })),
+  ).rejects.toThrow();
+  await expect(bodyOf("health", Response.json({}))).rejects.toThrow();
+});
+
+test("JSON response validation uses the actual success status", async () => {
+  const file = {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "note.txt",
+    mimeType: "text/plain",
+    size: 1,
+    createdAt: "2026-01-01",
+  };
+  await expect(
+    bodyOf(
+      "uploadFile",
+      Response.json({ file, existed: false }, { status: 201 }),
+    ),
+  ).resolves.toEqual({ file, existed: false });
+  await expect(
+    bodyOf("uploadFile", Response.json({ file, existed: false })),
+  ).rejects.toThrow("No JSON response schema for uploadFile (200)");
+});
 
 test("attachment fetch returns a blob without creating a cached object URL", async () => {
   const originalFetch = globalThis.fetch;

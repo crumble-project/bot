@@ -1,5 +1,7 @@
 export function devWorkspaceEnv(env: Record<string, string | undefined>) {
-  if (env["CRUMBLE_WORKSPACE_BACKEND"] === "railway") return env;
+  if (env["CRUMBLE_WORKSPACE_BACKEND"] === "railway") {
+    return env;
+  }
 
   return {
     ...env,

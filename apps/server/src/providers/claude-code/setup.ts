@@ -106,7 +106,7 @@ const executable = (path: string) => {
   }
 };
 
-const which = (name: string, directories: string[]) =>
+const which = (name: string, directories: Array<string>) =>
   directories
     .flatMap((directory) => (directory ? [join(directory, name)] : []))
     .find(executable);
@@ -114,10 +114,14 @@ const which = (name: string, directories: string[]) =>
 export function resolveClaude(options: ClaudeCodeOptions) {
   const head = options.command ?? "claude";
 
-  if (isAbsolute(head)) return executable(head) ? head : undefined;
+  if (isAbsolute(head)) {
+    return executable(head) ? head : undefined;
+  }
   const found = which(head, (options.env["PATH"] ?? "").split(delimiter));
 
-  if (found || head !== "claude") return found;
+  if (found || head !== "claude") {
+    return found;
+  }
   const home = options.env["HOME"];
 
   return which(head, [
@@ -136,7 +140,9 @@ export function childEnv(options: ClaudeCodeOptions) {
   for (const name of INHERITED) {
     const value = options.env[name];
 
-    if (value !== undefined) env[name] = value;
+    if (value !== undefined) {
+      env[name] = value;
+    }
   }
 
   // Without USER a logged-in CLI reports `loggedIn: false`, instantly and without a request.
@@ -154,7 +160,7 @@ type Run = { code: number | null; stdout: string; stderr: string };
 
 export function run(
   command: string,
-  args: string[],
+  args: Array<string>,
   env: Record<string, string>,
   timeoutMs: number,
   input = "",
@@ -206,11 +212,13 @@ const jsonLine = <T>(line: string, schema: z.ZodType<T>): T | undefined => {
 const planLabel = (raw: string | null | undefined) => {
   const value = (raw ?? "").trim();
 
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
 
   return value.toLowerCase().startsWith("claude")
     ? value
-    : `Claude ${value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
+    : `Claude ${value.replaceAll("_", " ").replaceAll(/\b\w/g, (letter) => letter.toUpperCase())}`;
 };
 
 export const signInCommand = (command: string, configDir: string) =>
@@ -225,7 +233,9 @@ export async function claudeCodeStatus(
 ): Promise<ClaudeCodeStatus> {
   const command = resolveClaude(options);
 
-  if (!command) return { status: "cli_missing", message: installHint(options) };
+  if (!command) {
+    return { status: "cli_missing", message: installHint(options) };
+  }
   const env = childEnv(options);
   let version: string;
 
@@ -237,11 +247,12 @@ export async function claudeCodeStatus(
     version = "";
   }
 
-  if (!version)
+  if (!version) {
     return {
       status: "error",
       message: `${command} --version did not report a version.`,
     };
+  }
 
   try {
     const result = await run(
@@ -253,12 +264,13 @@ export async function claudeCodeStatus(
 
     const status = jsonLine(result.stdout.trim(), authStatus);
 
-    if (status?.loggedIn === true)
+    if (status?.loggedIn === true) {
       return {
         status: "signed_in",
         cliVersion: version,
         plan: planLabel(status.subscriptionType),
       };
+    }
   } catch {
     return {
       status: "error",
@@ -302,10 +314,12 @@ const handshake = z.object({
 
 export async function discoverModels(
   options: ClaudeCodeOptions,
-): Promise<DiscoveredModel[] | undefined> {
+): Promise<Array<DiscoveredModel> | undefined> {
   const command = await signedInCommand(options);
 
-  if (!command) return undefined;
+  if (!command) {
+    return undefined;
+  }
   const picker = await readPicker(command, options);
 
   return picker && pickerModels(picker.rows, picker.plan);
@@ -319,7 +333,7 @@ async function signedInCommand(options: ClaudeCodeOptions) {
   return status.status === "signed_in" ? command : undefined;
 }
 
-type PickerContent = { rows: z.infer<typeof pickerRow>[]; plan: string };
+type PickerContent = { rows: Array<z.infer<typeof pickerRow>>; plan: string };
 
 async function readPicker(command: string, options: ClaudeCodeOptions) {
   const env = childEnv(options);
@@ -384,7 +398,9 @@ function unpinnedRoute(
   longContext: Set<string>,
 ): PickerRoute | undefined {
   // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
-  if (!row.resolvedModel) return undefined;
+  if (!row.resolvedModel) {
+    return undefined;
+  }
 
   return {
     route: longContext.has(base) ? longContextRoute(base) : route,
@@ -401,7 +417,9 @@ function pickerRoute(
 ): PickerRoute | undefined {
   const base = routeModel(announced);
 
-  if (!base) return undefined;
+  if (!base) {
+    return undefined;
+  }
   const route = nativeModel(base);
 
   return pinned.has(route)
@@ -437,14 +455,15 @@ function mergePickerRow(
     note: known ? "" : "unpinned",
   };
 
-  if (billedToCredits(row.description, base, creditBilled))
+  if (billedToCredits(row.description, base, creditBilled)) {
     entry.note = creditNote(known);
+  }
   routes.set(route, entry);
 }
 
 function mergePickerRows(
-  rows: z.infer<typeof pickerRow>[],
-  announced: string[],
+  rows: Array<z.infer<typeof pickerRow>>,
+  announced: Array<string>,
   creditBilled: Set<string>,
 ) {
   const pinned = pinnedRouteSet();
@@ -465,7 +484,9 @@ function mergePickerRows(
       longContext,
     );
 
-    if (resolved) mergePickerRow(row, resolved, routes, creditBilled);
+    if (resolved) {
+      mergePickerRow(row, resolved, routes, creditBilled);
+    }
   }
 
   return routes;
@@ -475,22 +496,26 @@ function addPinnedRoutes(
   routes: Map<string, DiscoveredModel>,
   creditBilled: Set<string>,
 ) {
-  for (const { route, canonical } of pinnedRoutes())
-    if (!routes.has(route))
+  for (const { route, canonical } of pinnedRoutes()) {
+    if (!routes.has(route)) {
       routes.set(route, {
         id: route,
         label: catalogLabel(canonical),
         note: creditBilled.has(canonical) ? "usage credits" : "",
       });
+    }
+  }
 }
 
-function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
+function pickerModels(rows: Array<z.infer<typeof pickerRow>>, plan: string) {
   const creditBilled = creditBilledModels(plan);
 
   const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
   const routes = mergePickerRows(rows, announced, creditBilled);
 
-  if (routes.size === 0) return;
+  if (routes.size === 0) {
+    return;
+  }
   addPinnedRoutes(routes, creditBilled);
 
   return [...routes.values()];

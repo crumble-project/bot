@@ -6,7 +6,8 @@ import { errorText } from "../shared/errors";
 import { parseRequestId } from "../shared/request-ids";
 import type { InputOrigin } from "../transcript/origins";
 import { frameInput } from "./input-framing";
-import { isChatTurn, type BotsContext } from "./bots-context";
+import { isChatTurn } from "./bots-context";
+import type { BotsContext } from "./bots-context";
 import type { BotsLookup } from "./bots-lookup";
 import type { BotsNotifications } from "./bots-notifications";
 
@@ -32,7 +33,9 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
   const eventInput = Effect.fnUntraced(function* (execution: Execution) {
     const request = parseRequestId(execution.requestId);
 
-    if (request.kind !== "event") return;
+    if (request.kind !== "event") {
+      return;
+    }
 
     return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });
@@ -40,7 +43,9 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
   const scriptSucceeded = Effect.fnUntraced(function* (execution: Execution) {
     const request = parseRequestId(execution.requestId);
 
-    if (request.kind !== "script") return false;
+    if (request.kind !== "script") {
+      return false;
+    }
 
     return (yield* scriptRuns.status(request.runId)) === "succeeded";
   });
@@ -61,8 +66,9 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     const attachments = yield* executions.attachments(execution.id);
     const legacy = attachments.kind === "legacy" && isChatTurn(execution);
 
-    if (execution.submissionId)
+    if (execution.submissionId) {
       return { submissionId: execution.submissionId, legacy };
+    }
 
     const origin = yield* deps.origin(execution);
 
@@ -159,14 +165,20 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     }).pipe(Effect.onError((cause) => failed(execution, cause)));
 
   const admit = Effect.fnUntraced(function* (execution: Execution) {
-    if (execution.status === "done" || execution.status === "cancelled") return;
+    if (execution.status === "done" || execution.status === "cancelled") {
+      return;
+    }
 
     // Admission can fail after Pi has committed but before the host gets its ID.
     // Reuse the durable request ID; never create another user turn to recover it.
-    if (execution.status === "failed" && execution.submissionId) return;
+    if (execution.status === "failed" && execution.submissionId) {
+      return;
+    }
     const owner = yield* agent(execution.agentId);
 
-    if (!owner.enabled) return yield* cancelled(execution, owner);
+    if (!owner.enabled) {
+      return yield* cancelled(execution, owner);
+    }
 
     yield* run(execution, owner);
   });

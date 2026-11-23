@@ -3,22 +3,20 @@ import type { Agent } from "../contract/agents";
 import type { ChangeBy } from "../shared/domain";
 import type { Skill, SkillInput } from "../contract/skills";
 import { atomic, ProductDatabase } from "../shared/product-database";
+import { required } from "../shared/required";
 import { changeByOf } from "../learned-changes/change-source";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import { DefaultSkills } from "./default-skills";
-import {
-  SkillToolError,
-  type AvailableSkill,
-  type SkillToolContext,
-} from "./skill-library";
+import { SkillToolError } from "./skill-library";
+import type { AvailableSkill, SkillToolContext } from "./skill-library";
 import { SkillRepository } from "./skill-repository";
 
 export class BotSkills extends Context.Service<
   BotSkills,
   {
-    readonly available: (agent: Agent) => Effect.Effect<AvailableSkill[]>;
+    readonly available: (agent: Agent) => Effect.Effect<Array<AvailableSkill>>;
     readonly used: (skill: AvailableSkill) => Effect.Effect<void>;
-    readonly own: (agentId: string) => Effect.Effect<Skill[]>;
+    readonly own: (agentId: string) => Effect.Effect<Array<Skill>>;
     readonly create: (
       agentId: string,
       input: SkillInput,
@@ -65,10 +63,11 @@ export class BotSkills extends Context.Service<
       const ownedBy = Effect.fnUntraced(function* (skillId: string) {
         const skill = yield* skills.get(skillId);
 
-        if (!skill?.agentId)
+        if (!skill?.agentId) {
           return yield* Effect.fail(
             new SkillToolError({ message: "Skill not found" }),
           );
+        }
 
         return { ...skill, agentId: skill.agentId };
       });
@@ -76,10 +75,11 @@ export class BotSkills extends Context.Service<
       const writableBy = Effect.fnUntraced(function* (skillId: string) {
         const skill = yield* ownedBy(skillId);
 
-        if (skill.pinned)
+        if (skill.pinned) {
           return yield* new SkillToolError({
             message: `${skill.name} is pinned by the owner, so bots can't change it`,
           });
+        }
 
         return skill;
       });
@@ -135,11 +135,14 @@ export class BotSkills extends Context.Service<
         ) {
           const skill = yield* writableBy(skillId);
 
-          return (yield* skills.update(
-            skill.id,
-            patch,
-            yield* by(skill.agentId, context),
-          ))!;
+          return required(
+            yield* skills.update(
+              skill.id,
+              patch,
+              yield* by(skill.agentId, context),
+            ),
+            "The skill was not stored",
+          );
         }),
         remove: Effect.fn("BotSkills.remove")(function* (
           skillId: string,

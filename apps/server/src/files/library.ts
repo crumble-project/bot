@@ -2,12 +2,10 @@ import { Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { attachmentKind } from "../shared/attachment-rules";
 import { InvalidInput, NotFound } from "../shared/errors";
-import { FileStore, type FileTooLarge } from "./file-store";
-import {
-  LibraryRepository,
-  type LibraryEntry,
-  type LibraryRef,
-} from "./library-repository";
+import { FileStore } from "./file-store";
+import type { FileTooLarge } from "./file-store";
+import { LibraryRepository } from "./library-repository";
+import type { LibraryEntry, LibraryRef } from "./library-repository";
 import { extractPdfText } from "./pdf-text";
 
 export { MAX_FILE_BYTES } from "../shared/attachment-rules";
@@ -29,7 +27,7 @@ const publicFile = ({
 }: LibraryEntry): LibraryFile => ({ id, name, mimeType, size, createdAt });
 
 export const downloadHeaders = (file: LibraryFile, hash: string) => ({
-  "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+  "Content-Disposition": `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(file.name).replaceAll(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`,
   "X-Content-Type-Options": "nosniff",
   "Content-Security-Policy": "sandbox; default-src 'none'",
   "Content-Type":
@@ -57,11 +55,11 @@ export class Library extends Context.Service<
     list(
       library: LibraryRef,
       page: { before?: string; limit: number },
-    ): Effect.Effect<LibraryFile[], NotFound>;
+    ): Effect.Effect<Array<LibraryFile>, NotFound>;
     browse(
       library: LibraryRef,
       page: { before?: string; limit: number },
-    ): Effect.Effect<LibraryEntry[], NotFound>;
+    ): Effect.Effect<Array<LibraryEntry>, NotFound>;
     describe(
       library: LibraryRef,
       id: string,
@@ -77,12 +75,12 @@ export class Library extends Context.Service<
     remove(library: LibraryRef, id: string): Effect.Effect<void, NotFound>;
     entries(
       library: LibraryRef,
-      ids: readonly string[],
+      ids: ReadonlyArray<string>,
     ): Effect.Effect<Map<string, LibraryEntry>>;
     text(entry: LibraryEntry): Effect.Effect<string | null>;
     validate(
       library: LibraryRef,
-      ids: readonly string[],
+      ids: ReadonlyArray<string>,
     ): Effect.Effect<void, InvalidInput>;
     removeLibrary(
       library: LibraryRef,
@@ -101,8 +99,9 @@ export class Library extends Context.Service<
         const exists = Effect.fnUntraced(function* (library: LibraryRef) {
           const owner = yield* agents.get(library.agentId);
 
-          if (!owner)
+          if (!owner) {
             return yield* new NotFound({ message: "Library not found" });
+          }
         });
 
         const upload = Effect.fn("Library.upload")(function* (
@@ -132,7 +131,9 @@ export class Library extends Context.Service<
                 if (extracted.kind === "text") {
                   yield* files.putText(stored.hash, extracted.text, "pdf");
                   text = "extracted";
-                } else if (extracted.kind === "failed") text = "failed";
+                } else if (extracted.kind === "failed") {
+                  text = "failed";
+                }
               } else if (attachmentKind(input.mimeType) === "text") {
                 const body = yield* files.bytes(stored.hash);
 
@@ -197,7 +198,9 @@ export class Library extends Context.Service<
           yield* exists(library);
           const entry = yield* repository.get(library, id);
 
-          if (!entry) return yield* new NotFound({ message: "File not found" });
+          if (!entry) {
+            return yield* new NotFound({ message: "File not found" });
+          }
 
           return {
             file: publicFile(entry),
@@ -215,8 +218,9 @@ export class Library extends Context.Service<
               yield* exists(library);
               const entry = yield* repository.remove(library, id);
 
-              if (!entry)
+              if (!entry) {
                 return yield* new NotFound({ message: "File not found" });
+              }
               yield* files.removeUnreferenced(entry.hash);
             }),
           );
@@ -224,7 +228,7 @@ export class Library extends Context.Service<
 
         const entries = Effect.fn("Library.entries")(function* (
           library: LibraryRef,
-          ids: readonly string[],
+          ids: ReadonlyArray<string>,
         ) {
           return new Map(
             (yield* repository.getMany(library, ids)).map((entry) => [
@@ -236,12 +240,14 @@ export class Library extends Context.Service<
 
         const validate = Effect.fn("Library.validate")(function* (
           library: LibraryRef,
-          ids: readonly string[],
+          ids: ReadonlyArray<string>,
         ) {
           const found = yield* entries(library, ids);
 
           for (const id of ids) {
-            if (found.has(id)) continue;
+            if (found.has(id)) {
+              continue;
+            }
             const name = yield* repository.deletedName(library, id);
 
             return yield* new InvalidInput({
@@ -263,7 +269,9 @@ export class Library extends Context.Service<
               while (true) {
                 const page = yield* repository.list(library, { limit: 100 });
 
-                if (!page.length) break;
+                if (!page.length) {
+                  break;
+                }
                 yield* Effect.forEach(
                   page,
                   (entry) => repository.remove(library, entry.id),
@@ -271,7 +279,9 @@ export class Library extends Context.Service<
                 );
               }
 
-              if (removeOwner) yield* removeOwner;
+              if (removeOwner) {
+                yield* removeOwner;
+              }
 
               yield* Effect.forEach(
                 hashes,

@@ -3,11 +3,8 @@ import { mkdirSync } from "node:fs";
 import { Context, Effect, Layer } from "effect";
 import { isSqlError } from "effect/sql/SqlError";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
-import {
-  migrationsFolder,
-  sqliteDatabase,
-  type SqliteDatabase,
-} from "./database";
+import { migrationsFolder, sqliteDatabase } from "./database";
+import type { SqliteDatabase } from "./database";
 
 export const atomic =
   (db: SqliteDatabase) =>
