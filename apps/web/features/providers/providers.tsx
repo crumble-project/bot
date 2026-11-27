@@ -24,7 +24,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { FieldError } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -88,12 +89,16 @@ function status(provider: Provider, managers: Array<PasswordManager>) {
   return provider.activeLoginId ? "Signing in…" : null;
 }
 
+type ProviderKeySave =
+  | (SecretInput & { baseUrl?: string })
+  | { baseUrl: string };
+
 function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
   const path = providerPath(provider.provider);
 
   const save = useMutation({
-    mutationFn: (body: SecretInput | null) =>
+    mutationFn: (body: ProviderKeySave | null) =>
       body === null
         ? send<"deleteProvider">(path, "DELETE")
         : send<"putProvider">(path, "PUT", body),
@@ -145,7 +150,7 @@ function ProviderActions({
       <>
         {addKey && (
           <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-            Add key
+            {provider.requiresBaseUrl ? "Connect" : "Add key"}
           </Button>
         )}
         {signIn && (
@@ -168,7 +173,11 @@ function ProviderActions({
       {addKey && (
         <DropdownMenuItem onClick={() => setEditing(true)}>
           <IconKey />
-          {provider.credentialType === "api_key" ? "Replace key" : "Use a key"}
+          {provider.requiresBaseUrl
+            ? "Edit connection"
+            : provider.credentialType === "api_key"
+              ? "Replace key"
+              : "Use a key"}
         </DropdownMenuItem>
       )}
       <DropdownMenuItem
@@ -209,7 +218,7 @@ function ProviderRow({
             )}
           </>
         }
-        description={oauth?.label}
+        description={provider.baseUrl ?? oauth?.label}
       >
         {provider.externalAuth ? (
           <ExternalActions external={provider.externalAuth} />
@@ -268,24 +277,74 @@ function ProviderKeySheet({
   credential: ProviderCredential;
 }) {
   const key = useSecretDraft(provider.apiKey);
+  const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? "");
+  const trimmedUrl = baseUrl.trim();
+  const urlChanged =
+    provider.requiresBaseUrl && trimmedUrl !== (provider.baseUrl ?? "");
+  const hasUrl = !provider.requiresBaseUrl || trimmedUrl.length > 0;
+  const hasKey =
+    key.input !== undefined ||
+    (provider.requiresBaseUrl && provider.apiKey.configured);
+  const canSubmit =
+    hasUrl &&
+    hasKey &&
+    (key.changed || urlChanged) &&
+    !credential.save.isPending;
+
+  const submit = () => {
+    if (!canSubmit) {
+      return;
+    }
+
+    if (key.input) {
+      credential.save.mutate({
+        ...key.input,
+        ...(provider.requiresBaseUrl && { baseUrl: trimmedUrl }),
+      });
+
+      return;
+    }
+
+    if (provider.requiresBaseUrl && trimmedUrl) {
+      credential.save.mutate({ baseUrl: trimmedUrl });
+    }
+  };
 
   return (
     <EditorSheet
-      title={`${provider.credentialType === "api_key" ? "Replace" : "Add"} ${provider.name} API key`}
+      title={
+        provider.requiresBaseUrl
+          ? `${provider.credentialType === "api_key" ? "Edit" : "Connect"} ${provider.name}`
+          : `${provider.credentialType === "api_key" ? "Replace" : "Add"} ${provider.name} API key`
+      }
       error={credential.save.error?.message}
       submitLabel="Save"
-      submitDisabled={!key.changed || credential.save.isPending}
-      onSubmit={() => key.input && credential.save.mutate(key.input)}
+      submitDisabled={!canSubmit}
+      onSubmit={submit}
       onClose={() => {
         credential.setEditing(false);
         credential.save.reset();
       }}
     >
+      {provider.requiresBaseUrl && (
+        <Field>
+          <FieldLabel htmlFor={`provider-url-${provider.provider}`}>
+            Server URL
+          </FieldLabel>
+          <Input
+            id={`provider-url-${provider.provider}`}
+            type="url"
+            value={baseUrl}
+            placeholder="http://127.0.0.1:7662"
+            onChange={(event) => setBaseUrl(event.target.value)}
+          />
+        </Field>
+      )}
       <SecretSourceField
         id={`provider-key-${provider.provider}`}
-        label="API key"
+        label={provider.requiresBaseUrl ? "Token" : "API key"}
         {...key.field}
-        valuePlaceholder="API key"
+        valuePlaceholder={provider.requiresBaseUrl ? "Soma token" : "API key"}
       />
     </EditorSheet>
   );

@@ -24,6 +24,7 @@ export type ExternalAuth = z.output<typeof externalAuthResponse>;
 export type ProviderContribution = {
   provider: Provider;
   externalAuth?: () => Promise<ExternalAuth>;
+  requiresBaseUrl?: boolean;
 };
 
 export type JobKindContribution = {

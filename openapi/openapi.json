@@ -4170,6 +4170,15 @@
           "apiKey": {
             "$ref": "#/components/schemas/SecretStatus"
           },
+          "baseUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requiresBaseUrl": {
+            "type": "boolean"
+          },
           "activeLoginId": {
             "type": [
               "string",
@@ -4187,6 +4196,8 @@
           "authMethods",
           "credentialType",
           "apiKey",
+          "baseUrl",
+          "requiresBaseUrl",
           "activeLoginId",
           "externalAuth"
         ]
@@ -24850,7 +24861,7 @@
     "/v1/providers/{provider}": {
       "put": {
         "operationId": "putProviderKey",
-        "description": "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
+        "description": "Saves the provider's API key, or a password manager reference to read it from, plus an optional server URL for providers that require one. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
         "security": [
           {
             "BearerAuth": []
@@ -24901,6 +24912,11 @@
                       "passwordManager",
                       "reference"
                     ]
+                  },
+                  "baseUrl": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
                   }
                 },
                 "additionalProperties": false

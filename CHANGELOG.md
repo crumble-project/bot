@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add **Soma** as a built-in model backend provider (`provider: "soma"`). Connect a Soma server per account in **Settings** > **Providers** with a server URL and bearer token (including password manager references), or fall back to `SOMA_URL` and `SOMA_TOKEN` in the server environment. Models from all Soma upstreams are discovered automatically as `<upstream>/<model>` with streaming, thinking, tool calls, SHA-256 image blob uploads, vision-model routing, server-reported costs, graceful abort, and `holdsConversation` run handling. `GET /v1/providers` now includes `baseUrl` and `requiresBaseUrl`, and `PUT /v1/providers/{provider}` accepts an optional `baseUrl` for providers that require one.
+
 - Remove repository-owned source comments, preserve consequential decisions in ADRs, and enforce a zero-comment baseline across source and configuration. Add the repository-local `/delete-comment` skill. Move migration separators into metadata without changing historical hashes or execution groups, and replace inline lint/type directives with configuration.
 
 - Replace custom lint rules and vendored plugins with `@cloudflare/oxlint-config`.

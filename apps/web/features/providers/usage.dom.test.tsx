@@ -17,6 +17,8 @@ const anthropic: Provider = {
   authMethods: [],
   credentialType: "api_key",
   apiKey: { configured: true, passwordManager: null, reference: null },
+  baseUrl: null,
+  requiresBaseUrl: false,
   activeLoginId: null,
   externalAuth: null,
 };

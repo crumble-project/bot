@@ -18,6 +18,7 @@ import {
 import { readsImages } from "../vision/vision";
 import { loginMethods } from "./provider-auth";
 import type { ProviderSignInsAccess } from "./provider-auth";
+import { normalizeSomaUrl } from "./soma/client";
 
 export function previewReasoning(
   model: Model<Api> | undefined,
@@ -45,6 +46,7 @@ type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
   externalAuth: ReadonlyMap<string, () => Promise<ExternalAuth>>;
+  requiresBaseUrl?: ReadonlySet<string>;
 };
 
 export const providerSchema = (models: Models) =>
@@ -78,6 +80,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
           configured: Boolean(await models.checkAuth(item.id).catch(() => {})),
           authMethods: loginMethods(item),
           ...providerAuth.status(item.id),
+          requiresBaseUrl: options.requiresBaseUrl?.has(item.id) ?? false,
           activeLoginId: providerAuth.activeLoginId(item.id),
           externalAuth: (await options.externalAuth.get(item.id)?.()) ?? null,
         })),
@@ -119,8 +122,58 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
 
   register.plain(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
+    const input = c.req.valid("json");
+    const needsBaseUrl = options.requiresBaseUrl?.has(name) ?? false;
+    const key =
+      input.value !== undefined
+        ? { value: input.value }
+        : input.reference !== undefined
+          ? { reference: input.reference }
+          : undefined;
 
-    await providerAuth.setApiKey(name, c.req.valid("json"));
+    if (!needsBaseUrl) {
+      if (input.baseUrl !== undefined) {
+        throw new InvalidInput({
+          message: "This provider does not accept a server URL",
+        });
+      }
+
+      if (!key) {
+        throw new InvalidInput({
+          message: "Send exactly one of value or reference",
+        });
+      }
+
+      await providerAuth.setApiKey(name, key);
+
+      return c.json({ provider: name, configured: true }, 200);
+    }
+
+    const existing = providerAuth.status(name);
+    let normalizedUrl: string | undefined;
+
+    if (input.baseUrl !== undefined) {
+      normalizedUrl = normalizeSomaUrl(input.baseUrl);
+
+      if (!normalizedUrl) {
+        throw new InvalidInput({
+          message:
+            "Enter a valid http(s) server URL without credentials, query, or fragment",
+        });
+      }
+    }
+
+    const effectiveUrl = normalizedUrl ?? existing.baseUrl ?? undefined;
+
+    if (!effectiveUrl) {
+      throw new InvalidInput({ message: "Server URL is required" });
+    }
+
+    if (!key && !existing.apiKey.configured) {
+      throw new InvalidInput({ message: "API key is required" });
+    }
+
+    await providerAuth.setApiKey(name, key, effectiveUrl);
 
     return c.json({ provider: name, configured: true }, 200);
   });

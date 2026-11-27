@@ -89,6 +89,27 @@ export const secretInput = z
 
 export type SecretInput = z.infer<typeof secretInput>;
 
+export const providerKeyInput = z
+  .object({
+    value: z.string().min(1).max(MAX_SECRET_CHARS).optional(),
+    reference: secretReferenceInput.optional(),
+    baseUrl: z.string().trim().min(1).max(2048).optional(),
+  })
+  .strict()
+  .refine(
+    (input) => !(input.value !== undefined && input.reference !== undefined),
+    { message: "Send at most one of value or reference" },
+  )
+  .refine(
+    (input) =>
+      input.value !== undefined ||
+      input.reference !== undefined ||
+      input.baseUrl !== undefined,
+    { message: "Send value, reference, or baseUrl" },
+  );
+
+export type ProviderKeyInput = z.infer<typeof providerKeyInput>;
+
 export type SecretStatus = {
   configured: boolean;
   passwordManager: PasswordManagerId | null;
