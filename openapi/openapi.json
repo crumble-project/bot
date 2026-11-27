@@ -223,6 +223,31 @@
         ],
         "description": "The account's pinned conversations changed, sent as the `pins` event on /v1/events with the whole list, first pin first. Not replayed: read the session on connect."
       },
+      "BotStatusEvent": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "thinking",
+              "working",
+              "failed",
+              "question",
+              "blocked"
+            ],
+            "description": "What the bot is doing, or what it needs from the owner. blocked: a bot, call, credential, or login request or a held action waits for the owner. question: a job question or a chat question waits for the owner's answer. failed: the latest turn failed. The first that applies, in this order: blocked, question, failed, thinking, working, idle. Clients may receive other values later."
+          }
+        },
+        "required": [
+          "agentId",
+          "status"
+        ],
+        "description": "A bot's status changed, sent as the `bot-status` event on /v1/events. Every bot's status is sent on connect."
+      },
       "VoiceGatewayConfigEvent": {
         "type": "object",
         "properties": {
@@ -1004,8 +1029,23 @@
             "properties": {
               "lastMessage": {
                 "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "thinking",
+                  "working",
+                  "failed",
+                  "question",
+                  "blocked"
+                ],
+                "description": "What the bot is doing, or what it needs from the owner. blocked: a bot, call, credential, or login request or a held action waits for the owner. question: a job question or a chat question waits for the owner's answer. failed: the latest turn failed. The first that applies, in this order: blocked, question, failed, thinking, working, idle. Clients may receive other values later."
               }
-            }
+            },
+            "required": [
+              "status"
+            ]
           }
         ]
       },
@@ -1086,6 +1126,14 @@
           "eyeColor": {
             "type": "string",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+          },
+          "material": {
+            "type": "string",
+            "enum": [
+              "flat",
+              "fluffy"
+            ],
+            "description": "The body's finish. Absent means flat. A patch whose avatar leaves it out keeps the bot's material; send flat to change it back."
           }
         },
         "required": [
@@ -2492,6 +2540,13 @@
                   "eyeColor": {
                     "type": "string",
                     "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "material": {
+                    "type": "string",
+                    "enum": [
+                      "flat",
+                      "fluffy"
+                    ]
                   }
                 },
                 "required": [
@@ -12738,6 +12793,13 @@
                       "eyeColor": {
                         "type": "string",
                         "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "material": {
+                        "type": "string",
+                        "enum": [
+                          "flat",
+                          "fluffy"
+                        ]
                       }
                     },
                     "required": [
@@ -13273,6 +13335,13 @@
                       "eyeColor": {
                         "type": "string",
                         "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "material": {
+                        "type": "string",
+                        "enum": [
+                          "flat",
+                          "fluffy"
+                        ]
                       }
                     },
                     "required": [
@@ -16546,11 +16615,14 @@
           "pins": {
             "$ref": "#/components/schemas/PinsEvent"
           },
+          "bot-status": {
+            "$ref": "#/components/schemas/BotStatusEvent"
+          },
           "heartbeat": {
             "$ref": "#/components/schemas/HeartbeatEvent"
           }
         },
-        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Current chat previews replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Each bot-status event carries a BotStatusEvent: what a bot is doing or needs from the owner. Current chat previews and bot statuses replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
         "security": [
           {
             "BearerAuth": []
@@ -17010,6 +17082,13 @@
                           "eyeColor": {
                             "type": "string",
                             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                          },
+                          "material": {
+                            "type": "string",
+                            "enum": [
+                              "flat",
+                              "fluffy"
+                            ]
                           }
                         },
                         "required": [

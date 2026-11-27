@@ -28,8 +28,10 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
 
   register.plain(routes.listAgents, async (c) =>
     c.json(
-      (await service.agentPreviews()).map(({ agent, lastMessage }) => {
-        return lastMessage ? { ...agent, lastMessage } : agent;
+      (await service.agentPreviews()).map(({ agent, lastMessage, status }) => {
+        return lastMessage
+          ? { ...agent, lastMessage, status }
+          : { ...agent, status };
       }),
       200,
     ),

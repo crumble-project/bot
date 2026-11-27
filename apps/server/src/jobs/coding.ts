@@ -228,6 +228,7 @@ export const codingPlugin = (
             onAnswer: coding.onAnswer,
             onQuestion: coding.onQuestion,
             onFinished: coding.onFinished,
+            onChange: coding.onChange,
           },
         ]
       : [],

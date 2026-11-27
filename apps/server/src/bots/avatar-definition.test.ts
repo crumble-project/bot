@@ -106,4 +106,28 @@ describe("portable bot avatars", () => {
     expect(reopened.getAgent(bot.id)?.avatar).toEqual(custom);
     reopened.close();
   });
+
+  test("keeps the material when a patch leaves it out, and copies it", () => {
+    const store = new Store(make());
+    const bot = store.createAgent({ ...input, avatar: custom });
+    expect(bot.avatar.material).toBeUndefined();
+
+    store.updateAgent(bot.id, { avatar: { ...custom, material: "fluffy" } });
+    const recolored = { ...custom, color: "#456def" };
+    expect(store.updateAgent(bot.id, { avatar: recolored })?.avatar).toEqual({
+      ...recolored,
+      material: "fluffy",
+    });
+    expect(store.duplicateAgent(bot.id)?.avatar.material).toBe("fluffy");
+
+    expect(
+      store.updateAgent(bot.id, { avatar: { ...custom, material: "flat" } })
+        ?.avatar.material,
+    ).toBe("flat");
+    expect(
+      avatarDefinitionSchema.safeParse({ ...custom, material: "plush" })
+        .success,
+    ).toBe(false);
+    store.close();
+  });
 });

@@ -11,6 +11,7 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
+import { BotNeeds, needWhen } from "../bot-ports/bot-needs";
 import { BotNotices, loggedNotices } from "../bot-ports/bot-notices";
 import { Conflict, NotFound } from "../shared/errors";
 import type { AppError } from "../shared/errors";
@@ -78,6 +79,26 @@ export class BotRequests extends Context.Service<
       const db = yield* ProductDatabase;
       const agents = yield* AgentRepository;
       const notices = yield* BotNotices;
+      const needs = yield* BotNeeds;
+
+      yield* needs.provide(
+        needWhen("blocked", (agentId) =>
+          db
+            .select({ id: botRequests.id })
+            .from(botRequests)
+            .where(
+              and(
+                eq(botRequests.agentId, agentId),
+                eq(botRequests.status, "pending"),
+              ),
+            )
+            .limit(1)
+            .pipe(
+              Effect.orDie,
+              Effect.map((rows) => rows.length > 0),
+            ),
+        ),
+      );
 
       const notify = loggedNotices(notices, "Bot request notice failed");
 
@@ -208,6 +229,7 @@ export class BotRequests extends Context.Service<
             ),
           );
         const row = yield* getRow(agentId, id);
+        yield* needs.changed(agentId);
 
         return row
           ? requestOf(row)
@@ -265,6 +287,7 @@ export class BotRequests extends Context.Service<
           )
           .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)));
 
+        yield* needs.changed(agentId);
         yield* notify(
           agentId,
           `The owner approved your request for bot ${agent.name}.`,
@@ -285,6 +308,7 @@ export class BotRequests extends Context.Service<
           return yield* alreadyDecided(agentId, requestId);
         }
 
+        yield* needs.changed(agentId);
         const updated = yield* getRow(agentId, requestId);
 
         if (!updated) {

@@ -108,6 +108,10 @@ test("gallery, import validation, colors and description-inclusive generation pr
     await type('input[id$="-eyes"]', "#fedcba");
     expect(current.color).toBe("#123456");
     expect(current.eyeColor).toBe("#fedcba");
+    expect(current.material).toBeUndefined();
+    await click("Fluffy");
+    expect(current.material).toBe("fluffy");
+    await click("Pick Mug");
     const setAvatar = defined(replace, "the editor's value setter");
 
     await act(async () => setAvatar({ ...current, color: "#654321" }));
@@ -152,6 +156,9 @@ test("gallery, import validation, colors and description-inclusive generation pr
     expect(current.definition.id).toBe(original.definition.id);
     expect(current.color).toBe("#654321");
     expect(current.eyeColor).toBe("#fedcba");
+    expect(current.material).toBe("fluffy");
+    await click("Flat");
+    expect(current.material).toBe("flat");
   } finally {
     await act(async () => root.unmount());
 

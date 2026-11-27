@@ -167,7 +167,10 @@ export class AgentRepository extends Context.Service<
           .set({
             ...columns({ ...old, ...patch }),
             avatar: JSON.stringify(
-              avatarDefinitionSchema.parse(patch.avatar ?? old.avatar),
+              avatarDefinitionSchema.parse({
+                material: old.avatar.material,
+                ...(patch.avatar ?? old.avatar),
+              }),
             ),
             updatedAt: yield* nowIso,
           })

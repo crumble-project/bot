@@ -60,6 +60,7 @@ export const ExtensionPosition = {
   desktopScreenshot: 62,
   webSearch: 65,
   reaction: 70,
+  markQuestion: 72,
   voice: 75,
   callRequests: 76,
   jobs: 80,

@@ -1004,10 +1004,11 @@ export const routes = {
       activity: { $ref: "#/components/schemas/ActivityEvent" },
       learned: { $ref: "#/components/schemas/LearnedEvent" },
       pins: { $ref: "#/components/schemas/PinsEvent" },
+      "bot-status": { $ref: "#/components/schemas/BotStatusEvent" },
       heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
     },
     description:
-      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Current chat previews replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Each pins event carries a PinsEvent: the account's pinned conversations after a change, which the session also returns. Each bot-status event carries a BotStatusEvent: what a bot is doing or needs from the owner. Current chat previews and bot statuses replay on connection; finished replies, learned events, and pins events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
     responses: {
       200: {
         description: "SSE stream, not a JSON array",

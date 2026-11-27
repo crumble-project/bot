@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bot-store/agent-repository";
 import { ConversationRepository } from "../bot-store/conversation-repository";
+import { BotNeeds } from "../bot-ports/bot-needs";
 import { BotNotices, loggedNotices } from "../bot-ports/bot-notices";
 import { BotRuntime } from "../bots/runtime";
 import type { CallRequest } from "../contract/voice-gateway";
@@ -76,6 +77,8 @@ export class CallRequests extends Context.Service<
       const runtime = yield* BotRuntime;
       const gateway = yield* VoiceGateway;
 
+      const needs = yield* BotNeeds;
+
       const notify = loggedNotices(
         yield* BotNotices,
         "Call request notice failed",
@@ -136,6 +139,8 @@ export class CallRequests extends Context.Service<
           .pipe(Effect.orDie);
 
         if (row) {
+          yield* needs.changed(agentId);
+
           return requestOf(row);
         }
         yield* found(agentId, requestId);
@@ -145,7 +150,7 @@ export class CallRequests extends Context.Service<
         });
       });
 
-      const reopen = (requestId: string) =>
+      const reopen = (agentId: string, requestId: string) =>
         db
           .update(callRequests)
           .set({
@@ -160,7 +165,7 @@ export class CallRequests extends Context.Service<
               eq(callRequests.status, "calling"),
             ),
           )
-          .pipe(Effect.orDie, Effect.asVoid);
+          .pipe(Effect.orDie, Effect.andThen(needs.changed(agentId)));
 
       const pendingOf = (agentId: string) =>
         db
@@ -174,6 +179,12 @@ export class CallRequests extends Context.Service<
           )
           .limit(1)
           .pipe(Effect.orDie);
+
+      yield* needs.provide((agentId) =>
+        Effect.map(pendingOf(agentId), (rows) =>
+          rows.length > 0 ? ("blocked" as const) : undefined,
+        ),
+      );
 
       const ownerNumbers = Effect.map(
         gateway.describe,
@@ -222,6 +233,7 @@ export class CallRequests extends Context.Service<
               "A call request is already pending; wait for the owner's answer.",
           });
         }
+        yield* needs.changed(agentId);
 
         return yield* found(agentId, id);
       });
@@ -287,11 +299,11 @@ export class CallRequests extends Context.Service<
         const claimed = yield* claim(agentId, requestId, "calling");
 
         const refusal = yield* dial(claimed).pipe(
-          Effect.onError(() => reopen(requestId)),
+          Effect.onError(() => reopen(agentId, requestId)),
         );
 
         if (refusal) {
-          yield* reopen(requestId);
+          yield* reopen(agentId, requestId);
 
           return yield* new Conflict({ message: refusal });
         }

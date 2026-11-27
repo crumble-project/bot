@@ -135,6 +135,7 @@ export const desktopPlugin = (
             env: (agentId, target, context) =>
               desktop.env(workspaces, agentId, target, context),
             onAnswer: desktop.onAnswer,
+            onChange: desktop.onChange,
           },
         ]
       : [],

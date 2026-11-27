@@ -12,20 +12,38 @@ Sign in with the account you created when you
 
 ## Sidebar
 
-| Section         | What's there                                                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pinned**      | Up to nine bot chats. Pin or unpin one from its **More** menu, and drag pins to reorder them. Your other apps show the same pins.         |
-| **Bots**        | Each bot's chat, with its jobs and desktop.                                                                                               |
-| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                  |
-| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                           |
-| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                             |
-| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                            |
-| **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out. |
+| Part            | What's there                                                                                                                                                                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Header**      | The **Activity** and **Settings** icons. On a phone, a **Search** icon too.                                                                                                                                                                         |
+| **Pinned bots** | Up to nine bots as round portraits, three per row, above the list so they stay in view while you scroll. Right-click a portrait, or press and hold it, then select **Unpin**. Drag one onto another to reorder. Your other apps show the same pins. |
+| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                                                                                                                                     |
+| **Bots**        | Each unpinned bot's chat, with its jobs and desktop. Select **+** to create a bot, or **More** > **Pin** on a bot to pin it.                                                                                                                        |
 
-Press `⌘K`, or `Ctrl+K`, or select **Search** in the sidebar to open the
-command palette. It jumps to a bot, workspace page, or settings
-section, creates a bot, and switches the theme. To search inside
-conversations, ask a bot. It
+**Activity** lists everything bots did, by day. Filter by kind or bot, and
+revert a change to a skill or memory.
+
+Each bot's avatar shows what it's doing, and a dot marks a bot with replies you
+haven't seen. The sidebar updates as bots work, whether or not their chats are
+open. Point at a bot, or use a screen reader, to read why its avatar looks
+the way it does, such as "has a question", "needs your decision", or "last reply
+failed".
+
+When the web app loses its connection to the server, the sidebar shows
+**Reconnecting…** or **Disconnected** below the header.
+
+Memory, theme, and sign-out live in **Settings**:
+
+- **Settings** > **General** > **Appearance** sets the theme to System, Light,
+  or Dark. The choice is saved to your account, so your other devices use it
+  too.
+- **Settings** > **Memory** shows every bot's memories and your shared
+  memories. Edit or delete them there. The old `/memory` address redirects to
+  it.
+
+On a computer, press `⌘K` or `Ctrl+K` to open the command palette. On a phone,
+select **Search** in the sidebar header. The palette jumps to a bot, workspace
+page, or settings section, creates a bot, and switches the theme. To search
+inside conversations, ask a bot. It
 [searches its transcripts](/concepts/chats#searching-the-transcript) for you.
 
 ## Request Cards

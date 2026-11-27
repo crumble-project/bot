@@ -18,6 +18,14 @@ _Avoid_: Bot creation request
 The continuous direct-message exchange between a bot and its owner, including work the bot performs in the background.
 _Avoid_: Conversation session, new chat
 
+**Chat question**:
+A bot's reply that it marked as a question it needs the owner to answer before it can go on. It stays open until the owner's next message in the bot chat.
+_Avoid_: Job question, prompt, notification
+
+**Bot status**:
+What a bot is doing (idle, thinking, or working) or that its latest turn failed, unless it needs the owner: it has a question (a job question or a chat question), or it is blocked by a request or held action that waits for the owner's decision. A retry is working, not blocked.
+_Avoid_: Presence, online status
+
 **Bot chat delivery**:
 The progress of an owner's message from sending to confirmation in the bot chat's transcript, including failed sends and retries.
 _Avoid_: Message execution, completed bot work

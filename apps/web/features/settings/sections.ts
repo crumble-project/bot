@@ -1,5 +1,6 @@
 import {
   IconAdjustmentsHorizontal,
+  IconBrain,
   IconCode,
   IconEye,
   IconKey,
@@ -22,6 +23,7 @@ const SETTINGS_SECTIONS = [
     label: "General",
     icon: IconAdjustmentsHorizontal,
   },
+  { to: "/settings/memory", label: "Memory", icon: IconBrain },
   { to: "/settings/providers", label: "Providers", icon: IconKey },
   {
     to: "/settings/password-managers",

@@ -26,10 +26,6 @@ export const workingAvatar = (working: Working): BotState => {
     return "thinking";
   }
 
-  if (working === "struggling") {
-    return "blocked";
-  }
-
   return isBusy(working) ? "working" : "idle";
 };
 

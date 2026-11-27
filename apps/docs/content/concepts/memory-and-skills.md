@@ -17,7 +17,7 @@ A memory is either the bot's own, or **shared** with every one of your bots
 that has memory turned on. Every memory records where it came from: a bot
 chat, you, a scheduled task, or another bot.
 
-Review and edit memories on the **Memory** page.
+Review and edit memories in **Settings** > **Memory**.
 
 The bot's [jobs](/concepts/workspaces#jobs) see its memories too, but only
 read them.

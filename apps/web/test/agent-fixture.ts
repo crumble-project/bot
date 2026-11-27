@@ -11,6 +11,7 @@ export function agentFixture(
     provider: "test",
     model: "test",
     enabled: true,
+    status: "idle",
     tools: [],
     skills: [],
     mcpServers: [],
