@@ -11,7 +11,9 @@ import { EventRepository } from "../event-sources/event-repository";
 import { AgentRepository } from "../bot-store/agent-repository";
 import type { Activity } from "./bots";
 import { BotDeletion } from "../bot-ports/bot-deletion";
+import { BotNeeds } from "../bot-ports/bot-needs";
 import { BotNotices } from "../bot-ports/bot-notices";
+import type { BotStatusChange } from "./bots-status";
 import { CallNotes } from "../bot-ports/call-notes";
 import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
@@ -35,12 +37,14 @@ export type BotsContext = {
   readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
   readonly library: Library["Service"];
+  readonly needs: BotNeeds["Service"];
   readonly notices: BotNotices["Service"];
   readonly callNotes: CallNotes["Service"];
   readonly deletion: BotDeletion["Service"];
   readonly scope: Scope.Scope;
   readonly listeners: KeyedListeners;
   readonly activityListeners: Set<(event: Activity) => void>;
+  readonly statusListeners: Set<(event: BotStatusChange) => void>;
   readonly settledListeners: Set<
     (execution: Execution) => void | Promise<void>
   >;
@@ -60,12 +64,14 @@ export const botsContext = Effect.gen(function* () {
     events: yield* EventRepository,
     runtime: yield* BotRuntime,
     library: yield* Library,
+    needs: yield* BotNeeds,
     notices: yield* BotNotices,
     callNotes: yield* CallNotes,
     deletion: yield* BotDeletion,
     scope: yield* Effect.scope,
     listeners: keyedListeners(),
     activityListeners: new Set<(event: Activity) => void>(),
+    statusListeners: new Set<(event: BotStatusChange) => void>(),
     settledListeners: new Set<(execution: Execution) => void | Promise<void>>(),
     chatOpenings: keyedLocks(),
     monitors: yield* FiberMap.make<string>(),

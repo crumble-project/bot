@@ -7,10 +7,11 @@ import { formatEntryId, formatMessageId } from "../shared/entry-ids";
 import { nowIso } from "../shared/time";
 import type { Activity } from "./bots";
 import type { BotsContext } from "./bots-context";
+import type { BotsStatus } from "./bots-status";
 
 export type BotsNotifications = ReturnType<typeof botsNotifications>;
 
-export const botsNotifications = (context: BotsContext) => {
+export const botsNotifications = (context: BotsContext, status: BotsStatus) => {
   const { activityListeners, agents, executions, listeners, scope } = context;
   const { settledListeners } = context;
 
@@ -36,7 +37,9 @@ export const botsNotifications = (context: BotsContext) => {
   };
 
   const changed = (conversationId: string) =>
-    Effect.sync(() => listeners.notify(conversationId));
+    Effect.sync(() => listeners.notify(conversationId)).pipe(
+      Effect.andThen(status.conversationChanged(conversationId)),
+    );
 
   const emit = (event: Activity) =>
     Effect.sync(() => {

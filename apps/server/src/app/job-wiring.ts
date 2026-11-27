@@ -1,6 +1,10 @@
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
+import { BotNeeds } from "../bot-ports/bot-needs";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { ConversationRepository } from "../bot-store/conversation-repository";
 import { Bots } from "../bots/bots";
+import { BotRuntime } from "../bots/runtime";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";
 
@@ -20,6 +24,37 @@ export const jobTools = Layer.effectDiscard(
     yield* (yield* BotExtensions).register(
       ExtensionPosition.jobs,
       (agent) => jobExtensions(jobKinds, agent).chat,
+    );
+  }),
+);
+
+export const jobNeeds = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const needs = yield* BotNeeds;
+    const agents = yield* AgentRepository;
+    const conversations = yield* ConversationRepository;
+    const runtime = yield* BotRuntime;
+    const jobKinds = pluginJobKinds(yield* Plugins);
+
+    yield* needs.provide(
+      Effect.fnUntraced(function* (agentId) {
+        const agent = yield* agents.get(agentId);
+
+        if (!agent || !(yield* conversations.list(agentId, true)).length) {
+          return undefined;
+        }
+
+        return yield* Effect.promise(() => runtime.jobNeed(agent));
+      }),
+    );
+
+    yield* whileOpen(() =>
+      jobKinds.flatMap(
+        (kind) =>
+          kind.onChange?.(
+            (agentId) => void Effect.runPromise(needs.changed(agentId)),
+          ) ?? [],
+      ),
     );
   }),
 );

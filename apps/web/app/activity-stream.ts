@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import {
   activityEvent,
+  botStatusEvent,
   pinsEvent,
 } from "@crumble/server/contract/api-responses";
 import { authClient } from "@/lib/auth-client";
@@ -39,6 +40,14 @@ export function useConnectionStatus() {
 function preview(agentId: string, lastMessage: string) {
   queryClient.setQueryData(botsQuery.queryKey, (bots: Array<Bot> | undefined) =>
     bots?.map((bot) => (bot.id === agentId ? { ...bot, lastMessage } : bot)),
+  );
+}
+
+function setStatusOf(agentId: string, botStatus: Bot["status"]) {
+  queryClient.setQueryData(botsQuery.queryKey, (bots: Array<Bot> | undefined) =>
+    bots?.map((bot) =>
+      bot.id === agentId ? { ...bot, status: botStatus } : bot,
+    ),
   );
 }
 
@@ -81,6 +90,13 @@ export function followActivity(links: ChatLinks, signal: AbortSignal) {
         if (name === "pins") {
           pinsEvent.parse(JSON.parse(data));
           authClient.$store.notify("$sessionSignal");
+
+          return;
+        }
+
+        if (name === "bot-status") {
+          const event = botStatusEvent.parse(JSON.parse(data));
+          setStatusOf(event.agentId, event.status);
 
           return;
         }

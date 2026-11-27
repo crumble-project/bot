@@ -1105,6 +1105,19 @@ export class AgentRuntime {
     }));
   }
 
+  async jobNeed(agent: Agent) {
+    const { harness } = await this.open(agent);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    const found = await Promise.all(
+      Object.values(JOB_READERS).map((kind) => kind.activity(harness, root.id)),
+    );
+
+    return found.includes("question")
+      ? ("question" as const)
+      : found.find((need) => need === "working");
+  }
+
   async answerJob(
     agent: Agent,
     kind: string,

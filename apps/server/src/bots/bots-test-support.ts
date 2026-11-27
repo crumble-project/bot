@@ -9,6 +9,7 @@ import type { AgentRepository } from "../bot-store/agent-repository";
 import { Bots, botsAccess } from "./bots";
 import type { BotsAccess } from "./bots";
 import type { BotDeletion } from "../bot-ports/bot-deletion";
+import type { BotNeeds } from "../bot-ports/bot-needs";
 import type { BotNotices } from "../bot-ports/bot-notices";
 import type { CallNotes } from "../bot-ports/call-notes";
 import type { ConversationRepository } from "../bot-store/conversation-repository";
@@ -28,6 +29,7 @@ type StandaloneServices =
   | ScheduleRepository
   | ScriptRunRepository
   | EventRepository
+  | BotNeeds
   | BotNotices
   | CallNotes
   | BotDeletion

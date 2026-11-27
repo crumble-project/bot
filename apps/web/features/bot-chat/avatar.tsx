@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { BotAvatar } from "@/components/bot-avatar";
 import type { AvatarBot, BotState } from "@/components/bot-avatar";
-import { isBusy, useWorking, workingAvatar } from "./working";
-import type { Working } from "./working";
+import type { Bot } from "@/features/bots/api";
+import { STATUS_AVATAR } from "@/features/bots/status";
+import { useWorking, workingAvatar } from "./working";
 
 const DONE_MS = 4000;
 
-function useJustFinished(working: Working) {
+const isActive = (state: BotState) =>
+  state === "thinking" || state === "working";
+
+function useCelebration(state: BotState): BotState {
   const [finished, setFinished] = useState(false);
-  const previous = useRef(working);
+  const previous = useRef(state);
 
   useEffect(() => {
     const was = previous.current;
 
-    previous.current = working;
+    previous.current = state;
 
-    if (!isBusy(was) || working !== "idle") {
+    if (!isActive(was) || state !== "idle") {
       setFinished(false);
 
       return;
@@ -26,13 +30,34 @@ function useJustFinished(working: Working) {
     const timer = setTimeout(() => setFinished(false), DONE_MS);
 
     return () => clearTimeout(timer);
-  }, [working]);
+  }, [state]);
 
-  return finished;
+  return finished ? "done" : state;
 }
 
-const avatarState = (working: Working, finished: boolean): BotState =>
-  finished ? "done" : workingAvatar(working);
+function CelebratingAvatar({
+  bot,
+  size,
+  state,
+  className,
+}: {
+  bot: AvatarBot;
+  size: number;
+  state: BotState;
+  className?: string;
+}) {
+  const shown = useCelebration(state);
+
+  return (
+    <BotAvatar
+      bot={bot}
+      size={size}
+      live
+      state={shown}
+      {...(className && { className })}
+    />
+  );
+}
 
 export function LiveBotAvatar({
   bot,
@@ -43,17 +68,30 @@ export function LiveBotAvatar({
   size: number;
   className?: string;
 }) {
-  const working = useWorking(bot.id);
-  const finished = useJustFinished(working);
-
-  const state = avatarState(working, finished);
-
   return (
-    <BotAvatar
+    <CelebratingAvatar
       bot={bot}
       size={size}
-      live
-      state={state}
+      state={workingAvatar(useWorking(bot.id))}
+      {...(className && { className })}
+    />
+  );
+}
+
+export function StatusBotAvatar({
+  bot,
+  size,
+  className,
+}: {
+  bot: Pick<Bot, "id" | "avatar" | "status">;
+  size: number;
+  className?: string;
+}) {
+  return (
+    <CelebratingAvatar
+      bot={bot}
+      size={size}
+      state={STATUS_AVATAR[bot.status]}
       {...(className && { className })}
     />
   );

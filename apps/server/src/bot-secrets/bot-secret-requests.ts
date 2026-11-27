@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
+import { BotNeeds, needWhen } from "../bot-ports/bot-needs";
 import { BotNotices, requestAnswers } from "../bot-ports/bot-notices";
 import { ProductDatabase } from "../shared/product-database";
 import { required } from "../shared/required";
@@ -75,6 +76,21 @@ export class BotSecretRequests extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const notices = yield* BotNotices;
+      const needs = yield* BotNeeds;
+
+      yield* needs.provide(
+        needWhen("blocked", (agentId) =>
+          db
+            .select({ name: botSecretRequests.name })
+            .from(botSecretRequests)
+            .where(eq(botSecretRequests.agentId, agentId))
+            .limit(1)
+            .pipe(
+              Effect.orDie,
+              Effect.map((rows) => rows.length > 0),
+            ),
+        ),
+      );
 
       const get = Effect.fn("BotSecretRequests.get")(function* (
         agentId: string,
@@ -104,6 +120,8 @@ export class BotSecretRequests extends Context.Service<
         if (!deleted.length) {
           return false;
         }
+
+        yield* needs.changed(agentId);
 
         yield* requestAnswers(notices, kind)(agentId, name, text);
 
@@ -147,6 +165,7 @@ export class BotSecretRequests extends Context.Service<
                 set: row,
               })
               .pipe(Effect.orDie);
+            yield* needs.changed(agentId);
 
             return required(
               yield* get(agentId, kind, input.name),

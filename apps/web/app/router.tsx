@@ -157,7 +157,9 @@ const botLibraryRoute = createRoute({
 const memoryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/memory",
-  component: MemoryPage,
+  beforeLoad: () => {
+    redirect({ to: "/settings/memory", replace: true, throw: true });
+  },
 });
 
 const automationsRoute = createRoute({
@@ -232,6 +234,12 @@ const generalRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/general",
   component: GeneralSettings,
+});
+
+const settingsMemoryRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/memory",
+  component: MemoryPage,
 });
 
 const providersRoute = createRoute({
@@ -354,6 +362,7 @@ export const router = createRouter({
       settingsRoute.addChildren([
         settingsIndexRoute,
         generalRoute,
+        settingsMemoryRoute,
         providersRoute,
         passwordManagersRoute,
         webSearchRoute,

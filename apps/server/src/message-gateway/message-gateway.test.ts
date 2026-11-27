@@ -186,6 +186,8 @@ async function fixture(
           conversation: unexpected,
           subscribe: unsubscribe,
           onActivity: unsubscribe,
+          onBotStatus: unsubscribe,
+          requestStatuses: unexpected(),
           changed: unexpected,
           onSettled: unsubscribe,
           agentPreviews: unexpected(),

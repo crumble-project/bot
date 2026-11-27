@@ -9,6 +9,7 @@ import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
 import { reviewConversations } from "../learning/review-kind";
 import { BotExtensions } from "../bot-ports/bot-extensions";
+import { markQuestionTools } from "../bots/mark-question";
 import { reactionTools } from "../bots/reaction";
 import { codemodeTools } from "../integrations/codemode";
 import { configuredWebSearchTools } from "../web-search/web-search-tools";
@@ -57,7 +58,7 @@ import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
 import { heldActionNotices } from "../bot-desktop/held-action-notices";
-import { jobAnswers, jobQuestions, jobTools } from "./job-wiring";
+import { jobAnswers, jobNeeds, jobQuestions, jobTools } from "./job-wiring";
 import {
   conversationEnv,
   jobExtensions,
@@ -294,6 +295,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     curation,
     skillUpdateChecks,
     jobAnswers,
+    jobNeeds,
     jobQuestions,
     heldActionNotices,
     jobTools,
@@ -329,6 +331,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     displayTools,
     configuredWebSearchTools,
     reactionTools,
+    markQuestionTools,
   );
 
   const signIns = Layer.mergeAll(ProviderSignIns.layer, integrations);

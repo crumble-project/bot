@@ -25,6 +25,10 @@ In the bot's settings, click its avatar to open the editor. Choose a shape from
 **Gallery**, or paste an Open Bot Avatar definition into **Import**. Invalid
 geometry is rejected with validation errors. Click **Save** to keep your changes.
 
+**Material** makes the avatar **Flat** or **Fluffy**. Fluffy shows on larger,
+animated avatars in browsers with WebGL2. Small avatars, and the Apple and
+Android apps, stay flat.
+
 To design a shape, open **Generate** and enter a description. Click
 **Copy generation prompt**, give the prompt to any bot or model, then paste its
 JSON response into **Import**. The copied prompt includes your description.
@@ -37,8 +41,9 @@ choice. Live avatars respect your system's reduced-motion setting.
 
 An avatar shows what its bot is doing. While the bot thinks, its body turns
 into three hopping dots. While it writes, searches, remembers, or uses tools, it
-bends over the work. When it retries, it shows an exclamation mark. When a reply
-finishes, it celebrates for a few seconds.
+bends over the work, including while it retries. When it has a question for you,
+needs your decision, or its last reply failed, it shows an exclamation mark.
+When a reply finishes, it celebrates for a few seconds.
 
 Bots without a saved definition get a fresh gallery avatar with default colors.
 The bot ID selects the shape; previous avatar shapes and colors don't affect it.

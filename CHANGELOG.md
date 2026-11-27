@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The web sidebar shows pinned bots as portraits, like the Apple clients, and every bot's avatar shows its status even when its chat isn't open: thinking, working, or an exclamation mark when it needs you or its last reply failed. A retrying bot now shows as working. **Memory** and **Theme** moved to **Settings**, **Activity** and **Settings** are icons at the top, and search is `⌘K` (an icon on phones). `GET /v1/agents` returns `status` for each bot, and `/v1/events` sends `bot-status` events.
+- Bot avatars can be fluffy, using `open-bot-avatar` 0.4.0: choose **Material** for each bot in the avatar editor. Flat stays the default. Animated avatars from 32 pixels up show the fur; smaller ones, the Apple and Android apps, and browsers without WebGL2 stay flat. The API's `avatar` has an optional `material`, which a patch that leaves it out keeps.
+- Bots can mark a reply as a question with the `mark_question` tool. The bot has the status `question` until you answer.
 - Remove repository-owned source comments, preserve consequential decisions in ADRs, and enforce a zero-comment baseline across source and configuration. Add the repository-local `/delete-comment` skill. Move migration separators into metadata without changing historical hashes or execution groups, and replace inline lint/type directives with configuration.
 
 - Replace custom lint rules and vendored plugins with `@cloudflare/oxlint-config`.

@@ -1,10 +1,19 @@
 import { z } from "@hono/zod-openapi";
 import { DEFAULT_COLOR, DEFAULT_EYE_COLOR, examples } from "open-bot-avatar";
-import { avatarDefinitionSchema as persistedAvatar } from "../shared/avatar-definition";
+import {
+  AVATAR_MATERIALS,
+  avatarDefinitionSchema as persistedAvatar,
+} from "../shared/avatar-definition";
 import { required } from "../shared/required";
 
 export const avatarDefinitionSchema = z
-  .object(persistedAvatar.shape)
+  .object({
+    ...persistedAvatar.shape,
+    material: z.enum(AVATAR_MATERIALS).optional().openapi({
+      description:
+        "The body's finish. Absent means flat. A patch whose avatar leaves it out keeps the bot's material; send flat to change it back.",
+    }),
+  })
   .openapi("BotAvatarDefinition");
 
 export type BotAvatarDefinition = z.infer<typeof avatarDefinitionSchema>;

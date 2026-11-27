@@ -7,7 +7,16 @@ import type { MountedAvatar } from "open-bot-avatar/dom";
 import type { BotAvatarDefinition } from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 
-export type BotState = AvatarState;
+export type BotState = AvatarState | "question";
+
+type StateOptions = { state: AvatarState; mark?: "question" | undefined };
+
+const avatarOptions = (state: BotState): StateOptions =>
+  state === "question"
+    ? { state: "blocked", mark: "question" }
+    : { state, mark: undefined };
+
+const FLUFFY_MIN_SIZE = 32;
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
 
@@ -22,8 +31,11 @@ export function botStyle(color: string): CSSProperties {
 function useLiveAvatar(
   still: boolean,
   look: BotAvatarDefinition,
-  state: AvatarState,
+  state: BotState,
+  size: number,
 ) {
+  const material = size >= FLUFFY_MIN_SIZE ? (look.material ?? "flat") : "flat";
+
   const host = useRef<HTMLSpanElement>(null);
   const avatar = useRef<MountedAvatar | null>(null);
   const latest = useRef(state);
@@ -35,7 +47,8 @@ function useLiveAvatar(
 
     const mounted = mountAvatar(host.current, {
       ...look,
-      state: latest.current,
+      ...avatarOptions(latest.current),
+      material,
       reducedMotion: "system",
       followPointer: true,
       label: "",
@@ -47,11 +60,11 @@ function useLiveAvatar(
       mounted.destroy();
       avatar.current = null;
     };
-  }, [still, look]);
+  }, [still, look, material]);
 
   useLayoutEffect(() => {
     latest.current = state;
-    avatar.current?.update({ state });
+    avatar.current?.update(avatarOptions(state));
   }, [state]);
 
   return host;
@@ -73,7 +86,7 @@ export function BotAvatar({
   const look = bot.avatar;
 
   const still = !live;
-  const host = useLiveAvatar(still, look, state);
+  const host = useLiveAvatar(still, look, state, size);
 
   const svg = useMemo(
     () =>
@@ -81,7 +94,7 @@ export function BotAvatar({
         ? renderAvatarSvg(look.definition, {
             color: look.color,
             eyeColor: look.eyeColor,
-            state,
+            ...avatarOptions(state),
             reducedMotion: true,
           })
         : "",

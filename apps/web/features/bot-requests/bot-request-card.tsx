@@ -119,7 +119,7 @@ function useBotRequestMutations(
       queryClient.setQueryData<Array<Bot>>(botsQuery.queryKey, (bots) =>
         !bots || bots.some((bot) => bot.id === agent.id)
           ? bots
-          : [...bots, agent],
+          : [...bots, { ...agent, status: "idle" }],
       );
       void refresh();
       void invalidateBots();

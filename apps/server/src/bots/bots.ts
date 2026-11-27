@@ -1,4 +1,6 @@
 import type { Working } from "./working";
+import type { BotStatus } from "../contract/bot-status";
+import type { BotStatusChange } from "./bots-status";
 import { Context, Effect, Layer } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import type { JobKindName } from "../shared/job-kinds";
@@ -96,8 +98,12 @@ export class Bots extends Context.Service<
     readonly onSettled: (
       callback: (execution: Execution) => void | Promise<void>,
     ) => () => void;
+    readonly onBotStatus: (
+      callback: (event: BotStatusChange) => void,
+    ) => () => void;
+    readonly requestStatuses: Effect.Effect<void>;
     readonly agentPreviews: Effect.Effect<
-      Array<{ agent: Agent; lastMessage: string }>
+      Array<{ agent: Agent; lastMessage: string; status: BotStatus }>
     >;
     readonly usage: Effect.Effect<ReturnType<typeof usageSummary>, AppError>;
     readonly announceJobAnswer: (
