@@ -18,6 +18,7 @@ the web app under **Settings** > **Providers**.
 | API key          | You pay the provider per request.                       |
 | Provider account | You already pay for ChatGPT, Codex, Claude, or Copilot. |
 | Claude Code      | You have a Claude Pro or Max subscription.              |
+| Soma             | You run a Soma server to share model access centrally.  |
 
 ## API Keys
 
@@ -89,6 +90,16 @@ Then run the sign-in command inside the container:
 ```bash
 docker compose exec -it crumble sh -c 'PASTE_THE_SIGN_IN_COMMAND_HERE'
 ```
+
+## Soma
+
+Soma lets your bots use models served by your own Soma server (`Soma-Protocol: 1`), exposing every configured upstream on that server as `<upstream>/<model>` (for example, `chatgpt/gpt-6.1-sol` or `claude/claude-sonnet-5-5`).
+
+1. Find **Soma** in **Settings** > **Providers** and click **Connect**.
+2. Enter the Soma server URL (such as `http://127.0.0.1:7662` or your Tailscale address) and bearer token (or a password manager reference).
+3. Save and pick any discovered Soma model for your bots, judge model, or vision model.
+
+When no per-account Soma connection is saved, Crumble falls back to `SOMA_URL` and `SOMA_TOKEN` from the server environment if both are set.
 
 ## Vision Model
 

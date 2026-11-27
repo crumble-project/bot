@@ -11,6 +11,7 @@ import {
   credentialSaveInput,
   loginSaveInput,
   passwordManagerIdInput,
+  providerKeyInput,
   secretInput,
 } from "./secrets";
 import { reasoningPreviewInput, reasoningPreviewResponse } from "./reasoning";
@@ -1543,10 +1544,10 @@ export const routes = {
     path: "/v1/providers/{provider}",
     operationId: "putProviderKey",
     description:
-      "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
+      "Saves the provider's API key, or a password manager reference to read it from, plus an optional server URL for providers that require one. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
     request: {
       params: z.object({ provider: z.string() }),
-      body: body(secretInput),
+      body: body(providerKeyInput),
     },
     responses: { 200: json(providerConfiguredResponse) },
   }),

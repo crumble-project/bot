@@ -116,6 +116,11 @@ function apiContext(
         externalAuth ? [[provider.id, externalAuth] as const] : [],
       ),
     ),
+    requiresBaseUrl: new Set(
+      pluginProviders(plugins).flatMap(({ provider, requiresBaseUrl }) =>
+        requiresBaseUrl ? [provider.id] : [],
+      ),
+    ),
     provider: providerSchema(providerAuth.models),
     models: providerAuth.models,
     providerAuth,

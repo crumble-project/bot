@@ -10,6 +10,7 @@ import { Secrets } from "../secrets/secrets";
 import type { SecretInput } from "../contract/secrets";
 import { runnerOf } from "../shared/runner";
 import type { Runner } from "../shared/runner";
+import { SOMA_URL_ENV } from "./soma/client";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 
 export const providerApiKeyKey = (providerId: string) =>
@@ -96,14 +97,17 @@ class QueuedCredentialStore implements CredentialStore {
   }
 
   status(providerId: string) {
+    const stored = this.stored(providerId);
+
     return {
-      credentialType:
-        this.repository((r) => r.list).find(
-          (info) => info.providerId === providerId,
-        )?.type ?? null,
+      credentialType: stored?.type ?? null,
       apiKey: this.run.runSync(
         Effect.flatMap(Secrets, (s) => s.status(providerApiKeyKey(providerId))),
       ),
+      baseUrl:
+        stored?.type === "api_key"
+          ? (stored.env?.[SOMA_URL_ENV] ?? null)
+          : null,
     };
   }
 
@@ -173,12 +177,31 @@ class QueuedCredentialStore implements CredentialStore {
     });
   }
 
-  setApiKey(providerId: string, key: SecretInput) {
+  setApiKey(
+    providerId: string,
+    key: SecretInput | undefined,
+    baseUrl?: string,
+  ) {
     return this.enqueue(providerId, async () => {
-      await this.run.runPromise(
-        Secrets.use((s) => s.save(providerApiKeyKey(providerId), key)),
+      if (key) {
+        await this.run.runPromise(
+          Secrets.use((s) => s.save(providerApiKeyKey(providerId), key)),
+        );
+      }
+
+      const current = this.stored(providerId);
+      const existingEnv = current?.type === "api_key" ? current.env : undefined;
+      const nextEnv =
+        baseUrl !== undefined
+          ? { ...existingEnv, [SOMA_URL_ENV]: baseUrl }
+          : existingEnv;
+
+      this.repository((r) =>
+        r.set(providerId, {
+          type: "api_key",
+          ...(nextEnv && { env: nextEnv }),
+        }),
       );
-      this.repository((r) => r.set(providerId, { type: "api_key" }));
     });
   }
 

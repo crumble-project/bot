@@ -11,6 +11,7 @@ import { onePassword } from "../password-managers/one-password";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
 import { railwayWorkspacesFromEnv } from "../workspaces/railway/railway-workspaces";
 import { meliousPlugin } from "../providers/melious";
+import { somaPlugin } from "../providers/soma/plugin";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
 import { exaPlugin } from "../web-search/exa";
@@ -41,6 +42,7 @@ export type PluginHost = {
 
 export const builtinPlugins = (host: PluginHost): Array<CrumblePlugin> => [
   meliousPlugin(),
+  somaPlugin(host.env),
   claudeCodePlugin(host.dataDir, host.env),
   codingPlugin(host.workspaces, host.questionGraceMs, host.credentials),
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),

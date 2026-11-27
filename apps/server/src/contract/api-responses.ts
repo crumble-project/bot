@@ -959,6 +959,8 @@ export const providerResponse = z
     authMethods: z.array(loginMethod),
     credentialType: authType.nullable(),
     apiKey: secretStatusResponse,
+    baseUrl: z.string().nullable(),
+    requiresBaseUrl: z.boolean(),
     activeLoginId: z.string().nullable(),
     externalAuth: externalAuthResponse.nullable(),
   })

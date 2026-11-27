@@ -193,9 +193,13 @@ class SignInSessions {
     return this.project(session);
   }
 
-  async setApiKey(providerId: string, key: SecretInput) {
+  async setApiKey(
+    providerId: string,
+    key: SecretInput | undefined,
+    baseUrl?: string,
+  ) {
     this.invalidate(providerId);
-    await this.credentials.setApiKey(providerId, key);
+    await this.credentials.setApiKey(providerId, key, baseUrl);
   }
 
   async signOut(providerId: string) {
